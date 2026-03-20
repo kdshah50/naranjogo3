@@ -1,2 +1,11 @@
 node_modules
 dist
+
+# Python / ml-service
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+ml-service/.env
+.env

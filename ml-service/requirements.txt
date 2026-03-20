@@ -1,0 +1,30 @@
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+pydantic==2.7.1
+pydantic-settings==2.2.1
+httpx==0.27.0
+
+# Google Vision (arch doc: ML Service uses Google Vision API)
+google-cloud-vision==3.7.2
+
+# XGBoost price suggestion model (arch doc §5.2)
+xgboost>=2.0.3
+scikit-learn>=1.4.0
+numpy>=1.26.4
+pandas>=2.2.2
+joblib>=1.4.2
+
+# Redis (arch doc: ML results cached in Redis)
+redis[hiredis]>=5.0.4
+
+# Image handling
+Pillow>=10.3.0
+imagehash==4.3.1          # pHash for fraud duplicate detection (arch doc §9.3)
+
+# Auth — JWT verification (arch doc §10.1: RS256 JWTs)
+python-jose[cryptography]==3.3.0
+
+# Railway/Cloud Run health + observability
+python-multipart==0.0.9
+prometheus-fastapi-instrumentator==6.1.0
+structlog==24.1.0
