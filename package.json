@@ -1,19 +1,37 @@
 {
-  "name": "naranjogo3",
-  "private": true,
+  "name": "tianguis",
   "version": "0.1.0",
-  "type": "module",
+  "private": true,
+  "description": "Tianguis — El Mercado Digital de México. Turborepo monorepo.",
+  "workspaces": [
+    "apps/web",
+    "apps/mobile",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "build":        "turbo run build",
+    "dev":          "turbo run dev",
+    "dev:web":      "turbo run dev --filter=@tianguis/web",
+    "dev:ml":       "cd apps/ml && uvicorn app.main:app --reload --port 8000",
+    "lint":         "turbo run lint",
+    "test":         "turbo run test",
+    "test:ml":      "cd apps/ml && pytest tests/ -v",
+    "type-check":   "turbo run type-check",
+    "db:migrate":   "supabase db push",
+    "db:generate":  "supabase gen types typescript --local > packages/types/src/supabase.ts",
+    "ml:install":   "cd apps/ml && pip install -r requirements.txt",
+    "ml:train":     "cd apps/ml && python scripts/train_price_model.py"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^4.3.1",
-    "vite": "^5.4.2"
-  }
+    "turbo": "^1.13.3",
+    "typescript": "^5.4.5",
+    "@types/node": "^20.12.12",
+    "eslint": "^8.57.0",
+    "prettier": "^3.2.5"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.1.2"
 }
