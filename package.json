@@ -1,37 +1,30 @@
 {
-  "name": "tianguis",
+  "name": "tianguis-web",
   "version": "0.1.0",
   "private": true,
-  "description": "Tianguis — El Mercado Digital de México. Turborepo monorepo.",
-  "workspaces": [
-    "apps/web",
-    "apps/mobile",
-    "packages/*"
-  ],
   "scripts": {
-    "build":        "turbo run build",
-    "dev":          "turbo run dev",
-    "dev:web":      "turbo run dev --filter=@tianguis/web",
-    "dev:ml":       "cd apps/ml && uvicorn app.main:app --reload --port 8000",
-    "lint":         "turbo run lint",
-    "test":         "turbo run test",
-    "test:ml":      "cd apps/ml && pytest tests/ -v",
-    "type-check":   "turbo run type-check",
-    "db:migrate":   "supabase db push",
-    "db:generate":  "supabase gen types typescript --local > packages/types/src/supabase.ts",
-    "ml:install":   "cd apps/ml && pip install -r requirements.txt",
-    "ml:train":     "cd apps/ml && python scripts/train_price_model.py"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.9.0",
+    "@supabase/supabase-js": "^2.99.3",
+    "next": "14.2.35",
+    "next-intl": "^4.8.3",
+    "react": "^18",
+    "react-dom": "^18",
+    "zustand": "^5.0.12"
   },
   "devDependencies": {
-    "turbo": "^1.13.3",
-    "typescript": "^5.4.5",
-    "@types/node": "^20.12.12",
-    "eslint": "^8.57.0",
-    "prettier": "^3.2.5"
-  },
-  "engines": {
-    "node": ">=20.0.0",
-    "pnpm": ">=9.0.0"
-  },
-  "packageManager": "pnpm@9.1.2"
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.35",
+    "postcss": "^8",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5"
+  }
 }
