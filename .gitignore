@@ -8,4 +8,8 @@ __pycache__/
 .venv/
 venv/
 ml-service/.env
+listings-api/.env
+listings-api/.venv/
+listings-api/listings.db
+listings-api/*.db
 .env
