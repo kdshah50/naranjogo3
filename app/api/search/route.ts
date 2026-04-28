@@ -7,12 +7,14 @@ import {
   parseSearchQuery,
   type ParsedQueryFilters,
 } from "@/lib/search-query-parse";
+import { sparseSearchTokens } from "@/lib/search-trade-hints";
 
 const OPENAI_KEY = process.env.OPENAI_API_KEY ?? "";
 const SMA_ZIP = "37745";
 
-const ABS_THRESHOLD = 0.20;
-const REL_FACTOR    = 0.60;
+/** Drop weak vector matches (reduces unrelated trades when every listing is vaguely similar). */
+const ABS_THRESHOLD = 0.26;
+const REL_FACTOR = 0.72;
 
 async function embedQuery(text: string): Promise<number[] | null> {
   if (!OPENAI_KEY) return null;
@@ -170,14 +172,31 @@ export async function GET(req: NextRequest) {
   }
 
   if (query) {
-    // ── Layer 1: Sparse keyword search ──────────────────────────────────────
+    // ── Layer 1: Sparse keyword search (OR on Spanish trade tokens + query words) ──
     try {
       const hasPrice = effective.maxPriceMxnCents != null || effective.minPriceMxnCents != null;
       const keywordTooShort = !sparsePhrase || sparsePhrase.trim().length < 2;
-      const core =
-        hasPrice && keywordTooShort
-          ? `${supaUrl}/rest/v1/listings?status=eq.active&is_verified=eq.true&category_id=eq.${category}&select=${SELECT_COLS_FULL}&order=created_at.desc&limit=24`
-          : `${supaUrl}/rest/v1/listings?status=eq.active&is_verified=eq.true&category_id=eq.${category}&title_es=ilike.*${encodeURIComponent(sparsePhrase)}*&select=${SELECT_COLS_FULL}&limit=20`;
+      const titleTokens = sparseSearchTokens(query, sparsePhrase);
+      const priceOnlyBrowse = hasPrice && keywordTooShort && titleTokens.length === 0;
+
+      const listBase = `status=eq.active&is_verified=eq.true&category_id=eq.${category}&select=${SELECT_COLS_FULL}`;
+      let core: string;
+      if (priceOnlyBrowse) {
+        core = `${supaUrl}/rest/v1/listings?${listBase}&order=created_at.desc&limit=24`;
+      } else if (titleTokens.length === 0) {
+        const p = (sparsePhrase || query).trim();
+        core =
+          p.length >= 2
+            ? `${supaUrl}/rest/v1/listings?${listBase}&title_es=ilike.*${encodeURIComponent(p)}*&limit=20`
+            : `${supaUrl}/rest/v1/listings?${listBase}&order=created_at.desc&limit=24`;
+      } else if (titleTokens.length === 1) {
+        core = `${supaUrl}/rest/v1/listings?${listBase}&title_es=ilike.*${encodeURIComponent(titleTokens[0])}*&limit=24`;
+      } else {
+        const orInner = titleTokens
+          .map((t) => `title_es.ilike.*${encodeURIComponent(t)}*`)
+          .join(",");
+        core = `${supaUrl}/rest/v1/listings?${listBase}&or=(${orInner})&limit=36`;
+      }
       const baseUrl = appendPriceToUrl(core);
       sparseRows = await fetchWithFallback(baseUrl, SELECT_COLS_FULL, SELECT_COLS_BASE);
       sparseRows = sparseRows.filter((l) => listingMatchesPriceFilters(l.price_mxn, effective));
@@ -235,12 +254,18 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  let fused = Array.from(map.values())
-    .map(({ listing, sparse, dense, geo }) => ({
+  let fused = Array.from(map.values()).map(({ listing, sparse, dense, geo }) => {
+    const sim =
+      typeof listing.similarity === "number" && Number.isFinite(listing.similarity)
+        ? Math.min(1, Math.max(0, listing.similarity))
+        : 0;
+    const denseWeighted = dense > 0 ? dense * (0.45 + 0.55 * sim) : 0;
+    return {
       ...listing,
-      _score: Math.round((sparse * 0.4 + dense * 0.4) * geo * 10000) / 10000,
+      _score: Math.round((sparse * 0.38 + denseWeighted * 0.42) * geo * 10000) / 10000,
       _mode: dense > 0 && sparse > 0 ? "hybrid" : dense > 0 ? "dense" : "sparse",
-    }));
+    };
+  });
 
   if (coloniaRef) {
     fused = fused.filter((l) => {
@@ -266,6 +291,7 @@ export async function GET(req: NextRequest) {
     parse: {
       source: parsed.source,
       keywordForSparse: sparsePhrase,
+      sparseTokens: sparseSearchTokens(query, sparsePhrase),
       textForEmbedding: embedPhrase,
       maxPriceMxnCents: effective.maxPriceMxnCents ?? null,
       minPriceMxnCents: effective.minPriceMxnCents ?? null,

@@ -3,6 +3,8 @@
  * Used by /api/search — LLM when OPENAI_API_KEY is set, else regex heuristics.
  */
 
+import { embeddingContextSuffix } from "@/lib/search-trade-hints";
+
 const OPENAI_KEY = process.env.OPENAI_API_KEY ?? "";
 const CHAT_MODEL = process.env.SEARCH_PARSE_MODEL ?? "gpt-4o-mini";
 /** Whole pesos per 1 USD when user says "dollars" / "usd" without MXN. */
@@ -99,14 +101,16 @@ type LlmExtract = {
 async function llmParseSearchQuery(query: string, category: string): Promise<ParsedQueryFilters | null> {
   if (!OPENAI_KEY || !query.trim()) return null;
 
-  const system = `You extract search filters for a Mexican marketplace (listings in Spanish titles/descriptions; users may type English or Spanish).
+  const system = `You extract search filters for a Mexican marketplace (Spanish-first listings; bilingual queries EN/ES).
+
 Return ONLY valid JSON with keys:
-- keyword_phrase: short phrase for SQL ILIKE on listing title (include both languages if helpful, e.g. "niñera babysitter"; omit price words).
-- semantic_query: one natural sentence for vector search (English or Spanish, preserve intent).
+- keyword_phrase: 4–12 words for SQL ILIKE on title_es. MUST include Spanish trade words sellers use. If the user wrote English OR Spanish, output the SAME Spanish seller keywords (never English-only). Examples: sink/fregadero/fuga/grifería → "fontanero plomero plomería tuberías"; wiring/focos → "electricista eléctrico"; dental/muelas → "dentista odontólogo"; pintar bardas → "pintor pintura".
+- semantic_query: One precise sentence for vector similarity naming trade + task. Prefer Spanish; English acceptable. Narrow intent—avoid vague "professional" / "service" alone.
 - max_price_mxn: maximum price in whole MXN pesos (integer), or null if not stated.
 - min_price_mxn: minimum price in whole MXN pesos (integer), or null if not stated.
 
 Rules:
+- Match trade precisely: plumbing ≠ electrical ≠ dental ≠ cleaning—pick keywords ONLY for what the user asked for.
 - If the user gives USD or "dollars" without saying MXN/pesos, convert to MXN using ${MXN_PER_USD} MXN per USD.
 - "Under $50" with dollar context → max_price_mxn = floor(50 * ${MXN_PER_USD}).
 - Ignore availability words like "today", "now", "urgent" for price (leave price null unless a number is given).
@@ -185,7 +189,16 @@ export async function parseSearchQuery(query: string, category: string): Promise
   const llm = await llmParseSearchQuery(trimmed, category);
 
   if (!llm) {
-    return rx.source === "none" ? { ...rx, keywordForSparse: trimmed, textForEmbedding: trimmed } : rx;
+    const base =
+      rx.source === "none"
+        ? { ...rx, keywordForSparse: trimmed, textForEmbedding: trimmed }
+        : rx;
+    const hint = embeddingContextSuffix(trimmed);
+    if (!hint) return base;
+    return {
+      ...base,
+      textForEmbedding: `${base.textForEmbedding} ${hint}`.trim().slice(0, 2000),
+    };
   }
 
   const merged: ParsedQueryFilters = {
@@ -204,6 +217,11 @@ export async function parseSearchQuery(query: string, category: string): Promise
   }
   if (merged.maxPriceMxnCents == null) merged.maxPriceMxnCents = rx.maxPriceMxnCents;
   if (merged.minPriceMxnCents == null) merged.minPriceMxnCents = rx.minPriceMxnCents;
+
+  const hint = embeddingContextSuffix(trimmed);
+  if (hint) {
+    merged.textForEmbedding = `${merged.textForEmbedding} ${hint}`.trim().slice(0, 2000);
+  }
 
   return merged;
 }
