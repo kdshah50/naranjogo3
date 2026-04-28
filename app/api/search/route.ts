@@ -14,7 +14,9 @@ const SMA_ZIP = "37745";
 
 /** Drop weak vector matches (reduces unrelated trades when every listing is vaguely similar). */
 const ABS_THRESHOLD = 0.26;
-const REL_FACTOR = 0.72;
+const REL_FACTOR = 0.75;
+/** Must stay within this cosine gap of the best match (filters "mecánico" when "plomero" is clearly closer). */
+const BEST_SIM_MARGIN = 0.11;
 
 async function embedQuery(text: string): Promise<number[] | null> {
   if (!OPENAI_KEY) return null;
@@ -132,6 +134,7 @@ export async function GET(req: NextRequest) {
 
   let sparseRows: any[] = [];
   let denseRows:  any[] = [];
+  let denseFilterDebug: { bestSimilarity: number; thresholdUsed: number } | null = null;
 
   let parsed: ParsedQueryFilters = {
     keywordForSparse: query,
@@ -214,10 +217,15 @@ export async function GET(req: NextRequest) {
         const data = dr.ok ? await dr.json() : [];
         if (Array.isArray(data) && data.length > 0) {
           const bestScore = Math.max(...data.map((l: any) => l.similarity ?? 0));
-          const threshold = Math.max(ABS_THRESHOLD, bestScore * REL_FACTOR);
+          const threshold = Math.max(
+            ABS_THRESHOLD,
+            bestScore * REL_FACTOR,
+            bestScore - BEST_SIM_MARGIN
+          );
           denseRows = data
             .filter((l: any) => (l.similarity ?? 0) >= threshold)
             .filter((l: any) => listingMatchesPriceFilters(l.price_mxn, effective));
+          denseFilterDebug = { bestSimilarity: bestScore, thresholdUsed: threshold };
         }
       }
     } catch {}
@@ -260,9 +268,11 @@ export async function GET(req: NextRequest) {
         ? Math.min(1, Math.max(0, listing.similarity))
         : 0;
     const denseWeighted = dense > 0 ? dense * (0.45 + 0.55 * sim) : 0;
+    const simRankBoost = dense > 0 ? sim * 0.22 : 0;
     return {
       ...listing,
-      _score: Math.round((sparse * 0.38 + denseWeighted * 0.42) * geo * 10000) / 10000,
+      _score:
+        Math.round((sparse * 0.38 + denseWeighted * 0.42 + simRankBoost) * geo * 10000) / 10000,
       _mode: dense > 0 && sparse > 0 ? "hybrid" : dense > 0 ? "dense" : "sparse",
     };
   });
@@ -288,6 +298,8 @@ export async function GET(req: NextRequest) {
     hasOpenAIKey: !!OPENAI_KEY,
     sparseCount: sparseRows.length,
     denseCount: denseRows.length,
+    denseFilter: denseFilterDebug,
+    bestSimMargin: BEST_SIM_MARGIN,
     parse: {
       source: parsed.source,
       keywordForSparse: sparsePhrase,
