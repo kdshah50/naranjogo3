@@ -14,9 +14,10 @@ const SMA_ZIP = "37745";
 
 /** Drop weak vector matches (reduces unrelated trades when every listing is vaguely similar). */
 const ABS_THRESHOLD = 0.26;
-const REL_FACTOR = 0.75;
-/** Must stay within this cosine gap of the best match (filters "mecánico" when "plomero" is clearly closer). */
-const BEST_SIM_MARGIN = 0.11;
+/** Share of top cosine required (stricter → fewer "wrong trade" neighbors). */
+const REL_FACTOR = 0.83;
+/** Must stay within this cosine gap of the best match. */
+const BEST_SIM_MARGIN = 0.13;
 
 async function embedQuery(text: string): Promise<number[] | null> {
   if (!OPENAI_KEY) return null;
@@ -300,6 +301,10 @@ export async function GET(req: NextRequest) {
     denseCount: denseRows.length,
     denseFilter: denseFilterDebug,
     bestSimMargin: BEST_SIM_MARGIN,
+    relFactor: REL_FACTOR,
+    /** Set by Vercel at build time — use to confirm this deployment matches Git. */
+    vercelGitSha: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
+    vercelDeploymentId: process.env.VERCEL_DEPLOYMENT_ID ?? null,
     parse: {
       source: parsed.source,
       keywordForSparse: sparsePhrase,
