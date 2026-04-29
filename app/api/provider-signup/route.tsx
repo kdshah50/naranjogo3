@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceRoleRestHeaders, getSupabaseUrl } from "@/lib/service-rest";
-import { COLONIAS } from "@/lib/colonias";
+import { COLONIAS, coloniaLabel } from "@/lib/colonias";
 import { normalizeCurpForStorage, normalizeRfcForStorage } from "@/lib/mx-tax-ids";
+import {
+  providerMetaFooters,
+  providerServiceLabels,
+  PROVIDER_LANGUAGE_OPTIONS,
+  SERVICE_LOCATION_OPTIONS,
+  sanitizeAlternateServiceSlugs,
+} from "@/lib/provider-services";
 
 const ADMIN_WHATSAPP = process.env.ADMIN_WHATSAPP_NUMBER ?? "";
 const TWILIO_SID     = process.env.TWILIO_ACCOUNT_SID ?? "";
@@ -18,6 +25,9 @@ async function notifyAdmin(form: any) {
       `🔧 ${form.service_label}`,
       `💰 $${form.price} MXN`,
       `📍 ${form.colonia ? (COLONIAS[form.colonia]?.label ?? form.colonia) : form.city}, SMA`,
+      ...(form.provider_languages_es ? [`🗣 ${form.provider_languages_es}`] : []),
+      ...(form.service_location_es ? [`📌 ${form.service_location_es}`] : []),
+      ...(form.alternate_services_es ? [`➕ ${form.alternate_services_es}`] : []),
       ...(form.curp ? [`🪪 CURP: ${form.curp}`] : []),
       ...(form.rfc ? [`📋 RFC: ${form.rfc}`] : []),
       ``,
@@ -60,11 +70,23 @@ export async function POST(req: NextRequest) {
       description, price, city, colonia, address, lang,
       accepted_terms, accepted_pricing, accepted_at,
       curp, rfc, payment_methods,
+      provider_languages, service_location,
+      alternate_services: alternateRaw,
     } = body;
+
+    const alternate_services = sanitizeAlternateServiceSlugs(alternateRaw, String(service ?? ""));
+    const langOk =
+      provider_languages === "bilingual" ||
+      provider_languages === "spanish_only" ||
+      provider_languages === "english_only";
+    const locOk = service_location === "in_house" || service_location === "on_site_only";
 
     // Validate required fields
     if (!name || !whatsapp || !service || !description) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    }
+    if (!langOk || !locOk) {
+      return NextResponse.json({ error: "Missing provider language or service location" }, { status: 400 });
     }
     if (!accepted_terms || !accepted_pricing) {
       return NextResponse.json({ error: "Terms not accepted" }, { status: 400 });
@@ -128,18 +150,29 @@ export async function POST(req: NextRequest) {
 
     // 2. Create listing — is_verified=false (pending admin approval)
     // Get precise coordinates from colonia
-    const coloniaData = COLONIAS[colonia ?? "otro"] ?? COLONIAS["otro"];
-    const coloniaLabel = coloniaData.label;
-    const locationCity = `${coloniaLabel}, San Miguel de Allende`;
-    const descWithAddress = address
-      ? `${description}\n\nZona: ${coloniaLabel}${address ? ". Ref: " + address : ""}`
-      : `${description}\n\nZona: ${coloniaLabel}`;
+    const coloniaKey = colonia ?? "otro";
+    const coloniaData = COLONIAS[coloniaKey] ?? COLONIAS["otro"];
+    const coloniaLabelEs = coloniaData.label;
+    const coloniaLabelEn = coloniaLabel(coloniaKey, "en");
+    const locationCity = `${coloniaLabelEs}, San Miguel de Allende`;
+    const descWithAddressEs = address
+      ? `${description}\n\nZona: ${coloniaLabelEs}. Ref: ${address}`
+      : `${description}\n\nZona: ${coloniaLabelEs}`;
+    const descWithAddressEn = address
+      ? `${description}\n\nArea: ${coloniaLabelEn}. Ref: ${address}`
+      : `${description}\n\nArea: ${coloniaLabelEn}`;
+    const meta = providerMetaFooters({
+      provider_languages,
+      service_location,
+      alternate_slugs: alternate_services,
+    });
 
     const listing = {
       seller_id:          sellerId,
-      title_es:           `${service_label} — ${coloniaLabel}, SMA`,
-      title_en:           `${service_label} — ${coloniaLabel}, SMA`,
-      description_es:     descWithAddress,
+      title_es:           `${service_label} — ${coloniaLabelEs}, SMA`,
+      title_en:           `${service_label} — ${coloniaLabelEs}, SMA`,
+      description_es:     descWithAddressEs + meta.es,
+      description_en:      descWithAddressEn + meta.en,
       price_mxn:          price_mxn > 0 ? price_mxn : 50000,
       category_id:        "services",
       condition:          "new",
@@ -174,10 +207,27 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. Notify admin via WhatsApp (non-blocking)
+    const provider_languages_es =
+      PROVIDER_LANGUAGE_OPTIONS.find((o) => o.value === provider_languages)?.es ?? "";
+    const service_location_es =
+      SERVICE_LOCATION_OPTIONS.find((o) => o.value === service_location)?.es ?? "";
+    const alternate_services_es =
+      alternate_services.length > 0 ? providerServiceLabels(alternate_services, "es") : "";
+
     notifyAdmin({
-      name, whatsapp, service_label,
-      price, city, colonia, description,
-      accepted_at, curp: cleanCurp, rfc: cleanRfc,
+      name,
+      whatsapp,
+      service_label,
+      price,
+      city,
+      colonia,
+      description,
+      accepted_at,
+      curp: cleanCurp,
+      rfc: cleanRfc,
+      provider_languages_es,
+      service_location_es,
+      alternate_services_es,
     }).catch(() => {});
 
     return NextResponse.json({ ok: true });

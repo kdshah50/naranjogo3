@@ -1,6 +1,12 @@
 "use client";
 import { useState } from "react";
-import { ALL_COLONIA_KEYS, COLONIAS as COLONIAS_MAP, coloniaLabel } from "@/lib/colonias";
+import { ALL_COLONIA_KEYS, COLONIAS as COLONIAS_MAP } from "@/lib/colonias";
+import {
+  PROVIDER_SERVICES as SERVICES,
+  PROVIDER_LANGUAGE_OPTIONS,
+  SERVICE_LOCATION_OPTIONS,
+  providerServiceLabels,
+} from "@/lib/provider-services";
 
 const COLONIAS_LIST = ALL_COLONIA_KEYS.map(key => ({
   value: key,
@@ -9,32 +15,6 @@ const COLONIAS_LIST = ALL_COLONIA_KEYS.map(key => ({
   lat: COLONIAS_MAP[key].lat,
   lng: COLONIAS_MAP[key].lng,
 }));
-
-const SERVICES = [
-  { value: "plomero",         es: "Plomero",                    en: "Plumber" },
-  { value: "electricista",    es: "Electricista",               en: "Electrician" },
-  { value: "mecanico",        es: "Mecánico",                   en: "Mechanic" },
-  { value: "pintor",          es: "Pintor",                     en: "Painter" },
-  { value: "jardinero",       es: "Jardinero",                  en: "Gardener" },
-  { value: "limpieza",        es: "Limpieza del hogar",         en: "House Cleaning" },
-  { value: "ac",              es: "Técnico AC",                 en: "AC Technician" },
-  { value: "dentista",        es: "Dentista",                   en: "Dentist" },
-  { value: "niera",           es: "Niñera / Nanny",             en: "Babysitter / Nanny" },
-  { value: "cuidado_mayores", es: "Cuidado adultos mayores",    en: "Senior Care" },
-  { value: "paseador",        es: "Paseador de perros",         en: "Dog Walker" },
-  { value: "pet_sitting",     es: "Pet sitting / Hospedaje",    en: "Pet Sitting / Boarding" },
-  { value: "estetica_canina", es: "Estética canina",            en: "Dog Grooming" },
-  { value: "mandados",        es: "Mandados bilingüe",          en: "Bilingual Errands" },
-  { value: "chofer",          es: "Chofer privado",             en: "Private Driver" },
-  { value: "tramites",        es: "Trámites para expatriados",  en: "Expat Paperwork Help" },
-  { value: "compras",         es: "Compras a domicilio",        en: "Grocery Delivery" },
-  { value: "house_sitting",   es: "Cuidado de casa",            en: "House Sitting" },
-  { value: "yoga",            es: "Yoga / Bienestar",           en: "Yoga / Wellness" },
-  { value: "diseno",          es: "Diseño de interiores",       en: "Interior Design" },
-  { value: "espanol",         es: "Clases de español",          en: "Spanish Lessons" },
-  { value: "chef",            es: "Chef a domicilio",           en: "Private Chef" },
-  { value: "otro",            es: "Otro servicio",              en: "Other service" },
-];
 
 
 const T = {
@@ -88,6 +68,10 @@ const T = {
     acceptAll:    "He leído y acepto los términos y condiciones",
     acceptPricing:"Entiendo que Naranjogo puede establecer términos comerciales en el futuro, los cuales me serán comunicados antes de cualquier cobro.",
     mustAccept:   "Debes aceptar los términos para continuar",
+    providerLanguages: "¿En qué idiomas atiendes a tus clientes?",
+    serviceLocation:   "¿Dónde prestas el servicio?",
+    alternateServices: "Otros servicios que también ofreces",
+    alternateHint:     "Opcional — elige categorías adicionales de la misma lista (distinto a tu servicio principal).",
   },
   en: {
     title:        "List your service on Naranjogo",
@@ -139,6 +123,10 @@ const T = {
     acceptAll:    "I have read and agree to the terms and conditions",
     acceptPricing:"I understand that Naranjogo may establish commercial terms in the future, which will be communicated to me before any charges apply.",
     mustAccept:   "You must accept the terms to continue",
+    providerLanguages: "What languages do you use with clients?",
+    serviceLocation:   "Where do you provide the service?",
+    alternateServices: "Other services you also offer",
+    alternateHint:     "Optional — pick extra categories from the same list (besides your primary service).",
   },
 };
 
@@ -156,6 +144,9 @@ export default function UnetePage() {
     city: "San Miguel de Allende",
     colonia: "",
     address: "",
+    provider_languages: "" as "" | "bilingual" | "spanish_only" | "english_only",
+    service_location: "" as "" | "in_house" | "on_site_only",
+    alternate_services: [] as string[],
     payment_methods: ["efectivo", "whatsapp"] as string[],
     acceptTerms: false,
     acceptPricing: false,
@@ -321,13 +312,71 @@ export default function UnetePage() {
             <div className="flex flex-col gap-5">
               <div>
                 <label className="block text-xs font-semibold text-[#6B7280] mb-2">{t.service}</label>
-                <select value={form.service} onChange={e => set("service", e.target.value)}
+                <select value={form.service} onChange={e => {
+                  const v = e.target.value;
+                  setForm(f => ({
+                    ...f,
+                    service: v,
+                    alternate_services: f.alternate_services.filter(x => x !== v),
+                  }));
+                }}
                   className="w-full border border-[#E5E0D8] rounded-xl px-4 py-3 text-sm outline-none focus:border-[#1B4332] transition-colors bg-white">
                   <option value="">— {lang === "es" ? "Selecciona" : "Select"} —</option>
                   {SERVICES.map(s => (
                     <option key={s.value} value={s.value}>{s[lang]}</option>
                   ))}
                 </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-[#6B7280] mb-2">{t.providerLanguages}</label>
+                <div className="flex flex-col gap-2">
+                  {PROVIDER_LANGUAGE_OPTIONS.map(opt => (
+                    <label key={opt.value}
+                      className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${form.provider_languages === opt.value ? "border-[#1B4332] bg-[#ECFDF5]" : "border-[#E5E0D8] hover:border-[#1B4332]"}`}>
+                      <input type="radio" name="provider_languages" checked={form.provider_languages === opt.value}
+                        onChange={() => set("provider_languages", opt.value)}
+                        className="accent-[#1B4332] mt-0.5 w-4 h-4 flex-shrink-0" />
+                      <span className="text-sm">{opt[lang]}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-[#6B7280] mb-2">{t.serviceLocation}</label>
+                <div className="flex flex-col gap-2">
+                  {SERVICE_LOCATION_OPTIONS.map(opt => (
+                    <label key={opt.value}
+                      className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${form.service_location === opt.value ? "border-[#1B4332] bg-[#ECFDF5]" : "border-[#E5E0D8] hover:border-[#1B4332]"}`}>
+                      <input type="radio" name="service_location" checked={form.service_location === opt.value}
+                        onChange={() => set("service_location", opt.value)}
+                        className="accent-[#1B4332] mt-0.5 w-4 h-4 flex-shrink-0" />
+                      <span className="text-sm">{opt[lang]}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-[#6B7280] mb-2">{t.alternateServices}</label>
+                <p className="text-xs text-[#A8A095] mb-2">{t.alternateHint}</p>
+                <div className="flex flex-col gap-2 max-h-48 overflow-y-auto rounded-xl border border-[#E5E0D8] p-2">
+                  {SERVICES.filter(s => s.value !== form.service).map(s => {
+                    const checked = form.alternate_services.includes(s.value);
+                    return (
+                      <label key={s.value}
+                        className={`flex items-center gap-3 px-2 py-2 rounded-lg cursor-pointer transition-colors ${checked ? "bg-[#ECFDF5]" : "hover:bg-[#F4F0EB]"}`}>
+                        <input type="checkbox" checked={checked}
+                          onChange={() => {
+                            const next = checked
+                              ? form.alternate_services.filter(x => x !== s.value)
+                              : [...form.alternate_services, s.value];
+                            set("alternate_services", next);
+                          }}
+                          className="accent-[#1B4332] w-4 h-4 flex-shrink-0" />
+                        <span className="text-sm">{s[lang]}</span>
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-[#6B7280] mb-2">{t.desc}</label>
@@ -374,7 +423,10 @@ export default function UnetePage() {
                   {t.back}
                 </button>
                 <button onClick={() => setStep(3)}
-                  disabled={!form.service || !form.description || !form.price}
+                  disabled={
+                    !form.service || !form.description || !form.price
+                    || !form.provider_languages || !form.service_location
+                  }
                   className="flex-1 bg-[#1B4332] text-white font-semibold py-3 rounded-xl text-sm disabled:opacity-40 hover:bg-[#2D6A4F] transition-colors">
                   {t.next}
                 </button>
@@ -450,6 +502,11 @@ export default function UnetePage() {
                   [t.name,     form.name],
                   ["WhatsApp", form.whatsapp],
                   [t.service,  SERVICES.find(s => s.value === form.service)?.[lang] ?? form.service],
+                  [t.providerLanguages, PROVIDER_LANGUAGE_OPTIONS.find(o => o.value === form.provider_languages)?.[lang] ?? "—"],
+                  [t.serviceLocation, SERVICE_LOCATION_OPTIONS.find(o => o.value === form.service_location)?.[lang] ?? "—"],
+                  ...(form.alternate_services.length
+                    ? [[t.alternateServices, providerServiceLabels(form.alternate_services, lang)] as [string, string]]
+                    : []),
                   [t.price,    `$${form.price} MXN`],
                   [t.colonia,  COLONIAS_LIST.find(c => c.value === form.colonia)?.[lang] ?? form.colonia],
                   ...(form.curp ? [[t.curp.replace(" (opcional)", "").replace(" (optional)", ""), form.curp]] : []),
