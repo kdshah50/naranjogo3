@@ -9,6 +9,20 @@ import {
 } from "@/lib/search-query-parse";
 import { sparseSearchTokens } from "@/lib/search-trade-hints";
 
+/**
+ * Hybrid retrieval (what is / isn’t implemented here):
+ *
+ * | Layer        | Implemented | Notes |
+ * |--------------|-------------|-------|
+ * | Sparse       | Yes         | OR’d `title_es` ILIKE + bilingual trade tokens (not BM25 / tsvector). |
+ * | Vector       | Yes         | OpenAI `text-embedding-3-small` + RPC `search_listings_dense`. |
+ * | Fusion       | Yes         | RRF + cosine-aware dense weight + optional geo multiplier. |
+ * | Price        | Yes         | NL + `pmin`/`pmax` → centavos bounds on Supabase + post-filter. |
+ * | Location     | Partial     | Colonia = strict radius; `lat`/`lng` = boost only (not hard filter). |
+ * | Availability | No          | “Urgent/today” ignored for price; no calendar/slots filter in search. |
+ * | Buyer intent | Partial     | LLM + regex keyword/semantic; trade hints for EN/ES → Spanish titles. |
+ * | Seller SEO   | Partial     | Embeddings from listing text in DB; no BM25 index or guided copy API here. |
+ */
 const OPENAI_KEY = process.env.OPENAI_API_KEY ?? "";
 const SMA_ZIP = "37745";
 
