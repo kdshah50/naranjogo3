@@ -262,8 +262,15 @@ export async function GET(req: NextRequest) {
   sparseRows.forEach((l, i) => map.set(l.id, { listing: l, sparse: rrf(i), dense: 0, geo: 1 }));
   denseRows.forEach((l, i) => {
     const e = map.get(l.id);
-    if (e) e.dense = rrf(i);
-    else map.set(l.id, { listing: l, sparse: 0, dense: rrf(i), geo: 1 });
+    const denseSim =
+      typeof l.similarity === "number" && Number.isFinite(l.similarity) ? l.similarity : undefined;
+    if (e) {
+      e.dense = rrf(i);
+      // Sparse rows omit `similarity`; without this, fused score treats hybrids as cosine 0.
+      if (denseSim != null) e.listing = { ...e.listing, similarity: denseSim };
+    } else {
+      map.set(l.id, { listing: l, sparse: 0, dense: rrf(i), geo: 1 });
+    }
   });
 
   if (hasGeo) {
