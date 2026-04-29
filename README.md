@@ -134,5 +134,6 @@ Open a specific thread on the listing page: `/listing/{id}?chat={conversationId}
 
 ## Related docs
 
+- `docs/SECURITY.md` — **security posture**: layered controls, informal score, gaps, key file references
 - `docs/ARCHITECTURE_DATABASE.md` — broader database / listings architecture
 - `listings-api/README.md`, `ml-service/README.md` — other services in this monorepo-style layout
