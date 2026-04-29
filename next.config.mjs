@@ -1,8 +1,11 @@
 import { withSentryConfig } from "@sentry/nextjs";
-import { CSP_REPORT_ONLY } from "./lib/csp.mjs";
+import { CSP_POLICY } from "./lib/csp.mjs";
 
 /** @type {import('next').NextConfig} */
 const isProd = process.env.NODE_ENV === "production";
+
+/** enforce | report | off — default enforce (production). Use report temporarily if diagnosing breakage. */
+const cspMode = (process.env.CSP_MODE ?? "enforce").trim().toLowerCase();
 
 const nextConfig = {
   eslint: { ignoreDuringBuilds: false },
@@ -26,10 +29,19 @@ const nextConfig = {
         key: "Strict-Transport-Security",
         value: "max-age=31536000; includeSubDomains",
       });
-      security.push({
-        key: "Content-Security-Policy-Report-Only",
-        value: CSP_REPORT_ONLY,
-      });
+      if (cspMode !== "off") {
+        if (cspMode === "report") {
+          security.push({
+            key: "Content-Security-Policy-Report-Only",
+            value: CSP_POLICY,
+          });
+        } else {
+          security.push({
+            key: "Content-Security-Policy",
+            value: CSP_POLICY,
+          });
+        }
+      }
     }
     return [
       { source: "/:path*", headers: security },

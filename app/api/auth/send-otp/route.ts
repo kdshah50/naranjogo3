@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import { canonicalizeAuthPhone, isValidAuthPhone, normalizeAuthPhone } from "@/lib/phone";
-import { clientIpFromHeaders, rateLimitMemory } from "@/lib/rate-limit-memory";
+import { clientIpFromHeaders } from "@/lib/rate-limit-memory";
+import { rateLimitSendOtpByIp } from "@/lib/rate-limit";
+import { createAdminSupabase } from "@/lib/auth-server";
 
 function generateOTP() {
   return Math.floor(Math.random() * 1000000)
@@ -15,14 +16,6 @@ function asWhatsappAddress(value: string) {
   if (v.startsWith("whatsapp:")) return v;
   const cleaned = v.replace(/^whatsapp:/, "");
   return `whatsapp:${cleaned.startsWith("+") ? cleaned : `+${cleaned}`}`;
-}
-
-function getRequiredEnv(name: "NEXT_PUBLIC_SUPABASE_URL" | "SUPABASE_SERVICE_ROLE_KEY") {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`Missing required env: ${name}`);
-  }
-  return value;
 }
 
 function logSupabaseError(step: string, phone: string, err: any) {
@@ -46,10 +39,7 @@ export async function POST(req: NextRequest) {
   const requestId = newRequestId(req);
   let step: "validate" | "rate_limit" | "insert" | "twilio" | "done" = "validate";
   try {
-    const supabase = createClient(
-      getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL"),
-      getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY")
-    );
+    const supabase = createAdminSupabase();
     const body = await req.json();
     let phone = normalizeAuthPhone(String(body?.phone ?? ""));
     phone = canonicalizeAuthPhone(phone);
@@ -64,7 +54,7 @@ export async function POST(req: NextRequest) {
     }
 
     const ip = clientIpFromHeaders(req.headers);
-    const ipRl = rateLimitMemory(`send-otp-ip:${ip}`, 25, 15 * 60 * 1000);
+    const ipRl = await rateLimitSendOtpByIp(ip);
     if (!ipRl.ok) {
       return NextResponse.json(
         { error: "Demasiados intentos desde esta red. Espera 15 minutos.", requestId },

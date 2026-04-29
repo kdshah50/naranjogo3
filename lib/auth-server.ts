@@ -1,3 +1,5 @@
+import "server-only";
+
 import { NextRequest } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { jwtVerify } from "jose";

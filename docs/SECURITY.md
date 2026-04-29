@@ -8,24 +8,24 @@ This document describes **security controls implemented in this repository** and
 
 | Metric | Value |
 |--------|--------|
-| **Composite (1–10)** | **7.5 / 10** |
-| **Grade (informal)** | **B+** — solid baseline for a production marketplace; reasonable gaps remain before “enterprise-ready” or strict compliance claims |
+| **Composite (1–10)** | **7.7 / 10** |
+| **Grade (informal)** | **B+ / low A-** — CSP enforced in prod; optional shared OTP limits; service-role modules gated with `server-only` |
 
 ### How to read the score
 
-- **7.5** reflects **defense in depth in several layers** (transport headers, session crypto, DB RLS, Stripe webhook verification, OTP flows, upload gates, secrets on server) versus **known gaps** (CSP not enforcing, rate limits not distributed, heavy reliance on correct API authorization next to a powerful Supabase service role).
+- **7.7** reflects layered controls including **enforcing CSP in production** (with env rollback), **optional Upstash-backed OTP IP limits**, **`server-only` gates** on service-role modules, plus remaining reliance on per-route authorization correctness.
 - It is **not** a certification and **not** derived from runtime scanning of production-only settings (WAF, Vercel firewall, org IAM).
 
 ### Score by area
 
 | Area | Score (/10) | Summary |
 |------|-------------|---------|
-| Transport & browser hardening | 7.5 | HSTS (prod), nosniff, frame deny, referrer policy, Permissions-Policy; CSP is **report-only** (does not block). |
+| Transport & browser hardening | 8.0 | HSTS (prod), nosniff, frame deny, referrer policy, Permissions-Policy; **CSP enforcing** in production (`Content-Security-Policy`). Set `CSP_MODE=report` temporarily if diagnosing breakage. |
 | Session & authentication | 8.0 | JWT (`jose`) validated server-side from cookie; UUID comparison hardened; OTP verify/use-once pattern. |
 | API authorization | 7.0 | Per-route checks (`getUserIdFromRequest`), listing owner + optional admin PIN; **no single global middleware** — consistency depends on each handler. |
-| Database | 7.5 | RLS enabled; intentional narrow `anon` reads for active listings / seller subset; sensitive paths via **service role** on server only. |
+| Database | 7.8 | RLS enabled; intentional narrow `anon` reads for active listings / seller subset; sensitive paths via **service role** on server only — **`server-only`** on `lib/auth-server.ts` and `lib/service-rest.ts`; see `docs/SERVICE_ROLE.md`. |
 | Payments | 8.5 | Stripe webhook **`constructEvent`** + signing secret required. |
-| Abuse / rate limiting | 6.5 | OTP: IP + DB window limits; in-memory limits are **per instance**, not globally coordinated. |
+| Abuse / rate limiting | 7.5 | OTP: DB-backed phone windows; IP limit uses **Upstash Redis** when `UPSTASH_*` is set, else **in-memory per instance** fallback. |
 | File uploads | 7.5 | Auth required, MIME allowlist, size cap, path scoped by user id. |
 | Internal / auxiliary APIs | 8.0 | FastAPI internal routes use shared secret header; CORS allowlisted to app URL. |
 | Cron / automation | 8.0 | `Authorization: Bearer CRON_SECRET` on cron routes. |
@@ -41,7 +41,7 @@ This document describes **security controls implemented in this repository** and
 
 - **Hosting**: Next.js on Vercel — TLS is handled by the platform.
 - **Headers** (`next.config.mjs`): `Strict-Transport-Security`, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`.
-- **CSP**: `Content-Security-Policy-Report-Only` from `lib/csp.mjs` — violation reporting only; **not** enforced blocking mode yet.
+- **CSP**: Production sends **`Content-Security-Policy`** (`lib/csp.mjs`). Override with **`CSP_MODE`**: `enforce` (default), `report` (report-only), or `off`.
 - **Auth routes**: `Cache-Control: no-store` on `/auth/*`.
 
 ### 2. Application session
@@ -67,7 +67,7 @@ This document describes **security controls implemented in this repository** and
 
 ### 6. OTP & SMS
 
-- **`app/api/auth/send-otp/route.ts`**: phone validation, IP rate limiting (in-memory), DB-backed frequency limits.
+- **`app/api/auth/send-otp/route.ts`**: phone validation; IP rate limiting via **`lib/rate-limit.ts`** (Upstash when configured, else memory); DB-backed frequency limits.
 - **`app/api/auth/verify-otp/route.ts`**: verifies code, expiry, single use.
 
 ### 7. Uploads
@@ -88,10 +88,10 @@ This document describes **security controls implemented in this repository** and
 
 Prioritize based on risk (fraud volume, regulatory requirements, publicity).
 
-1. **Enforce CSP** (move from Report-Only to enforcing) after testing — reduces XSS impact.
-2. **Distributed rate limiting** (e.g. Redis / Upstash) for OTP and sensitive endpoints — memory limits don’t align across serverless instances.
+1. ~~**Enforce CSP**~~ — **Done** (production default); use `CSP_MODE=report` if diagnosing violations.
+2. ~~**Distributed rate limiting**~~ — **Optional**: configure **`UPSTASH_REDIS_REST_URL`** + **`UPSTASH_REDIS_REST_TOKEN`** (Redis-free tier via Upstash) so OTP IP limits are shared across instances.
 3. **Centralized auth middleware** or shared helper coverage audit — ensure every mutating route validates identity consistently.
-4. **Service role blast radius**: periodic review of all routes using `SUPABASE_SERVICE_ROLE_KEY`; automated tests for IDOR on listing/booking/message endpoints.
+4. **Service role blast radius**: periodic review of all routes using `SUPABASE_SERVICE_ROLE_KEY`; automated tests for IDOR on listing/booking/message endpoints. Guidelines: `docs/SERVICE_ROLE.md`.
 5. **Dependency & secret scanning** in CI (npm audit, Dependabot, trufflehog or similar).
 6. **External assessment**: annual pentest or bug bounty before large trust claims.
 
@@ -102,11 +102,11 @@ Prioritize based on risk (fraud volume, regulatory requirements, publicity).
 | Topic | Location |
 |-------|----------|
 | JWT / session | `lib/auth-server.ts`, `lib/jwt-secret.ts` |
-| Service role REST | `lib/service-rest.ts` |
-| Security headers & CSP | `next.config.mjs`, `lib/csp.mjs` |
+| Service role REST / guidelines | `lib/service-rest.ts`, `docs/SERVICE_ROLE.md` |
+| Security headers & CSP | `next.config.mjs`, `lib/csp.mjs` (`CSP_MODE`) |
 | Stripe webhook | `app/api/webhooks/stripe/route.ts` |
 | OTP send / verify | `app/api/auth/send-otp/route.ts`, `app/api/auth/verify-otp/route.ts` |
-| Rate limit helper | `lib/rate-limit-memory.ts` |
+| OTP IP rate limit | `lib/rate-limit.ts`, `lib/rate-limit-memory.ts` |
 | Listing auth | `app/api/listings/[id]/route.ts` |
 | Uploads | `app/api/upload-listing-photo/route.ts` |
 | RLS migrations | `supabase/migrations/20260422120000_row_level_security.sql`, `20260423120000_rls_public_read_listings_users.sql` |
