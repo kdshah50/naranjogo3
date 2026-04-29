@@ -44,11 +44,15 @@ const TRADE_HINTS: { re: RegExp; terms: string[] }[] = [
     re: /\b(carpentr|cabinet|woodwork|carpinter|muebles?|clóset)\b/i,
     terms: ["carpintero", "carpintería", "madera"],
   },
+  {
+    re: /\b(dog|dogs|puppy|puppies|cat|cats|pet\b|pets?|animal|walk(er|ers|ing)?\s+dog|dog\s+walk(er|ers|ing)?|petsit|pet-?sit|paseador|paseadores|paseo\s+(de\s+)?perros?|cuidado\s+de\s+mascotas)\b/i,
+    terms: ["paseador", "perros", "mascotas", "cuidado de mascotas", "paseo de mascotas"],
+  },
 ];
 
 /** Noise words when tokenizing user query for OR title search (EN + ES). */
 const QUERY_NOISE_WORDS =
-  /^(need|want|fix|help|looking|for|the|and|with|my|a|an|necesito|necesita|quiero|busco|algun|alguna|algo|por|para|con|del|de|la|las|los|un|una|unos|me|mi|mis|muy|más|este|esta|eso|hoy|ya|arreglar|reparar|instalar|cambiar)$/i;
+  /^(need|want|fix|help|looking|for|the|and|with|my|near|a|an|necesito|necesita|quiero|busco|algun|alguna|algo|por|para|con|del|de|la|las|los|un|una|unos|me|mi|mis|muy|más|este|esta|eso|hoy|ya|arreglar|reparar|instalar|cambiar)$/i;
 
 function normalizeToken(t: string): string {
   return t
@@ -66,6 +70,68 @@ function splitPhrase(s: string): string[] {
 }
 
 /**
+ * Single-word fragments excluded from ILIKE OR — otherwise `%de%`, `%la%`, `%me%`,
+ * `%near%` match unrelated Spanish titles (“de” matches almost everything).
+ */
+const SPARSE_FRAGMENT_STOPWORDS = new Set(
+  [
+    "de",
+    "del",
+    "la",
+    "las",
+    "los",
+    "el",
+    "lo",
+    "al",
+    "y",
+    "en",
+    "un",
+    "una",
+    "unos",
+    "unas",
+    "con",
+    "por",
+    "para",
+    "sin",
+    "sobre",
+    "entre",
+    "the",
+    "and",
+    "for",
+    "with",
+    "from",
+    "this",
+    "that",
+    "near",
+    "not",
+    "but",
+    "are",
+    "you",
+    "all",
+    "can",
+    "let",
+    "get",
+    "has",
+    "was",
+    "how",
+    "who",
+    "why",
+    "me",
+    "mi",
+    "tu",
+    "su",
+    "te",
+    "se",
+    "le",
+    "nos",
+    "os",
+    "my",
+    "our",
+    "your",
+  ].map((s) => normalizeToken(s))
+);
+
+/**
  * Tokens for sparse title matching: user + keyword fragments plus inferred Spanish trade terms.
  */
 export function sparseSearchTokens(userQuery: string, keywordPhrase: string): string[] {
@@ -76,6 +142,7 @@ export function sparseSearchTokens(userQuery: string, keywordPhrase: string): st
     const t = raw.trim();
     if (t.length < 2) return;
     const key = normalizeToken(t);
+    if (SPARSE_FRAGMENT_STOPWORDS.has(key)) return;
     if (seen.has(key)) return;
     seen.add(key);
     out.push(t);
