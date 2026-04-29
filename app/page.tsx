@@ -111,8 +111,7 @@ export default async function HomePage({ searchParams }: Props) {
             seller_phone_verified: isSellerPhoneVerifiedForDisplay(u),
             listing_admin_verified: Boolean(row.is_verified),
             payment_methods: row.payment_methods ?? null,
-            _dist_km: row._dist_km ?? null,
-            _mode: row._mode,
+            dist_km: typeof row._dist_km === "number" ? row._dist_km : null,
           };
         });
         if (detectedColonia && !coloniaData) {
@@ -169,9 +168,9 @@ export default async function HomePage({ searchParams }: Props) {
             seller_phone_verified: isSellerPhoneVerifiedForDisplay(u),
             listing_admin_verified: Boolean(row.is_verified),
             payment_methods: row.payment_methods ?? null,
-            _dist_km: Math.round(km * 10) / 10,
+            dist_km: Math.round(km * 10) / 10,
           };
-        }).sort((a: any, b: any) => a._dist_km - b._dist_km);
+        }).sort((a: any, b: any) => (a.dist_km ?? 0) - (b.dist_km ?? 0));
       }
     }
   } catch (e) { console.error("Search error:", e); }

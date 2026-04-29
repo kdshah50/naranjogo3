@@ -125,6 +125,23 @@ export default async function ListingPage({
             <span className="px-3 py-1 rounded-full text-xs font-medium bg-[#F4F0EB] text-[#6B7280]">{listing.location_city}</span>
           )}
         </div>
+        {isServiceListing &&
+          typeof listing.availability_summary === "string" &&
+          listing.availability_summary.trim().length > 0 && (
+            <div className="mb-6 rounded-xl border border-[#A7F3D0] bg-[#ECFDF5] px-4 py-3">
+              <p className="text-xs font-semibold text-[#065F46] mb-1">
+                {listingLang === "en" ? "Typical availability" : "Disponibilidad indicada"}
+              </p>
+              <p className="text-sm text-[#047857] whitespace-pre-line leading-relaxed">
+                {listing.availability_summary.trim()}
+              </p>
+              <p className="text-[10px] text-[#059669] mt-2 leading-snug">
+                {listingLang === "en"
+                  ? "Exact time for your visit is agreed on WhatsApp after you connect."
+                  : "La hora exacta del servicio se acuerda por WhatsApp al conectar con el proveedor."}
+              </p>
+            </div>
+          )}
         {/* WhatsApp CTA — hero button (contact gate + commission same as services) */}
         <div className="mb-6">
           <WhatsAppCTA listingId={params.id} />
@@ -188,6 +205,7 @@ export default async function ListingPage({
               listingId={params.id}
               isService={isServiceListing}
               sellerId={listing.seller_id ?? null}
+              listingLang={listingLang}
             />
           </div>
         </div>

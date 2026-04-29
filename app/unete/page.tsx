@@ -72,6 +72,10 @@ const T = {
     serviceLocation:   "¿Dónde prestas el servicio?",
     alternateServices: "Otros servicios que también ofreces",
     alternateHint:     "Opcional — elige categorías adicionales de la misma lista (distinto a tu servicio principal).",
+    availabilitySummary:   "Tu disponibilidad habitual (opcional)",
+    availabilitySummaryPh: "Ej. Lun–Sáb 9:00–18:00, domingo cerrado. O: solo con cita previa 24 h.",
+    availabilitySummaryHint:
+      "Se muestra en tu perfil público. La cita exacta siempre se confirma con el cliente por WhatsApp.",
   },
   en: {
     title:        "List your service on Naranjogo",
@@ -127,6 +131,10 @@ const T = {
     serviceLocation:   "Where do you provide the service?",
     alternateServices: "Other services you also offer",
     alternateHint:     "Optional — pick extra categories from the same list (besides your primary service).",
+    availabilitySummary:   "Your usual availability (optional)",
+    availabilitySummaryPh: "e.g. Mon–Sat 9am–6pm, Sun closed. Or: by appointment only, 24 h notice.",
+    availabilitySummaryHint:
+      "Shown on your public profile. Exact appointment time is always confirmed with the client on WhatsApp.",
   },
 };
 
@@ -147,6 +155,7 @@ export default function UnetePage() {
     provider_languages: "" as "" | "bilingual" | "spanish_only" | "english_only",
     service_location: "" as "" | "in_house" | "on_site_only",
     alternate_services: [] as string[],
+    availability_summary: "",
     payment_methods: ["efectivo", "whatsapp"] as string[],
     acceptTerms: false,
     acceptPricing: false,
@@ -379,6 +388,18 @@ export default function UnetePage() {
                 </div>
               </div>
               <div>
+                <label className="block text-xs font-semibold text-[#6B7280] mb-2">{t.availabilitySummary}</label>
+                <p className="text-xs text-[#A8A095] mb-2">{t.availabilitySummaryHint}</p>
+                <textarea
+                  value={form.availability_summary}
+                  onChange={(e) => set("availability_summary", e.target.value)}
+                  rows={2}
+                  maxLength={2000}
+                  placeholder={t.availabilitySummaryPh}
+                  className="w-full border border-[#E5E0D8] rounded-xl px-4 py-3 text-sm outline-none focus:border-[#1B4332] transition-colors resize-none"
+                />
+              </div>
+              <div>
                 <label className="block text-xs font-semibold text-[#6B7280] mb-2">{t.desc}</label>
                 <textarea value={form.description} onChange={e => set("description", e.target.value)}
                   rows={4} placeholder={t.descPh}
@@ -506,6 +527,9 @@ export default function UnetePage() {
                   [t.serviceLocation, SERVICE_LOCATION_OPTIONS.find(o => o.value === form.service_location)?.[lang] ?? "—"],
                   ...(form.alternate_services.length
                     ? [[t.alternateServices, providerServiceLabels(form.alternate_services, lang)] as [string, string]]
+                    : []),
+                  ...(form.availability_summary.trim()
+                    ? [[t.availabilitySummary, form.availability_summary.trim()] as [string, string]]
                     : []),
                   [t.price,    `$${form.price} MXN`],
                   [t.colonia,  COLONIAS_LIST.find(c => c.value === form.colonia)?.[lang] ?? form.colonia],

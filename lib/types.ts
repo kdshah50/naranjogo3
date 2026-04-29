@@ -10,6 +10,8 @@ export interface ListingCard {
   /** Optional coords for map view (from listings.location_lat/lng). */
   location_lat?: number | null;
   location_lng?: number | null;
+  /** Great-circle distance from browse/search reference (km). Mexico uses km. */
+  dist_km?: number | null;
   shipping_available: boolean;
   negotiable: boolean;
   seller_name: string;

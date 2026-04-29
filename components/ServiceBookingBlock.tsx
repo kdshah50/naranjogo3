@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { Lang } from "@/lib/i18n-lang";
 
 type BookingState = {
   isService: boolean;
@@ -42,10 +43,13 @@ export default function ServiceBookingBlock({
   listingId,
   isService,
   sellerId,
+  listingLang = "es",
 }: {
   listingId: string;
   isService: boolean;
   sellerId: string | null;
+  /** From listing page `?lang=` — affects booking note copy only. */
+  listingLang?: Lang;
 }) {
   const [meId, setMeId] = useState<string | null | undefined>(undefined);
   const [booking, setBooking] = useState<BookingState | null>(null);
@@ -200,6 +204,19 @@ export default function ServiceBookingBlock({
   const partyLabel = isService ? "proveedor" : "vendedor";
   const hasPaid = booking.hasPaidBooking;
 
+  const noteCopy =
+    listingLang === "en"
+      ? {
+          label: "Message for the provider (optional)",
+          hint: "Suggest times that work for you (e.g. weekday mornings, after 4pm). The exact time is confirmed on WhatsApp — not by this note alone.",
+          ph: "Preferred windows: e.g. Tue/Thu afternoons, or Sat before 1pm…",
+        }
+      : {
+          label: "Mensaje para el proveedor (opcional)",
+          hint: "Indica horarios o días que te funcionan (ej. mañanas, después de las 16 h). La hora exacta se confirma por WhatsApp — no solo con esta nota.",
+          ph: "Ventanas preferidas: ej. mar/jue por la tarde, o sábado antes de 13 h…",
+        };
+
   // STEP 3: Contact revealed — buyer has paid
   if (hasPaid && booking.revealedPhone) {
     const digits = booking.revealedPhone.replace(/\D/g, "");
@@ -242,6 +259,11 @@ export default function ServiceBookingBlock({
           >
             Llamar
           </a>
+          <p className="text-xs text-emerald-900/90 leading-relaxed border-t border-emerald-200/60 pt-3">
+            {listingLang === "en"
+              ? "Confirm date and time with the provider on WhatsApp. Naranjogo does not reserve the calendar for them — agreement is between you and the provider."
+              : "Confirma fecha y hora exactas con el proveedor por WhatsApp. Naranjogo no aparta la agenda del proveedor: el acuerdo es entre ustedes."}
+          </p>
         </div>
       </div>
     );
@@ -345,13 +367,18 @@ export default function ServiceBookingBlock({
             </p>
           </div>
 
-          <textarea
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            rows={2}
-            placeholder="Nota para tu reserva (opcional): fecha, hora, detalles…"
-            className="w-full rounded-xl border border-[#E5E0D8] px-3 py-2 text-sm outline-none focus:border-[#1B4332]"
-          />
+          <div>
+            <label className="block text-[11px] font-medium text-[#374151] mb-1">{noteCopy.label}</label>
+            <p className="text-[10px] text-[#6B7280] mb-2 leading-snug">{noteCopy.hint}</p>
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              rows={3}
+              maxLength={2000}
+              placeholder={noteCopy.ph}
+              className="w-full rounded-xl border border-[#E5E0D8] px-3 py-2 text-sm outline-none focus:border-[#1B4332]"
+            />
+          </div>
 
           <div className="bg-[#F4F0EB] rounded-xl p-3 flex items-center justify-between">
             <div>

@@ -72,6 +72,19 @@ export default function ListingGrid({ listings, initialLang = "es" }: Props) {
                   📍 {listing.colonia_label ?? listing.location_city}
                 </span>
               )}
+              {typeof listing.dist_km === "number" && Number.isFinite(listing.dist_km) && (
+                <span className="absolute top-2 right-2 text-[10px] font-semibold px-2 py-1 rounded-full bg-[#1B4332]/90 text-white backdrop-blur-sm">
+                  ~
+                  {listing.dist_km % 1 === 0
+                    ? String(listing.dist_km)
+                    : listing.dist_km.toLocaleString(lang === "en" ? "en-US" : "es-MX", {
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 1,
+                      })}{" "}
+                  km
+                  {lang === "en" ? " away" : ""}
+                </span>
+              )}
             </div>
 
             <div className="p-4">

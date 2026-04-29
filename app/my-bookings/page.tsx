@@ -228,6 +228,8 @@ export default function MyBookingsPage() {
           apptBefore: "Avisar antes",
           hours: "h",
           saveAppt: "Guardar aviso de cita",
+          apptDisclaimer:
+            "Este recordatorio es solo para ti: confirma con el proveedor por WhatsApp que la fecha y hora le funcionan. Naranjogo no reserva la agenda del proveedor.",
           pendingRebook: "Pendiente: volver a reservar",
           pendingAppt: "Pendiente: cita",
           cancelRem: "Cancelar",
@@ -252,6 +254,8 @@ export default function MyBookingsPage() {
           apptBefore: "Notify me before",
           hours: "h",
           saveAppt: "Save appointment nudge",
+          apptDisclaimer:
+            "This nudge is for you only: confirm with the provider on WhatsApp that the date and time work for them. Naranjogo does not hold their calendar.",
           pendingRebook: "Scheduled: rebook nudge",
           pendingAppt: "Scheduled: appointment",
           cancelRem: "Cancel",
@@ -549,6 +553,9 @@ export default function MyBookingsPage() {
                         {t.apptTitle}
                       </summary>
                       <div className="mt-2 space-y-2 pl-1">
+                        <p className="text-[10px] text-[#6B7280] leading-snug border-b border-[#E5E0D8] pb-2 mb-1">
+                          {t.apptDisclaimer}
+                        </p>
                         <div>
                           <label className="block text-[10px] text-[#6B7280] mb-0.5">{t.apptWhen}</label>
                           <input

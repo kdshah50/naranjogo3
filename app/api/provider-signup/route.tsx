@@ -74,6 +74,10 @@ export async function POST(req: NextRequest) {
       alternate_services: alternateRaw,
     } = body;
 
+    const availability_summary = String((body as { availability_summary?: string }).availability_summary ?? "")
+      .trim()
+      .slice(0, 2000);
+
     const alternate_services = sanitizeAlternateServiceSlugs(alternateRaw, String(service ?? ""));
     const langOk =
       provider_languages === "bilingual" ||
@@ -190,6 +194,7 @@ export async function POST(req: NextRequest) {
                             ? payment_methods
                             : ["efectivo", "whatsapp"],
       expires_at:         new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+      ...(availability_summary ? { availability_summary } : {}),
     };
 
     const listingRes = await fetch(`${SUPA_URL}/rest/v1/listings`, {
