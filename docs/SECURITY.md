@@ -8,12 +8,12 @@ This document describes **security controls implemented in this repository** and
 
 | Metric | Value |
 |--------|--------|
-| **Composite (1–10)** | **7.7 / 10** |
-| **Grade (informal)** | **B+ / low A-** — CSP enforced in prod; optional shared OTP limits; service-role modules gated with `server-only` |
+| **Composite (1–10)** | **7.8 / 10** |
+| **Grade (informal)** | **Low A-** — CSP enforced in prod; **Upstash-backed OTP IP limits** when `UPSTASH_*` is set in Vercel; service-role modules gated with `server-only` |
 
 ### How to read the score
 
-- **7.7** reflects layered controls including **enforcing CSP in production** (with env rollback), **optional Upstash-backed OTP IP limits**, **`server-only` gates** on service-role modules, plus remaining reliance on per-route authorization correctness.
+- **7.8** reflects layered controls including **enforcing CSP in production** (with env rollback), **distributed OTP IP limits via Upstash Redis** when env vars are set (production), **`server-only` gates** on service-role modules, plus remaining reliance on per-route authorization correctness.
 - It is **not** a certification and **not** derived from runtime scanning of production-only settings (WAF, Vercel firewall, org IAM).
 
 ### Score by area
@@ -25,7 +25,7 @@ This document describes **security controls implemented in this repository** and
 | API authorization | 7.0 | Per-route checks (`getUserIdFromRequest`), listing owner + optional admin PIN; **no single global middleware** — consistency depends on each handler. |
 | Database | 7.8 | RLS enabled; intentional narrow `anon` reads for active listings / seller subset; sensitive paths via **service role** on server only — **`server-only`** on `lib/auth-server.ts` and `lib/service-rest.ts`; see `docs/SERVICE_ROLE.md`. |
 | Payments | 8.5 | Stripe webhook **`constructEvent`** + signing secret required. |
-| Abuse / rate limiting | 7.5 | OTP: DB-backed phone windows; IP limit uses **Upstash Redis** when `UPSTASH_*` is set, else **in-memory per instance** fallback. |
+| Abuse / rate limiting | 8.0 | OTP: DB-backed phone windows; IP limit uses **Upstash Redis** when `UPSTASH_*` is configured (**shared across serverless instances**); falls back to **in-memory per instance** if unset. |
 | File uploads | 7.5 | Auth required, MIME allowlist, size cap, path scoped by user id. |
 | Internal / auxiliary APIs | 8.0 | FastAPI internal routes use shared secret header; CORS allowlisted to app URL. |
 | Cron / automation | 8.0 | `Authorization: Bearer CRON_SECRET` on cron routes. |
