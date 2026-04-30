@@ -1,6 +1,17 @@
 "use client";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ALL_COLONIA_KEYS, COLONIAS as COLONIAS_MAP } from "@/lib/colonias";
+import {
+  buildAvailabilitySummaryString,
+  defaultWeeklyAvailability,
+  HOURS_12,
+  MERIDIANS,
+  type AvailabilityMode,
+  type DayAvailability,
+  type DayMeridian,
+  type WeekdayKey,
+  WEEKDAYS,
+} from "@/lib/provider-availability";
 import {
   PROVIDER_SERVICES as SERVICES,
   PROVIDER_LANGUAGE_OPTIONS,
@@ -72,10 +83,16 @@ const T = {
     serviceLocation:   "¿Dónde prestas el servicio?",
     alternateServices: "Otros servicios que también ofreces",
     alternateHint:     "Opcional — elige categorías adicionales de la misma lista (distinto a tu servicio principal).",
-    availabilitySummary:   "Tu disponibilidad habitual (opcional)",
-    availabilitySummaryPh: "Ej. Lun–Sáb 9:00–18:00, domingo cerrado. O: solo con cita previa 24 h.",
-    availabilitySummaryHint:
+    availabilitySection:   "Disponibilidad del servicio (opcional)",
+    availabilityHint:
       "Se muestra en tu perfil público. La cita exacta siempre se confirma con el cliente por WhatsApp.",
+    availabilityOnDemand:   "Bajo demanda — el horario se coordina por WhatsApp",
+    availabilityWeekly:     "Horario recurrente por día de la semana",
+    availabilityDayClosed:  "Cerrado",
+    availabilityFrom:       "De",
+    availabilityTo:         "a",
+    availabilityNotes:      "Notas adicionales (opcional)",
+    availabilityNotesPh:    "Ej. Cierro en días festivos, avisar con 24 h de anticipación…",
   },
   en: {
     title:        "List your service on Naranjogo",
@@ -131,10 +148,16 @@ const T = {
     serviceLocation:   "Where do you provide the service?",
     alternateServices: "Other services you also offer",
     alternateHint:     "Optional — pick extra categories from the same list (besides your primary service).",
-    availabilitySummary:   "Your usual availability (optional)",
-    availabilitySummaryPh: "e.g. Mon–Sat 9am–6pm, Sun closed. Or: by appointment only, 24 h notice.",
-    availabilitySummaryHint:
+    availabilitySection:   "Service availability (optional)",
+    availabilityHint:
       "Shown on your public profile. Exact appointment time is always confirmed with the client on WhatsApp.",
+    availabilityOnDemand:   "On-demand — schedule by WhatsApp with each client",
+    availabilityWeekly:     "Weekly recurring hours by weekday",
+    availabilityDayClosed:  "Closed",
+    availabilityFrom:       "From",
+    availabilityTo:         "To",
+    availabilityNotes:      "Additional notes (optional)",
+    availabilityNotesPh:    "e.g. Closed on holidays, please give 24 h notice…",
   },
 };
 
@@ -155,7 +178,9 @@ export default function UnetePage() {
     provider_languages: "" as "" | "bilingual" | "spanish_only" | "english_only",
     service_location: "" as "" | "in_house" | "on_site_only",
     alternate_services: [] as string[],
-    availability_summary: "",
+    availability_mode: "weekly_hours" as AvailabilityMode,
+    weekly_hours: defaultWeeklyAvailability(),
+    availability_notes: "",
     payment_methods: ["efectivo", "whatsapp"] as string[],
     acceptTerms: false,
     acceptPricing: false,
@@ -163,6 +188,24 @@ export default function UnetePage() {
 
   const t = T[lang];
   const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }));
+
+  const patchWeeklyDay = (key: WeekdayKey, patch: Partial<DayAvailability>) => {
+    setForm((f) => ({
+      ...f,
+      weekly_hours: { ...f.weekly_hours, [key]: { ...f.weekly_hours[key], ...patch } },
+    }));
+  };
+
+  const availabilityComposite = useMemo(
+    () =>
+      buildAvailabilitySummaryString(
+        lang,
+        form.availability_mode,
+        form.weekly_hours,
+        form.availability_notes,
+      ).slice(0, 2000),
+    [lang, form.availability_mode, form.weekly_hours, form.availability_notes],
+  );
 
   const handleSubmit = async () => {
     if (!form.acceptTerms || !form.acceptPricing) {
@@ -172,12 +215,15 @@ export default function UnetePage() {
     setLoading(true);
     setError("");
     try {
-      const selectedService = SERVICES.find(s => s.value === form.service);
+      const selectedService = SERVICES.find((s) => s.value === form.service);
+      const { weekly_hours: _wh, availability_mode: _am, availability_notes: _an, ...signupFields } = form;
+
       const res = await fetch("/api/provider-signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...form,
+          ...signupFields,
+          availability_summary: availabilityComposite.trim(),
           service_label: selectedService?.[lang] ?? form.service,
           lang,
           accepted_terms: true,
@@ -405,16 +451,123 @@ export default function UnetePage() {
                   })}
                 </div>
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-[#6B7280] mb-2">{t.availabilitySummary}</label>
-                <p className="text-xs text-[#A8A095] mb-2">{t.availabilitySummaryHint}</p>
+              <div className="border border-[#E5E0D8] rounded-2xl p-4 bg-[#FDFCFA]">
+                <label className="block text-xs font-semibold text-[#6B7280] mb-1">{t.availabilitySection}</label>
+                <p className="text-xs text-[#A8A095] mb-3">{t.availabilityHint}</p>
+
+                <div className="flex flex-col gap-2 mb-4">
+                  <label
+                    className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${form.availability_mode === "on_demand" ? "border-[#1B4332] bg-[#ECFDF5]" : "border-[#E5E0D8] hover:border-[#1B4332]"}`}>
+                    <input
+                      type="radio"
+                      name="availability_mode"
+                      checked={form.availability_mode === "on_demand"}
+                      onChange={() => set("availability_mode", "on_demand")}
+                      className="accent-[#1B4332] mt-0.5 w-4 h-4 flex-shrink-0"
+                    />
+                    <span className="text-sm">{t.availabilityOnDemand}</span>
+                  </label>
+                  <label
+                    className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${form.availability_mode === "weekly_hours" ? "border-[#1B4332] bg-[#ECFDF5]" : "border-[#E5E0D8] hover:border-[#1B4332]"}`}>
+                    <input
+                      type="radio"
+                      name="availability_mode"
+                      checked={form.availability_mode === "weekly_hours"}
+                      onChange={() => set("availability_mode", "weekly_hours")}
+                      className="accent-[#1B4332] mt-0.5 w-4 h-4 flex-shrink-0"
+                    />
+                    <span className="text-sm">{t.availabilityWeekly}</span>
+                  </label>
+                </div>
+
+                {form.availability_mode === "weekly_hours" && (
+                  <div className="flex flex-col gap-2 max-h-[22rem] overflow-y-auto rounded-xl border border-[#E5E0D8] bg-white p-2">
+                    {WEEKDAYS.map(({ key, es, en }) => {
+                      const dayLabel = lang === "es" ? es : en;
+                      const slot = form.weekly_hours[key];
+                      return (
+                        <div
+                          key={key}
+                          className="rounded-lg px-2 py-2 border border-transparent hover:bg-[#F4F0EB] flex flex-wrap items-center gap-x-2 gap-y-2"
+                        >
+                          <span className="text-xs font-semibold text-[#1B4332] min-w-[4.75rem] sm:min-w-[5.5rem]">{dayLabel}</span>
+                          <label className="flex items-center gap-2 mr-2">
+                            <input
+                              type="checkbox"
+                              checked={slot.closed}
+                              onChange={(e) => patchWeeklyDay(key, { closed: e.target.checked })}
+                              className="accent-[#1B4332] w-3.5 h-3.5"
+                            />
+                            <span className="text-xs text-[#6B7280]">{t.availabilityDayClosed}</span>
+                          </label>
+                          <span className="text-[10px] text-[#A8A095]">{t.availabilityFrom}</span>
+                          <select
+                            disabled={slot.closed}
+                            value={slot.fromHour}
+                            onChange={(e) =>
+                              patchWeeklyDay(key, { fromHour: Number.parseInt(e.target.value, 10) })
+                            }
+                            className="border border-[#E5E0D8] rounded-lg px-1.5 py-1 text-xs bg-white outline-none focus:border-[#1B4332] disabled:opacity-45 disabled:pointer-events-none"
+                          >
+                            {HOURS_12.map((h) => (
+                              <option key={`${key}-fh-${h}`} value={h}>{h}</option>
+                            ))}
+                          </select>
+                          <select
+                            disabled={slot.closed}
+                            value={slot.fromMeridian}
+                            onChange={(e) =>
+                              patchWeeklyDay(key, {
+                                fromMeridian: e.target.value as DayMeridian,
+                              })
+                            }
+                            className="border border-[#E5E0D8] rounded-lg px-1.5 py-1 text-xs bg-white outline-none focus:border-[#1B4332] disabled:opacity-45 disabled:pointer-events-none"
+                          >
+                            {MERIDIANS.map((m) => (
+                              <option key={`${key}-fm-${m}`} value={m}>{m}</option>
+                            ))}
+                          </select>
+                          <span className="text-[10px] text-[#A8A095]">{t.availabilityTo}</span>
+                          <select
+                            disabled={slot.closed}
+                            value={slot.toHour}
+                            onChange={(e) =>
+                              patchWeeklyDay(key, { toHour: Number.parseInt(e.target.value, 10) })
+                            }
+                            className="border border-[#E5E0D8] rounded-lg px-1.5 py-1 text-xs bg-white outline-none focus:border-[#1B4332] disabled:opacity-45 disabled:pointer-events-none"
+                          >
+                            {HOURS_12.map((h) => (
+                              <option key={`${key}-th-${h}`} value={h}>{h}</option>
+                            ))}
+                          </select>
+                          <select
+                            disabled={slot.closed}
+                            value={slot.toMeridian}
+                            onChange={(e) =>
+                              patchWeeklyDay(key, {
+                                toMeridian: e.target.value as DayMeridian,
+                              })
+                            }
+                            className="border border-[#E5E0D8] rounded-lg px-1.5 py-1 text-xs bg-white outline-none focus:border-[#1B4332] disabled:opacity-45 disabled:pointer-events-none"
+                          >
+                            {MERIDIANS.map((m) => (
+                              <option key={`${key}-tm-${m}`} value={m}>{m}</option>
+                            ))}
+                          </select>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <label className="block text-xs font-semibold text-[#6B7280] mb-1 mt-4">{t.availabilityNotes}</label>
                 <textarea
-                  value={form.availability_summary}
-                  onChange={(e) => set("availability_summary", e.target.value)}
+                  value={form.availability_notes}
+                  onChange={(e) => set("availability_notes", e.target.value)}
                   rows={2}
-                  maxLength={2000}
-                  placeholder={t.availabilitySummaryPh}
-                  className="w-full border border-[#E5E0D8] rounded-xl px-4 py-3 text-sm outline-none focus:border-[#1B4332] transition-colors resize-none"
+                  maxLength={1800}
+                  placeholder={t.availabilityNotesPh}
+                  className="w-full border border-[#E5E0D8] rounded-xl px-4 py-3 text-sm outline-none focus:border-[#1B4332] transition-colors resize-none bg-white"
                 />
               </div>
               <div>
@@ -546,8 +699,8 @@ export default function UnetePage() {
                   ...(form.alternate_services.length
                     ? [[t.alternateServices, providerServiceLabels(form.alternate_services, lang)] as [string, string]]
                     : []),
-                  ...(form.availability_summary.trim()
-                    ? [[t.availabilitySummary, form.availability_summary.trim()] as [string, string]]
+                  ...(availabilityComposite.trim()
+                    ? [[t.availabilitySection, availabilityComposite.trim()] as [string, string]]
                     : []),
                   [t.price,    `$${form.price} MXN`],
                   [t.colonia,  COLONIAS_LIST.find(c => c.value === form.colonia)?.[lang] ?? form.colonia],

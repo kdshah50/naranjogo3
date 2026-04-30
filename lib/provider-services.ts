@@ -45,6 +45,9 @@ export const PROVIDER_SERVICES = [
   { value: "diseno", es: "Diseño de interiores", en: "Interior Design" },
   { value: "espanol", es: "Clases de español", en: "Spanish Lessons" },
   { value: "chef", es: "Chef a domicilio", en: "Private Chef" },
+  { value: "servicios_computo", es: "Servicios de cómputo / IT", en: "Computer / IT Services" },
+  { value: "veterinaria", es: "Servicios veterinarios", en: "Veterinary Services" },
+  { value: "transporte_app", es: "Taxi / transporte por aplicación (tipo Uber / DiDi)", en: "Taxi / ride-hailing (Uber-style)" },
   { value: "otro", es: "Otro servicio", en: "Other service" },
 ] as const;
 
