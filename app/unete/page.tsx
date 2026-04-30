@@ -185,7 +185,25 @@ export default function UnetePage() {
           accepted_at: new Date().toISOString(),
         }),
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        const text = await res.text();
+        let msg = text;
+        try {
+          const j = JSON.parse(text) as {
+            error?: string | { message?: string };
+            message?: string;
+          };
+          if (typeof j.error === "string") msg = j.error;
+          else if (j.error && typeof j.error === "object" && typeof j.error.message === "string")
+            msg = j.error.message;
+          else if (typeof j.message === "string") msg = j.message;
+        } catch {
+          /* raw text */
+        }
+        throw new Error(
+          msg || (lang === "es" ? "No se pudo enviar la solicitud." : "Couldn't submit application.")
+        );
+      }
       setDone(true);
     } catch (e: any) {
       setError(e.message);

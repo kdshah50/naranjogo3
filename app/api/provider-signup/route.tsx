@@ -207,8 +207,22 @@ export async function POST(req: NextRequest) {
     });
 
     if (!listingRes.ok) {
-      const err = await listingRes.json();
-      return NextResponse.json({ error: err }, { status: 500 });
+      let details: unknown;
+      try {
+        details = await listingRes.json();
+      } catch {
+        details = { message: await listingRes.text() };
+      }
+      const msg =
+        details &&
+        typeof details === "object" &&
+        typeof (details as { message?: string }).message === "string"
+          ? (details as { message: string }).message
+          : JSON.stringify(details);
+      console.error("[provider-signup] listing insert failed", details);
+      const status =
+        listingRes.status >= 400 && listingRes.status < 600 ? listingRes.status : 500;
+      return NextResponse.json({ error: msg, details }, { status });
     }
 
     // 3. Notify admin via WhatsApp (non-blocking)
