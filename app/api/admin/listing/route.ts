@@ -19,7 +19,12 @@ export async function POST(req: NextRequest) {
     }
 
     const id = String(body?.id ?? "");
-    const action = String(body?.action ?? "") as "approve" | "reject" | "commission" | "package";
+    const action = String(body?.action ?? "") as
+      | "approve"
+      | "reject"
+      | "commission"
+      | "package"
+      | "calendar_sync";
     if (!id || !action) {
       return NextResponse.json({ error: "id y action requeridos" }, { status: 400 });
     }
@@ -129,6 +134,27 @@ export async function POST(req: NextRequest) {
           { error: "No se actualizó ningún anuncio (id no encontrado)" },
           { status: 404 }
         );
+      }
+      return NextResponse.json({ ok: true });
+    }
+
+    if (action === "calendar_sync") {
+      const raw = body?.calendar_sync_enabled;
+      if (typeof raw !== "boolean") {
+        return NextResponse.json({ error: "calendar_sync_enabled debe ser true o false" }, { status: 400 });
+      }
+      const { data, error } = await supabase
+        .from("listings")
+        .update({ calendar_sync_enabled: raw })
+        .eq("id", id.trim())
+        .select("id");
+
+      if (error) {
+        console.error("[admin/listing] calendar_sync", error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+      if (!data?.length) {
+        return NextResponse.json({ error: "No se encontró el anuncio" }, { status: 404 });
       }
       return NextResponse.json({ ok: true });
     }

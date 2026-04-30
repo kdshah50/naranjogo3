@@ -44,12 +44,15 @@ export default function ServiceBookingBlock({
   isService,
   sellerId,
   listingLang = "es",
+  liveAvailability,
 }: {
   listingId: string;
   isService: boolean;
   sellerId: string | null;
   /** From listing page `?lang=` — affects booking note copy only. */
   listingLang?: Lang;
+  /** When the listing shows synced / live openings (informational; flow unchanged). */
+  liveAvailability?: { syncEnabled: boolean; upcomingSlotCount: number };
 }) {
   const [meId, setMeId] = useState<string | null | undefined>(undefined);
   const [booking, setBooking] = useState<BookingState | null>(null);
@@ -204,16 +207,33 @@ export default function ServiceBookingBlock({
   const partyLabel = isService ? "proveedor" : "vendedor";
   const hasPaid = booking.hasPaidBooking;
 
+  const liveHintEn =
+    liveAvailability?.syncEnabled && (liveAvailability.upcomingSlotCount ?? 0) > 0
+      ? " You can reference a time from the live openings above; the provider still confirms on WhatsApp."
+      : liveAvailability?.syncEnabled
+        ? " This provider syncs their office calendar here; new openings appear when their agenda updates."
+        : "";
+  const liveHintEs =
+    liveAvailability?.syncEnabled && (liveAvailability.upcomingSlotCount ?? 0) > 0
+      ? " Puedes citar un horario de los espacios en azul arriba; el proveedor confirma por WhatsApp."
+      : liveAvailability?.syncEnabled
+        ? " Este proveedor sincroniza su agenda en la app; los espacios se actualizan cuando cambia su calendario."
+        : "";
+
   const noteCopy =
     listingLang === "en"
       ? {
           label: "Message for the provider (optional)",
-          hint: "Suggest times that work for you (e.g. weekday mornings, after 4pm). The exact time is confirmed on WhatsApp — not by this note alone.",
+          hint:
+            "Suggest times that work for you (e.g. weekday mornings, after 4pm). The exact time is confirmed on WhatsApp — not by this note alone." +
+            liveHintEn,
           ph: "Preferred windows: e.g. Tue/Thu afternoons, or Sat before 1pm…",
         }
       : {
           label: "Mensaje para el proveedor (opcional)",
-          hint: "Indica horarios o días que te funcionan (ej. mañanas, después de las 16 h). La hora exacta se confirma por WhatsApp — no solo con esta nota.",
+          hint:
+            "Indica horarios o días que te funcionan (ej. mañanas, después de las 16 h). La hora exacta se confirma por WhatsApp — no solo con esta nota." +
+            liveHintEs,
           ph: "Ventanas preferidas: ej. mar/jue por la tarde, o sábado antes de 13 h…",
         };
 

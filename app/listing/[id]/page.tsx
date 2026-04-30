@@ -16,6 +16,8 @@ import { SellerVerificationBadges } from "@/components/SellerVerificationBadges"
 import { embeddedSellerRow, verificationPropsFromSellerRow } from "@/lib/seller-trust-display";
 import { langFromParam } from "@/lib/i18n-lang";
 import ListingPhotoGallery from "@/components/ListingPhotoGallery";
+import ListingLiveAvailability from "@/components/ListingLiveAvailability";
+import { fetchLiveSlotsViaRest } from "@/lib/live-availability";
 
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
   const supaUrl = getSupabaseUrl();
@@ -88,6 +90,14 @@ export default async function ListingPage({
   const price = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 0 }).format(listing.price_mxn / 100);
   const isServiceListing = isServicesListing(listing);
   const listingLang = langFromParam(searchParams?.lang);
+  const calendarSyncEnabled = Boolean(
+    (listing as { calendar_sync_enabled?: boolean }).calendar_sync_enabled
+  );
+  const calendarLastSyncedAt =
+    (listing as { calendar_last_synced_at?: string | null }).calendar_last_synced_at ?? null;
+  const liveSlots = isServiceListing
+    ? await fetchLiveSlotsViaRest(supaUrl, h, params.id)
+    : [];
   const sellerTrust = verificationPropsFromSellerRow(
     listing.users as Parameters<typeof verificationPropsFromSellerRow>[0]
   );
@@ -142,6 +152,14 @@ export default async function ListingPage({
               </p>
             </div>
           )}
+        {isServiceListing && (
+          <ListingLiveAvailability
+            lang={listingLang}
+            syncEnabled={calendarSyncEnabled}
+            lastSyncedAt={calendarLastSyncedAt}
+            slots={liveSlots}
+          />
+        )}
         {/* WhatsApp CTA — hero button (contact gate + commission same as services) */}
         <div className="mb-6">
           <WhatsAppCTA listingId={params.id} />
@@ -206,6 +224,14 @@ export default async function ListingPage({
               isService={isServiceListing}
               sellerId={listing.seller_id ?? null}
               listingLang={listingLang}
+              liveAvailability={
+                isServiceListing
+                  ? {
+                      syncEnabled: calendarSyncEnabled,
+                      upcomingSlotCount: liveSlots.length,
+                    }
+                  : undefined
+              }
             />
           </div>
         </div>

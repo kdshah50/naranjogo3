@@ -15,6 +15,8 @@ type Listing = {
   package_session_count?: number | null;
   package_total_price_mxn?: number | null;
   created_at: string;
+  calendar_sync_enabled?: boolean | null;
+  calendar_last_synced_at?: string | null;
   users: { display_name: string; phone: string } | null;
 };
 
@@ -384,6 +386,19 @@ export default function AdminPage() {
       await load();
     } catch (e: any) {
       showMsg(e?.message ?? "No se pudo actualizar la comisión", true);
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const setCalendarSync = async (id: string, enabled: boolean) => {
+    setSaving(id);
+    try {
+      await postAdmin({ id, action: "calendar_sync", calendar_sync_enabled: enabled });
+      showMsg(enabled ? "✅ Live calendar sync ON" : "✅ Live calendar sync OFF");
+      await load();
+    } catch (e: unknown) {
+      showMsg(e instanceof Error ? e.message : "No se pudo actualizar", true);
     } finally {
       setSaving(null);
     }
@@ -977,6 +992,38 @@ export default function AdminPage() {
                     Platform fee uses % commission on this total. Leave both fields empty for single-visit list price only.
                   </p>
                 </div>
+
+                {String(l.category_id ?? "").toLowerCase() === "services" && l.is_verified && (
+                  <div className="mb-4 p-3 rounded-xl bg-sky-50/90 border border-sky-200/80">
+                    <label className="flex items-start gap-3 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        className="mt-1 rounded border-sky-300 text-sky-700 focus:ring-sky-500"
+                        checked={Boolean(l.calendar_sync_enabled)}
+                        onChange={(e) => void setCalendarSync(l.id, e.target.checked)}
+                        disabled={saving === l.id}
+                      />
+                      <span>
+                        <span className="text-sm font-semibold text-sky-950">Live calendar sync</span>
+                        <span className="block text-[11px] text-sky-900 mt-0.5 leading-snug">
+                          Shows the blue “live openings” block on the public listing when enabled. Populate{" "}
+                          <code className="text-[10px] bg-white/80 px-1 rounded">listing_live_availability_slots</code> via your
+                          sync job; set <code className="text-[10px] bg-white/80 px-1 rounded">calendar_last_synced_at</code> in
+                          SQL or the job.
+                        </span>
+                        {l.calendar_last_synced_at && (
+                          <span className="block text-[10px] text-sky-800 mt-1">
+                            Last synced:{" "}
+                            {new Date(l.calendar_last_synced_at).toLocaleString("es-MX", {
+                              dateStyle: "short",
+                              timeStyle: "short",
+                            })}
+                          </span>
+                        )}
+                      </span>
+                    </label>
+                  </div>
+                )}
 
                 {/* Commission + Actions */}
                 <div className="flex flex-wrap gap-3 items-center">

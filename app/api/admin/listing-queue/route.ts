@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
   let q = supabase
     .from("listings")
     .select(
-      "id,title_es,description_es,price_mxn,category_id,is_verified,status,location_city,commission_pct,package_session_count,package_total_price_mxn,created_at,users!fk_listings_seller(display_name,phone)"
+      "id,title_es,description_es,price_mxn,category_id,is_verified,status,location_city,commission_pct,package_session_count,package_total_price_mxn,calendar_sync_enabled,calendar_last_synced_at,created_at,users!fk_listings_seller(display_name,phone)"
     )
     .order("created_at", { ascending: false })
     .limit(50);
