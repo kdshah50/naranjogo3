@@ -21,6 +21,7 @@ ALTER TABLE public.users
 COMMENT ON COLUMN public.users.provider_rank_multiplier IS
   'Search visibility (default 1). Lower e.g. 0.55 to soft-penalize platform bypass; restore to 1 when resolved.';
 
+-- users.id is uuid: do not use trim(lower(u.id)); join with u.id::text = l.seller_id::text.
 CREATE OR REPLACE FUNCTION public.get_listing_rank_multipliers(p_listing_ids text[])
 RETURNS jsonb
 LANGUAGE sql

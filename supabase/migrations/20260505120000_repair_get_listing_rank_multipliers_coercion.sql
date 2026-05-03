@@ -1,4 +1,5 @@
 -- Repair get_listing_rank_multipliers when mixed uuid/text columns caused errors (e.g. uuid = text).
+-- Also fixes: ERROR function pg_catalog.btrim(uuid) does not exist (never trim(users.id); cast id::text).
 -- Safe to run after 20260504100000; idempotent CREATE OR REPLACE.
 -- Resolves: users.id vs listings.seller_id join; listing_messages.sender_id vs conversation buyer/seller.
 
