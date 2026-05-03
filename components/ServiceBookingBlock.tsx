@@ -23,6 +23,8 @@ type BookingState = {
   hasPackage?: boolean;
   packageSessionCount?: number | null;
   packageTotalMxnCents?: number | null;
+  packageSavingsPctApprox?: number | null;
+  packageSavingsMxnCents?: number | null;
 };
 
 function formatMXN(cents: number): string {
@@ -60,7 +62,15 @@ export default function ServiceBookingBlock({
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
-  const [loyaltyHint, setLoyaltyHint] = useState<{ bookingsUntil: number; discountPct: number } | null>(null);
+  const [loyaltyHint, setLoyaltyHint] = useState<{
+    bookingsUntil: number;
+    discountPct: number;
+    rebookDiscount?: boolean;
+    milestoneDiscount?: boolean;
+    rebookDiscountPct?: number;
+    milestoneDiscountPct?: number;
+    everyN?: number;
+  } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const prevContacted = useRef(false);
 
@@ -87,6 +97,11 @@ export default function ServiceBookingBlock({
           setLoyaltyHint({
             bookingsUntil: d.reward.bookingsUntilReward,
             discountPct: d.reward.discountPct,
+            rebookDiscount: d.reward.rebookDiscount,
+            milestoneDiscount: d.reward.milestoneDiscount,
+            rebookDiscountPct: d.reward.rebookDiscountPct,
+            milestoneDiscountPct: d.reward.milestoneDiscountPct,
+            everyN: d.reward.everyN,
           });
         }
       })
@@ -260,6 +275,13 @@ export default function ServiceBookingBlock({
               ? "Ya pagaste la tarifa de servicio. Aquí está el contacto del proveedor:"
               : "Ya pagaste la tarifa de conexión. Aquí está el contacto del vendedor:"}
           </p>
+          {booking.hasPackage && booking.packageSessionCount != null && booking.packageSessionCount >= 2 && (
+            <p className="text-xs text-emerald-900 font-medium bg-white/60 rounded-lg px-2 py-1.5 border border-emerald-200/80">
+              {listingLang === "en"
+                ? `This payment covers your ${booking.packageSessionCount}-visit plan. Schedule each visit on WhatsApp—your next rebook on Naranjogo can unlock loyalty discounts.`
+                : `Este pago cubre tu plan de ${booking.packageSessionCount} visitas. Agenda cada cita por WhatsApp; tu próxima reserva en Naranjogo puede sumar descuentos por lealtad.`}
+            </p>
+          )}
           <div className="bg-white rounded-xl p-3 border border-emerald-200">
             <p className="text-xs text-[#6B7280] mb-1">Teléfono / WhatsApp</p>
             <p className="text-lg font-bold text-[#1C1917] tracking-wide">{displayPhone}</p>
@@ -296,32 +318,57 @@ export default function ServiceBookingBlock({
       <div className="px-4 py-3 border-b border-[#E5E0D8] bg-[#F4F0EB]">
         <h3 className="text-sm font-bold text-[#1C1917]">{isService ? "Reservar servicio" : "Comprar / contactar"}</h3>
         {booking.hasPackage && booking.packageSessionCount && booking.packageTotalMxnCents != null && (
-          <div className="mt-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-950">
-            <strong>Plan aprobado (Naranjogo):</strong> {booking.packageSessionCount} sesiones por{" "}
-            {formatMXN(booking.packageTotalMxnCents)} en total. La tarifa de plataforma abajo se calcula sobre este
-            monto acordado con el proveedor.
+          <div className="mt-2 rounded-xl bg-gradient-to-br from-amber-50 to-orange-50/90 border-2 border-amber-200 px-3 py-3 text-xs text-amber-950 space-y-2">
+            <p className="font-bold text-sm">
+              {listingLang === "en"
+                ? `Multi-visit plan: ${booking.packageSessionCount} sessions`
+                : `Plan de ${booking.packageSessionCount} visitas`}
+            </p>
+            <p>
+              <strong>{listingLang === "en" ? "Total for the plan:" : "Total del plan:"}</strong>{" "}
+              {formatMXN(booking.packageTotalMxnCents)}{" "}
+              {listingLang === "en"
+                ? "— platform fee below is calculated on this agreed amount (one payment unlocks the whole plan)."
+                : "— la tarifa de plataforma abajo se calcula sobre este monto (un solo pago desbloquea todo el plan)."}
+            </p>
+            {booking.packageSavingsPctApprox != null && booking.packageSavingsPctApprox > 0 && (
+              <p className="text-emerald-800 font-semibold">
+                {listingLang === "en"
+                  ? `~${booking.packageSavingsPctApprox}% less than paying ${booking.packageSessionCount} visits at the list price.`
+                  : `~${booking.packageSavingsPctApprox}% menos que pagar ${booking.packageSessionCount} visitas al precio del anuncio.`}
+              </p>
+            )}
+            <p className="text-amber-900/95 text-[11px] leading-relaxed border-t border-amber-200/80 pt-2">
+              {listingLang === "en"
+                ? "Schedule each visit on WhatsApp with your provider. Rebook follow-ups through Naranjogo to keep discounts and guarantee coverage—stays on-platform."
+                : "Coordina cada cita por WhatsApp. Para seguimiento y nuevas reservas, usa Naranjogo: ahí aplican tus descuentos por lealtad y la garantía (te encaja si sueles ir varias veces al mes)."}
+            </p>
           </div>
         )}
         <p className="text-xs text-[#6B7280] mt-1">
           {booking.hasPackage ? (
-            <span>
-              El precio publicado en el anuncio es referencia. Pagas la{" "}
-              <strong>tarifa de plataforma</strong> (comisión, mín. $10 MXN) calculada sobre el total del plan aprobado, para
-              desbloquear el WhatsApp del proveedor.
-            </span>
+            listingLang === "en" ? (
+              <>
+                One <strong>platform fee</strong> covers all <strong>{booking.packageSessionCount} visits</strong> in the
+                approved plan (commission on the plan total, min. $10 MXN). Stay on Naranjogo for loyalty, guarantee, and
+                follow-up bookings—like a multi-visit or monthly rhythm without paying list price each time.
+              </>
+            ) : (
+              <>
+                Una sola <strong>tarifa de plataforma</strong> cubre las{" "}
+                <strong>{booking.packageSessionCount} visitas</strong> del plan aprobado (comisión sobre el total del plan,
+                mín. $10 MXN). Sigue en Naranjogo: lealtad, garantía y re-reservas — ideal si vas varias veces al mes.
+              </>
+            )
+          ) : isService ? (
+            <>
+              El precio del anuncio lo acuerdas con el proveedor. Aquí solo pagas la{" "}
+              <strong>tarifa de la plataforma</strong> (~comisión; mín. $10 MXN por Stripe) para desbloquear su WhatsApp.
+            </>
           ) : (
             <>
-              {isService ? (
-                <>
-                  El precio del anuncio lo acuerdas con el proveedor. Aquí solo pagas la{" "}
-                  <strong>tarifa de la plataforma</strong> (~comisión; mín. $10 MXN por Stripe) para desbloquear su WhatsApp.
-                </>
-              ) : (
-                <>
-                  El precio del artículo lo acuerdas con el vendedor (o pagas fuera de la app). Aquí solo pagas la{" "}
-                  <strong>tarifa de conexión</strong> de Naranjogo (comisión; mín. $10 MXN) para desbloquear su WhatsApp.
-                </>
-              )}
+              El precio del artículo lo acuerdas con el vendedor (o pagas fuera de la app). Aquí solo pagas la{" "}
+              <strong>tarifa de conexión</strong> de Naranjogo (comisión; mín. $10 MXN) para desbloquear su WhatsApp.
             </>
           )}
         </p>
@@ -342,14 +389,20 @@ export default function ServiceBookingBlock({
             {hasPaid ? "✓" : "2"}
           </span>
           <span>
-            Paga la tarifa {isService ? "de servicio" : "de conexión"} ({formatMXN(booking.commissionAmountCents)})
+            {booking.hasPackage
+              ? `Paga una tarifa para todo el plan (${formatMXN(booking.commissionAmountCents)})`
+              : `Paga la tarifa ${isService ? "de servicio" : "de conexión"} (${formatMXN(booking.commissionAmountCents)})`}
           </span>
         </div>
         <div className="flex items-center gap-2">
           <span className={hasPaid ? "text-emerald-600 font-bold" : "text-[#9CA3AF]"}>
             {hasPaid ? "✓" : "3"}
           </span>
-          <span>Recibe el contacto directo (WhatsApp / teléfono)</span>
+          <span>
+            {booking.hasPackage && booking.packageSessionCount
+              ? `WhatsApp del proveedor para las ${booking.packageSessionCount} visitas`
+              : "Recibe el contacto directo (WhatsApp / teléfono)"}
+          </span>
         </div>
       </div>
 
@@ -425,18 +478,35 @@ export default function ServiceBookingBlock({
             Pago seguro con Stripe. Al pagar recibirás el WhatsApp/teléfono del {partyLabel}.
           </p>
 
-          {loyaltyHint && (
-            <div className="bg-gradient-to-r from-[#1B4332] to-[#2D6A4F] rounded-xl p-3 text-center">
-              {loyaltyHint.bookingsUntil === 0 ? (
+          {loyaltyHint && loyaltyHint.discountPct > 0 && (
+            <div className="bg-gradient-to-r from-[#1B4332] to-[#2D6A4F] rounded-xl p-3 text-center space-y-1">
+              {loyaltyHint.milestoneDiscount && loyaltyHint.bookingsUntil === 0 ? (
                 <p className="text-xs font-semibold text-white">
-                  🎉 ¡Esta reserva tiene {loyaltyHint.discountPct}% de descuento por tu lealtad!
+                  🎉 ¡Esta reserva incluye {loyaltyHint.discountPct}% de descuento en la tarifa (lealtad)!
+                </p>
+              ) : loyaltyHint.rebookDiscount ? (
+                <p className="text-xs font-semibold text-white">
+                  ⭐ {loyaltyHint.discountPct}% de descuento por volver a reservar en Naranjogo (solo en la app).
                 </p>
               ) : (
-                <p className="text-xs text-white/90">
-                  ⭐ {loyaltyHint.bookingsUntil} reserva{loyaltyHint.bookingsUntil !== 1 ? "s" : ""} más
-                  para obtener {loyaltyHint.discountPct}% de descuento
+                <p className="text-xs font-semibold text-white">
+                  🎉 ¡Esta reserva tiene {loyaltyHint.discountPct}% de descuento!
                 </p>
               )}
+              {!loyaltyHint.milestoneDiscount && (
+                <p className="text-[10px] text-white/85 leading-snug">
+                  A {loyaltyHint.bookingsUntil} reserva{loyaltyHint.bookingsUntil !== 1 ? "s" : ""} del
+                  bonus {loyaltyHint.milestoneDiscountPct ?? 15}% (cada {loyaltyHint.everyN ?? 5} reservas pagadas).
+                </p>
+              )}
+            </div>
+          )}
+          {loyaltyHint && loyaltyHint.discountPct === 0 && loyaltyHint.bookingsUntil > 0 && (
+            <div className="bg-gradient-to-r from-[#1B4332]/90 to-[#2D6A4F]/90 rounded-xl p-3 text-center">
+              <p className="text-xs text-white/90">
+                ⭐ {loyaltyHint.bookingsUntil} reserva{loyaltyHint.bookingsUntil !== 1 ? "s" : ""} más para{" "}
+                {loyaltyHint.milestoneDiscountPct ?? 15}% en la tarifa (lealtad).
+              </p>
             </div>
           )}
         </div>

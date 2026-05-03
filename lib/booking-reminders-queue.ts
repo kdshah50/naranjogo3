@@ -1,6 +1,10 @@
 import { createAdminSupabase } from "@/lib/auth-server";
 import { getPublicAppUrl } from "@/lib/app-url";
 import { sendReminderEmail } from "@/lib/reminder-email";
+import {
+  buildAppointmentReminderMessageEs,
+  buildRebookReminderMessageEs,
+} from "@/lib/retention-copy";
 import { sendWhatsApp } from "@/lib/twilio";
 
 const MAX_ATTEMPTS = 5;
@@ -19,6 +23,8 @@ type ReminderRow = {
   buyer_id: string;
   listing_id: string;
   reminder_kind: string;
+  offset_days: number | null;
+  appointment_at: string | null;
   notify_whatsapp: boolean | null;
   notify_email: boolean | null;
   delivery_email: string | null;
@@ -42,7 +48,7 @@ export async function processDueBookingReminders(limit = 35): Promise<{
   const { data: rows, error: qErr } = await supabase
     .from("booking_reminders")
     .select(
-      "id,booking_id,buyer_id,listing_id,reminder_kind,notify_whatsapp,notify_email,delivery_email,attempt_count",
+      "id,booking_id,buyer_id,listing_id,reminder_kind,offset_days,appointment_at,notify_whatsapp,notify_email,delivery_email,attempt_count",
     )
     .eq("status", "pending")
     .lte("remind_at", now)
@@ -70,7 +76,7 @@ export async function processDueBookingReminders(limit = 35): Promise<{
 
     const { data: listing } = await supabase
       .from("listings")
-      .select("title_es")
+      .select("title_es,location_city")
       .eq("id", row.listing_id)
       .maybeSingle();
 
@@ -81,14 +87,27 @@ export async function processDueBookingReminders(limit = 35): Promise<{
       .maybeSingle();
 
     const title = listing?.title_es ?? "tu servicio";
+    const city = listing?.location_city ?? null;
     const link = `${appUrl}/listing/${row.listing_id}`;
     const name = buyer?.display_name?.trim();
     const hello = name ? `Hola ${name}` : "Hola";
 
     const msgEs =
       row.reminder_kind === "appointment"
-        ? `${hello}: te recordamos tu próxima cita relacionada con «${title}». Abre Naranjogo: ${link}`
-        : `${hello}: es un buen momento para volver a reservar «${title}». Abre el anuncio: ${link}`;
+        ? buildAppointmentReminderMessageEs({
+            hello,
+            title,
+            link,
+            city,
+            appointmentAt: row.appointment_at,
+          })
+        : buildRebookReminderMessageEs({
+            hello,
+            title,
+            link,
+            city,
+            offsetDays: row.offset_days,
+          });
 
     let anyOk = false;
 

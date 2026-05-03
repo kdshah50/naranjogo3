@@ -14,7 +14,10 @@ export async function sendWhatsApp(to: string, message: string): Promise<boolean
   const sid = TWILIO_SID();
   const token = TWILIO_TOKEN();
   const from = TWILIO_FROM();
-  if (!sid || !token || !from || !to) return false;
+  if (!sid || !token || !from || !to) {
+    console.error("[twilio] missing TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM, or empty recipient");
+    return false;
+  }
 
   try {
     const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {

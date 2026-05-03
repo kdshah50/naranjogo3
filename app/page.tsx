@@ -3,6 +3,7 @@ import ListingBrowseSection from "@/components/listings/ListingBrowseSection";
 import Hero from "@/components/Hero";
 import CategoryBar from "@/components/CategoryBar";
 import TrustBar from "@/components/TrustBar";
+import RetentionHomeBanner from "@/components/RetentionHomeBanner";
 import { HomeListHeading } from "@/components/home/HomeListHeading";
 import { COLONIAS, COLONIA_RADIUS_KM, nearestColonia, coloniaLabel } from "@/lib/colonias";
 import { getPublicAppUrl } from "@/lib/app-url";
@@ -180,6 +181,7 @@ export default async function HomePage({ searchParams }: Props) {
   return (
     <main className="min-h-screen bg-[#FDF8F1]">
       <Hero initialQuery={query} />
+      <RetentionHomeBanner lang={initialLang} />
       <CategoryBar />
       <section className="max-w-5xl mx-auto px-4 py-10">
         <Suspense

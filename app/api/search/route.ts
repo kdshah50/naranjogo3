@@ -8,6 +8,8 @@ import {
   type ParsedQueryFilters,
 } from "@/lib/search-query-parse";
 import { sparseSearchTokens } from "@/lib/search-trade-hints";
+import { createAdminSupabase } from "@/lib/auth-server";
+import { fetchListingRankMultipliers } from "@/lib/listing-rank";
 
 /**
  * Hybrid retrieval (what is / isn’t implemented here):
@@ -22,6 +24,7 @@ import { sparseSearchTokens } from "@/lib/search-trade-hints";
  * | Availability | No          | “Urgent/today” ignored for price; no calendar/slots filter in search. |
  * | Buyer intent | Partial     | LLM + regex keyword/semantic; trade hints for EN/ES → Spanish titles. |
  * | Seller SEO   | Partial     | Embeddings from listing text in DB; no BM25 index or guided copy API here. |
+ * | Provider rank| Yes         | `get_listing_rank_multipliers`: in-app response time, booking completion/cancel, repeat buyers, reviews, × `users.provider_rank_multiplier` (admin bypass penalty). |
  */
 const OPENAI_KEY = process.env.OPENAI_API_KEY ?? "";
 const SMA_ZIP = "37745";
@@ -309,6 +312,26 @@ export async function GET(req: NextRequest) {
 
   fused = fused.filter((l) => listingMatchesPriceFilters(l.price_mxn, effective));
 
+  let rankMul: Record<string, number> = {};
+  try {
+    const supabase = createAdminSupabase();
+    rankMul = await fetchListingRankMultipliers(
+      supabase,
+      fused.map((l) => String(l.id)),
+    );
+  } catch (e) {
+    console.error("[search] listing rank multipliers", e);
+  }
+
+  fused = fused.map((l) => {
+    const m = rankMul[String(l.id)] ?? 1;
+    return {
+      ...l,
+      _rank_multiplier: Math.round(m * 10000) / 10000,
+      _score: Math.round(l._score * m * 10000) / 10000,
+    };
+  });
+
   const results = fused
     .sort((a, b) => b._score - a._score)
     .slice(0, 24);
@@ -323,6 +346,8 @@ export async function GET(req: NextRequest) {
     denseFilter: denseFilterDebug,
     bestSimMargin: BEST_SIM_MARGIN,
     relFactor: REL_FACTOR,
+    rankNote:
+      "Fused _score × get_listing_rank_multipliers (response, completion, cancel, repeat buyers, reviews, provider_rank_multiplier).",
     /** Set by Vercel at build time — use to confirm this deployment matches Git. */
     vercelGitSha: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
     vercelDeploymentId: process.env.VERCEL_DEPLOYMENT_ID ?? null,

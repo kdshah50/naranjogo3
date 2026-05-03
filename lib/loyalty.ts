@@ -3,9 +3,12 @@ import { SupabaseClient } from "@supabase/supabase-js";
 // 1 point per $1 MXN of commission paid
 export const POINTS_PER_MXN = 1;
 
-// Every 5th booking = 15% discount
+// Every 5th booking = 15% discount on platform fee
 export const REWARD_EVERY_N_BOOKINGS = 5;
 export const REWARD_DISCOUNT_PCT = 15;
+
+/** Repeat bookers (2nd+ paid booking on platform): smaller discount — behavioral lock-in */
+export const REBOOK_DISCOUNT_PCT = 7;
 
 // Minimum points to redeem (prevents tiny redemptions)
 export const MIN_POINTS_TO_REDEEM = 10;
@@ -72,7 +75,13 @@ export async function awardPoints(
 export async function getNextBookingDiscount(
   supabase: SupabaseClient,
   userId: string,
-): Promise<{ discountPct: number; bookingCount: number; bookingsUntilReward: number }> {
+): Promise<{
+  discountPct: number;
+  bookingCount: number;
+  bookingsUntilReward: number;
+  rebookDiscount: boolean;
+  milestoneDiscount: boolean;
+}> {
   const { data } = await supabase
     .from("loyalty_accounts")
     .select("booking_count")
@@ -83,13 +92,25 @@ export async function getNextBookingDiscount(
   const nextMilestone = Math.ceil((count + 1) / REWARD_EVERY_N_BOOKINGS) * REWARD_EVERY_N_BOOKINGS;
   const bookingsUntilReward = nextMilestone - count;
 
-  // The Nth booking itself gets the discount
-  const qualifies = (count + 1) % REWARD_EVERY_N_BOOKINGS === 0 && count > 0;
+  const milestoneQualifies = (count + 1) % REWARD_EVERY_N_BOOKINGS === 0 && count > 0;
+  let discountPct = 0;
+  let rebookDiscount = false;
+  let milestoneDiscount = false;
+
+  if (milestoneQualifies) {
+    discountPct = REWARD_DISCOUNT_PCT;
+    milestoneDiscount = true;
+  } else if (count >= 1) {
+    discountPct = REBOOK_DISCOUNT_PCT;
+    rebookDiscount = true;
+  }
 
   return {
-    discountPct: qualifies ? REWARD_DISCOUNT_PCT : 0,
+    discountPct,
     bookingCount: count,
-    bookingsUntilReward: qualifies ? 0 : bookingsUntilReward,
+    bookingsUntilReward: milestoneQualifies ? 0 : bookingsUntilReward,
+    rebookDiscount,
+    milestoneDiscount,
   };
 }
 
@@ -101,6 +122,7 @@ export async function redeemDiscount(
   userId: string,
   bookingId: string,
   discountCents: number,
+  discountPctApplied = REWARD_DISCOUNT_PCT,
 ): Promise<void> {
   const points = commissionCentsToPoints(discountCents);
   if (points <= 0) return;
@@ -128,6 +150,6 @@ export async function redeemDiscount(
       booking_id: bookingId,
       type: "redeem",
       points: -points,
-      description: `-${points} pts canjeados (descuento ${REWARD_DISCOUNT_PCT}%)`,
+      description: `-${points} pts canjeados (descuento ${discountPctApplied}%)`,
     });
 }

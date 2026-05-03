@@ -197,7 +197,7 @@ export async function POST(req: NextRequest) {
     // Log loyalty discount redemption if applicable
     if (loyaltyDiscount > 0) {
       try {
-        await redeemDiscount(supabase, userId, booking.id, loyaltyDiscount);
+        await redeemDiscount(supabase, userId, booking.id, loyaltyDiscount, loyaltyDiscountPct);
       } catch (loyaltyErr) {
         console.error("[checkout] loyalty redeem failed (non-fatal)", loyaltyErr);
       }

@@ -18,6 +18,12 @@ import { langFromParam } from "@/lib/i18n-lang";
 import ListingPhotoGallery from "@/components/ListingPhotoGallery";
 import ListingLiveAvailability from "@/components/ListingLiveAvailability";
 import { fetchLiveSlotsViaRest } from "@/lib/live-availability";
+import { listingHasActivePackage, packageVsListSavings } from "@/lib/package-pricing";
+import { createAdminSupabase } from "@/lib/auth-server";
+import { getSellerPlatformJobStats } from "@/lib/seller-platform-stats";
+import { parseBeforeAfterPhotoUrls } from "@/lib/provider-trust";
+import ListingTrustStrip from "@/components/ListingTrustStrip";
+import ListingBeforeAfterSection from "@/components/ListingBeforeAfterSection";
 
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
   const supaUrl = getSupabaseUrl();
@@ -102,6 +108,38 @@ export default async function ListingPage({
     listing.users as Parameters<typeof verificationPropsFromSellerRow>[0]
   );
 
+  const listingAsPkg = listing as {
+    package_session_count?: number | null;
+    package_total_price_mxn?: number | null;
+    price_mxn?: number;
+  };
+  const packagePromoActive = isServiceListing && listingHasActivePackage(listingAsPkg);
+  const packageSavings = packagePromoActive
+    ? packageVsListSavings({
+        price_mxn: Number(listingAsPkg.price_mxn) || 0,
+        package_session_count: listingAsPkg.package_session_count,
+        package_total_price_mxn: listingAsPkg.package_total_price_mxn,
+      })
+    : null;
+
+  const beforeAfterPairs = parseBeforeAfterPhotoUrls(
+    (listing as { before_after_photo_urls?: unknown }).before_after_photo_urls
+  );
+
+  let platformJobStats = {
+    sellerCompletedPaid: 0,
+    listingCompletedPaid: 0,
+    sellerPaidBookings: 0,
+  };
+  if (isServiceListing && sellerId) {
+    try {
+      const supabase = createAdminSupabase();
+      platformJobStats = await getSellerPlatformJobStats(supabase, String(sellerId), String(params.id));
+    } catch (e) {
+      console.error("[listing] platform stats", e);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-[#FDF8F1]">
       <div className="max-w-3xl mx-auto px-4 py-8">
@@ -117,14 +155,54 @@ export default async function ListingPage({
           <h1 className="text-xl font-semibold text-[#1C1917] flex-1 min-w-0">{listing.title_es}</h1>
           <FavoriteButton listingId={params.id} />
         </div>
-        {isServiceListing && listing.package_session_count >= 2 && listing.package_total_price_mxn > 0 && (
-          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-            <strong>Approved package:</strong> {listing.package_session_count} sessions for{" "}
-            {new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 0 }).format(
-              listing.package_total_price_mxn / 100
-            )}{" "}
-            total (platform fee is calculated on this amount when you book).
-          </div>
+        {packagePromoActive &&
+          listingAsPkg.package_session_count != null &&
+          listingAsPkg.package_total_price_mxn != null && (
+            <div className="mb-4 rounded-2xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50/80 px-4 py-4 text-sm shadow-sm">
+              <p className="font-bold text-amber-950 text-base mb-1">
+                {listingLang === "en" ? "Multi-visit plan (better total price)" : "Plan de varias visitas (mejor precio total)"}
+              </p>
+              <p className="text-amber-950 font-semibold">
+                {listing.package_session_count}{" "}
+                {listingLang === "en" ? "visits" : "visitas"} ·{" "}
+                {new Intl.NumberFormat(listingLang === "en" ? "en-MX" : "es-MX", {
+                  style: "currency",
+                  currency: "MXN",
+                  maximumFractionDigits: 0,
+                }).format(listingAsPkg.package_total_price_mxn / 100)}{" "}
+                {listingLang === "en" ? "total" : "en total"}
+              </p>
+              {packageSavings && (
+                <p className="text-emerald-800 font-semibold text-sm mt-2">
+                  {listingLang === "en"
+                    ? `Save ~${packageSavings.savingsPctApprox}% vs ${listing.package_session_count} visits at the listed price.`
+                    : `Ahorra ~${packageSavings.savingsPctApprox}% vs pagar ${listing.package_session_count} visitas al precio publicado.`}
+                </p>
+              )}
+              <p className="text-amber-900/90 text-xs mt-3 leading-relaxed">
+                {listingLang === "en"
+                  ? "One Naranjogo platform fee unlocks this whole plan. Book each visit with your provider on WhatsApp. Rebook through Naranjogo to keep loyalty discounts and guarantee protection."
+                  : "Un solo pago de tarifa de Naranjogo cubre todo el plan. Agenda cada visita con tu proveedor por WhatsApp. Vuelve a reservar en la app para mantener descuentos por lealtad y la garantía."}
+              </p>
+              <p className="text-amber-800/85 text-[11px] mt-2 leading-snug italic">
+                {listingLang === "en"
+                  ? "Best for ongoing care—like several sessions a month—without paying per visit at full list price."
+                  : "Ideal para cuidado continuo: varias citas al mes sin pagar cada visita al precio unitario del anuncio."}
+              </p>
+            </div>
+          )}
+        {isServiceListing && sellerId && (
+          <ListingTrustStrip
+            lang={listingLang}
+            isService={isServiceListing}
+            displayName={seller?.display_name ?? "Proveedor"}
+            trustBadge={sellerTrust.trustBadge}
+            ineVerified={sellerTrust.ineVerified}
+            rfcVerified={sellerTrust.rfcVerified}
+            phoneVerified={sellerTrust.phoneVerified}
+            listingAdminVerified={Boolean(listing.is_verified)}
+            stats={platformJobStats}
+          />
         )}
         <div className="flex flex-wrap gap-2 mb-6">
           {listing.shipping_available && (
@@ -165,7 +243,9 @@ export default async function ListingPage({
           <WhatsAppCTA listingId={params.id} />
           <p className="text-center text-xs text-[#6B7280] mt-2">
             {isServiceListing
-              ? "Platica primero, paga la tarifa y recibe el WhatsApp del proveedor"
+              ? packagePromoActive
+                ? "Plan de varias visitas: chatea, paga una sola tarifa de plataforma y desbloquea el WhatsApp para todo el plan."
+                : "Platica primero, paga la tarifa y recibe el WhatsApp del proveedor"
               : "Escribe por la app, paga la tarifa de conexión y desbloquea el WhatsApp del vendedor"}
           </p>
         </div>
@@ -185,6 +265,8 @@ export default async function ListingPage({
         )}
 
         {listing.description_es && <p className="text-[#374151] leading-relaxed mb-6">{listing.description_es}</p>}
+
+        <ListingBeforeAfterSection pairs={beforeAfterPairs} lang={listingLang} />
 
         {/* Payment methods section — hidden until commission collection is enabled via Stripe */}
 

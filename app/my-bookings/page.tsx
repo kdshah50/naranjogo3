@@ -217,6 +217,11 @@ export default function MyBookingsPage() {
           explore: "Explorar servicios →",
           rebook: "Volver a reservar →",
           remindSection: "Recordatorios",
+          remindBlurb:
+            "Te avisamos por WhatsApp el día que elijas. Para servicios recurrentes (limpieza, mascotas, jardín), muchos eligen 30 días.",
+          quickPreset: "Frecuente:",
+          quick30: "30 días",
+          quick90: "90 días",
           rebookLabel: "Volver a reservar en",
           days: "días",
           saveRebook: "Guardar recordatorio",
@@ -243,6 +248,11 @@ export default function MyBookingsPage() {
           explore: "Browse services →",
           rebook: "Book again →",
           remindSection: "Reminders",
+          remindBlurb:
+            "We’ll nudge you on WhatsApp on the date you pick. For recurring services (cleaning, pets, yard work), 30 days is a common rhythm.",
+          quickPreset: "Popular:",
+          quick30: "30 days",
+          quick90: "90 days",
           rebookLabel: "Remind me to rebook in",
           days: "days",
           saveRebook: "Save reminder",
@@ -493,8 +503,34 @@ export default function MyBookingsPage() {
                   )}
 
                   <div className="mt-4 pt-3 border-t border-[#E5E0D8]">
-                    <p className="text-[11px] font-bold text-[#6B7280] uppercase tracking-wide mb-2">{t.remindSection}</p>
+                    <p className="text-[11px] font-bold text-[#6B7280] uppercase tracking-wide mb-1">{t.remindSection}</p>
+                    <p className="text-[11px] text-[#6B7280] mb-2 leading-relaxed">{t.remindBlurb}</p>
                     <div className="space-y-2 text-xs">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[#6B7280] text-[11px] shrink-0">{t.quickPreset}</span>
+                        <button
+                          type="button"
+                          onClick={() => setRebookDays((prev) => ({ ...prev, [b.id]: 30 }))}
+                          className={`text-[11px] px-2.5 py-1 rounded-lg border font-medium transition-colors ${
+                            (rebookDays[b.id] ?? 30) === 30
+                              ? "border-[#1B4332] bg-[#ECFDF5] text-[#065F46]"
+                              : "border-[#E5E0D8] bg-white text-[#6B7280] hover:border-[#CCC]"
+                          }`}
+                        >
+                          {t.quick30}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setRebookDays((prev) => ({ ...prev, [b.id]: 90 }))}
+                          className={`text-[11px] px-2.5 py-1 rounded-lg border font-medium transition-colors ${
+                            rebookDays[b.id] === 90
+                              ? "border-[#1B4332] bg-[#ECFDF5] text-[#065F46]"
+                              : "border-[#E5E0D8] bg-white text-[#6B7280] hover:border-[#CCC]"
+                          }`}
+                        >
+                          {t.quick90}
+                        </button>
+                      </div>
                       <div className="flex flex-wrap items-center gap-2">
                         <label className="text-[#6B7280] shrink-0">{t.rebookLabel}</label>
                         <select

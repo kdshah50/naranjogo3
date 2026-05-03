@@ -25,12 +25,12 @@ export async function GET(req: NextRequest) {
   let data: any[] | null = null;
   let error: any = null;
 
-  ({ data, error } = await supabase
-    .from("users")
-    .select(
-      "id,phone,display_name,trust_badge,phone_verified,ine_verified,rfc_verified,curp,rfc,ine_photo_url,created_at",
-    )
-    .order("created_at", { ascending: false }));
+    ({ data, error } = await supabase
+      .from("users")
+      .select(
+        "id,phone,display_name,trust_badge,phone_verified,ine_verified,rfc_verified,curp,rfc,ine_photo_url,provider_rank_multiplier,created_at",
+      )
+      .order("created_at", { ascending: false }));
 
   if (error?.message?.includes("does not exist")) {
     ({ data, error } = await supabase
@@ -133,6 +133,17 @@ export async function PATCH(req: NextRequest) {
       updates.rfc_verified = Boolean(body.rfc_verified);
     }
 
+    if (body.provider_rank_multiplier !== undefined && body.provider_rank_multiplier !== null) {
+      const m = Number(body.provider_rank_multiplier);
+      if (!Number.isFinite(m) || m < 0.25 || m > 1.0) {
+        return NextResponse.json(
+          { error: "provider_rank_multiplier must be between 0.25 and 1.0" },
+          { status: 400 },
+        );
+      }
+      updates.provider_rank_multiplier = m;
+    }
+
     if (body.display_name !== undefined) {
       updates.display_name = String(body.display_name).trim();
     }
@@ -164,7 +175,7 @@ export async function PATCH(req: NextRequest) {
       .from("users")
       .update(updates)
       .eq("id", userId)
-      .select("id,trust_badge,ine_verified,rfc_verified,display_name")
+      .select("id,trust_badge,ine_verified,rfc_verified,display_name,provider_rank_multiplier")
       .maybeSingle());
 
     if (error?.message?.includes("does not exist")) {
@@ -172,7 +183,7 @@ export async function PATCH(req: NextRequest) {
         .from("users")
         .update(updates)
         .eq("id", userId)
-        .select("id,trust_badge,ine_verified,display_name")
+        .select("id,trust_badge,ine_verified,display_name,provider_rank_multiplier")
         .maybeSingle());
     }
 

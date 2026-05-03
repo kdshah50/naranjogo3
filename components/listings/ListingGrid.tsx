@@ -8,6 +8,7 @@ import { ListingCard } from "@/lib/types";
 import { WhatsAppBadgeLocked } from "@/components/WhatsAppCTA";
 import { SellerVerificationBadges } from "@/components/SellerVerificationBadges";
 import type { Lang } from "@/lib/i18n-lang";
+import { isServicesListing } from "@/lib/listing-category";
 
 function fmtMXN(centavos: number) {
   return new Intl.NumberFormat("es-MX", {
@@ -70,6 +71,11 @@ export default function ListingGrid({ listings, initialLang = "es" }: Props) {
               {(listing.colonia_label || listing.location_city) && (
                 <span className="absolute top-2 left-2 text-[10px] font-medium px-2 py-1 rounded-full bg-white/90 text-[#374151] backdrop-blur-sm">
                   📍 {listing.colonia_label ?? listing.location_city}
+                </span>
+              )}
+              {isServicesListing({ category_id: listing.category_id }) && (
+                <span className="absolute bottom-2 left-2 text-[10px] font-bold px-2 py-1 rounded-full bg-[#1B4332]/92 text-white backdrop-blur-sm">
+                  {lang === "en" ? "Paid via app" : "Pago en app"}
                 </span>
               )}
               {typeof listing.dist_km === "number" && Number.isFinite(listing.dist_km) && (

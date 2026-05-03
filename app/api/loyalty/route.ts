@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminSupabase, getUserIdFromRequest } from "@/lib/auth-server";
-import { REWARD_EVERY_N_BOOKINGS, REWARD_DISCOUNT_PCT } from "@/lib/loyalty";
+import {
+  REWARD_EVERY_N_BOOKINGS,
+  REWARD_DISCOUNT_PCT,
+  REBOOK_DISCOUNT_PCT,
+  getNextBookingDiscount,
+} from "@/lib/loyalty";
 
 export const dynamic = "force-dynamic";
 
@@ -27,10 +32,7 @@ export async function GET(req: NextRequest) {
     .order("created_at", { ascending: false })
     .limit(20);
 
-  const bookingCount = account?.booking_count ?? 0;
-  const nextMilestone = Math.ceil((bookingCount + 1) / REWARD_EVERY_N_BOOKINGS) * REWARD_EVERY_N_BOOKINGS;
-  const bookingsUntilReward = nextMilestone - bookingCount;
-  const nextDiscountPct = REWARD_DISCOUNT_PCT;
+  const progress = await getNextBookingDiscount(supabase, userId);
 
   return NextResponse.json({
     account: account ?? {
@@ -42,9 +44,13 @@ export async function GET(req: NextRequest) {
     transactions: transactions ?? [],
     reward: {
       everyN: REWARD_EVERY_N_BOOKINGS,
-      discountPct: nextDiscountPct,
-      bookingsUntilReward,
-      bookingCount,
+      discountPct: progress.discountPct,
+      milestoneDiscountPct: REWARD_DISCOUNT_PCT,
+      rebookDiscountPct: REBOOK_DISCOUNT_PCT,
+      bookingsUntilReward: progress.bookingsUntilReward,
+      bookingCount: progress.bookingCount,
+      rebookDiscount: progress.rebookDiscount,
+      milestoneDiscount: progress.milestoneDiscount,
     },
   });
 }

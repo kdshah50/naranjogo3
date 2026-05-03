@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminSupabase, idMatchVariantsForIn } from "@/lib/auth-server";
 import { getStripe, stripePaymentIntentId } from "@/lib/stripe";
+import { notifyBuyerBookingCommissionPaid } from "@/lib/buyer-booking-notify";
 import { notifySellerBookingCommissionPaid } from "@/lib/seller-booking-notify";
 
 export const dynamic = "force-dynamic";
@@ -91,6 +92,12 @@ export async function GET(req: NextRequest) {
       } catch (notifyErr) {
         console.error("[verify-session] seller booking notify failed (non-fatal)", notifyErr);
       }
+    }
+
+    try {
+      await notifyBuyerBookingCommissionPaid(supabase, bookingRowId);
+    } catch (notifyErr) {
+      console.error("[verify-session] buyer booking notify failed (non-fatal)", notifyErr);
     }
 
     const { data: fresh } = await supabase

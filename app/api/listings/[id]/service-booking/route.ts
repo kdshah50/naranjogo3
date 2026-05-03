@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminSupabase, getUserIdFromRequest } from "@/lib/auth-server";
+import { createAdminSupabase, getUserIdFromRequest, idMatchVariantsForIn } from "@/lib/auth-server";
 import { isServicesListing } from "@/lib/listing-category";
 import { buyerHasSentInAppMessage, ensureContactGateFromMessages } from "@/lib/contact-gate";
 import { computeCommissionCents } from "@/lib/stripe";
-import { effectiveListingPriceMxnCents, listingHasActivePackage } from "@/lib/package-pricing";
+import {
+  effectiveListingPriceMxnCents,
+  listingHasActivePackage,
+  packageVsListSavings,
+} from "@/lib/package-pricing";
 import { expandUserAccountIdPool, userIsListingSellerAccount } from "@/lib/user-account-pool";
 
 export const dynamic = "force-dynamic";
@@ -87,11 +91,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     let revealedWhatsappUrl: string | null = null;
     if (latestPaid) {
       revealedPhone = latestPaid.seller_phone_snapshot;
-      if (!revealedPhone) {
+      if (!revealedPhone && listing.seller_id) {
+        const sellerIdVars = idMatchVariantsForIn(String(listing.seller_id));
         const { data: sellerUser } = await supabase
           .from("users")
           .select("phone")
-          .eq("id", listing.seller_id)
+          .in("id", sellerIdVars)
+          .limit(1)
           .maybeSingle();
         revealedPhone = sellerUser?.phone ?? null;
       }
@@ -133,6 +139,15 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       package_total_price_mxn: listingPricing?.package_total_price_mxn,
     });
 
+    const pkgSavings =
+      hasPackage && listingPricing
+        ? packageVsListSavings({
+            price_mxn: Number(listingPricing.price_mxn) || 0,
+            package_session_count: listingPricing.package_session_count,
+            package_total_price_mxn: listingPricing.package_total_price_mxn,
+          })
+        : null;
+
     return NextResponse.json({
       isService: isServicesCategory,
       flowActive: true,
@@ -149,6 +164,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       hasPackage,
       packageSessionCount: hasPackage ? listingPricing?.package_session_count : null,
       packageTotalMxnCents: hasPackage ? listingPricing?.package_total_price_mxn : null,
+      packageSavingsPctApprox: pkgSavings?.savingsPctApprox ?? null,
+      packageSavingsMxnCents: pkgSavings?.savingsCents ?? null,
     });
   } catch (e) {
     console.error("[service-booking] GET", e);

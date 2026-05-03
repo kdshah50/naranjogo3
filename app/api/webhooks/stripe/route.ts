@@ -3,6 +3,7 @@ import { createAdminSupabase, idMatchVariantsForIn } from "@/lib/auth-server";
 import { getStripe, stripePaymentIntentId } from "@/lib/stripe";
 import { awardPoints } from "@/lib/loyalty";
 import { maybeAwardReferralBonus } from "@/lib/referral";
+import { notifyBuyerBookingCommissionPaid } from "@/lib/buyer-booking-notify";
 import { notifySellerBookingCommissionPaid } from "@/lib/seller-booking-notify";
 
 export const dynamic = "force-dynamic";
@@ -90,6 +91,12 @@ export async function POST(req: NextRequest) {
       await notifySellerBookingCommissionPaid(supabase, bookingIdMeta);
     } catch (notifyErr) {
       console.error("[stripe-webhook] seller booking notify failed (non-fatal)", notifyErr);
+    }
+
+    try {
+      await notifyBuyerBookingCommissionPaid(supabase, bookingIdMeta);
+    } catch (notifyErr) {
+      console.error("[stripe-webhook] buyer booking notify failed (non-fatal)", notifyErr);
     }
 
     const buyerId = session.metadata?.buyer_id;

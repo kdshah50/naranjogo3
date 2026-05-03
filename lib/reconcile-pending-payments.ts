@@ -4,6 +4,7 @@ import { isSameUserId, idMatchVariantsForIn } from "@/lib/auth-server";
 import { stripePaymentIntentId } from "@/lib/stripe";
 import { awardPoints } from "@/lib/loyalty";
 import { maybeAwardReferralBonus } from "@/lib/referral";
+import { notifyBuyerBookingCommissionPaid } from "@/lib/buyer-booking-notify";
 import { notifySellerBookingCommissionPaid } from "@/lib/seller-booking-notify";
 
 export type ReconcileResult = "synced" | "skipped" | "error";
@@ -100,6 +101,12 @@ export async function reconcileOneCheckoutSession(
     await notifySellerBookingCommissionPaid(supabase, String(booking.id));
   } catch (e) {
     console.error("[reconcile] seller booking notify", e);
+  }
+
+  try {
+    await notifyBuyerBookingCommissionPaid(supabase, String(booking.id));
+  } catch (e) {
+    console.error("[reconcile] buyer booking notify", e);
   }
 
   return "synced";

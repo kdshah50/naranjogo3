@@ -24,7 +24,8 @@ export async function POST(req: NextRequest) {
       | "reject"
       | "commission"
       | "package"
-      | "calendar_sync";
+      | "calendar_sync"
+      | "before_after";
     if (!id || !action) {
       return NextResponse.json({ error: "id y action requeridos" }, { status: 400 });
     }
@@ -151,6 +152,56 @@ export async function POST(req: NextRequest) {
 
       if (error) {
         console.error("[admin/listing] calendar_sync", error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+      if (!data?.length) {
+        return NextResponse.json({ error: "No se encontró el anuncio" }, { status: 404 });
+      }
+      return NextResponse.json({ ok: true });
+    }
+
+    if (action === "before_after") {
+      const raw = body?.before_after_photo_urls;
+      if (!Array.isArray(raw)) {
+        return NextResponse.json(
+          { error: "before_after_photo_urls must be a JSON array of {before, after} URLs" },
+          { status: 400 },
+        );
+      }
+      const pairs: { before: string; after: string }[] = [];
+      for (const row of raw) {
+        if (!row || typeof row !== "object") continue;
+        const b = String((row as { before?: string }).before ?? "").trim();
+        const a = String((row as { after?: string }).after ?? "").trim();
+        if (!b.startsWith("https://") || !a.startsWith("https://")) {
+          return NextResponse.json(
+            { error: "Each pair needs before and after as https URLs" },
+            { status: 400 },
+          );
+        }
+        if (b.length > 2048 || a.length > 2048) {
+          return NextResponse.json({ error: "URL too long" }, { status: 400 });
+        }
+        pairs.push({ before: b, after: a });
+      }
+      if (pairs.length > 12) {
+        return NextResponse.json({ error: "Maximum 12 before/after pairs" }, { status: 400 });
+      }
+
+      const { data, error } = await supabase
+        .from("listings")
+        .update({ before_after_photo_urls: pairs.length > 0 ? pairs : [] })
+        .eq("id", id.trim())
+        .select("id");
+
+      if (error) {
+        if (error.message?.includes("before_after_photo_urls")) {
+          return NextResponse.json(
+            { error: "Run DB migration: before_after_photo_urls column missing" },
+            { status: 500 },
+          );
+        }
+        console.error("[admin/listing] before_after", error);
         return NextResponse.json({ error: error.message }, { status: 500 });
       }
       if (!data?.length) {

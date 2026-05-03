@@ -4,36 +4,62 @@ import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 import { sendWhatsApp } from "@/lib/twilio";
 import { getPublicAppUrl } from "@/lib/app-url";
 
+/** If the process dies mid-notify, another worker can reclaim after this many ms. */
+const STALE_NOTIFY_CLAIM_MS = 3 * 60 * 1000;
+
 /**
  * One WhatsApp to the provider when a buyer pays the service/contact fee.
- * Atomically sets seller_booking_paid_notified_at before send so webhook + verify-session do not duplicate.
- * Clears the timestamp if there is no seller phone or send fails so a later retry can run.
+ * Uses seller_booking_paid_notify_claimed_at so webhook + verify-session do not double-send,
+ * and so a crash between claim and Twilio does not permanently block delivery
+ * (seller_booking_paid_notified_at is set only after send succeeds).
  */
 export async function notifySellerBookingCommissionPaid(supabase: SupabaseClient, bookingId: string): Promise<void> {
   const idVars = idMatchVariantsForIn(String(bookingId));
+  if (idVars.length === 0) return;
+
+  const staleBefore = new Date(Date.now() - STALE_NOTIFY_CLAIM_MS).toISOString();
   const claimedAt = new Date().toISOString();
 
   const { data: claimedRows, error: claimErr } = await supabase
     .from("service_bookings")
-    .update({ seller_booking_paid_notified_at: claimedAt })
+    .update({ seller_booking_paid_notify_claimed_at: claimedAt })
     .in("id", idVars)
     .eq("payment_status", "paid")
     .is("seller_booking_paid_notified_at", null)
-    .select("id,buyer_id,seller_id,listing_id,commission_amount_cents");
+    .or(`seller_booking_paid_notify_claimed_at.is.null,seller_booking_paid_notify_claimed_at.lt.${staleBefore}`)
+    .select("id,buyer_id,seller_id,listing_id,commission_amount_cents,seller_phone_snapshot");
 
   if (claimErr) {
     console.error("[seller-booking-notify] claim", claimErr);
     return;
   }
   const row = claimedRows?.[0];
-  if (!row) return;
+  if (!row) {
+    return;
+  }
 
-  const clearClaim = async () => {
+  const releaseClaim = async () => {
     await supabase
       .from("service_bookings")
-      .update({ seller_booking_paid_notified_at: null })
+      .update({ seller_booking_paid_notify_claimed_at: null })
+      .eq("id", row.id)
+      .eq("payment_status", "paid")
+      .is("seller_booking_paid_notified_at", null);
+  };
+
+  const markDelivered = async () => {
+    const now = new Date().toISOString();
+    const { error } = await supabase
+      .from("service_bookings")
+      .update({
+        seller_booking_paid_notified_at: now,
+        seller_booking_paid_notify_claimed_at: null,
+      })
       .eq("id", row.id)
       .eq("payment_status", "paid");
+    if (error) {
+      console.error("[seller-booking-notify] markDelivered", error);
+    }
   };
 
   try {
@@ -55,16 +81,23 @@ export async function notifySellerBookingCommissionPaid(supabase: SupabaseClient
       buyerRows?.[0]?.display_name?.trim() ||
       (buyerRows?.[0]?.phone ? `Cliente …${buyerRows[0].phone.replace(/\D/g, "").slice(-4)}` : "Un cliente");
 
-    const sellerPool = await expandUserAccountIdPool(supabase, String(row.seller_id));
-    const { data: sellerRows } = await supabase
-      .from("users")
-      .select("phone,display_name")
-      .in("id", sellerPool)
-      .limit(1);
-    const sellerPhone = sellerRows?.[0]?.phone?.trim();
+    let sellerPhone = row.seller_phone_snapshot?.trim() || null;
     if (!sellerPhone) {
-      console.warn("[seller-booking-notify] no seller phone", { bookingId: row.id, sellerPoolLen: sellerPool.length });
-      await clearClaim();
+      const sellerPool = await expandUserAccountIdPool(supabase, String(row.seller_id));
+      const { data: sellerRows } = await supabase
+        .from("users")
+        .select("phone,display_name")
+        .in("id", sellerPool)
+        .limit(1);
+      sellerPhone = sellerRows?.[0]?.phone?.trim() || null;
+    }
+
+    if (!sellerPhone) {
+      console.warn("[seller-booking-notify] no seller phone", {
+        bookingId: row.id,
+        hint: "Set phone on provider profile or ensure seller_phone_snapshot after payment",
+      });
+      await releaseClaim();
       return;
     }
 
@@ -91,10 +124,13 @@ export async function notifySellerBookingCommissionPaid(supabase: SupabaseClient
         bookingId: row.id,
         sellerPhonePrefix: sellerPhone.slice(0, 6),
       });
-      await clearClaim();
+      await releaseClaim();
+      return;
     }
+
+    await markDelivered();
   } catch (e) {
     console.error("[seller-booking-notify]", e);
-    await clearClaim();
+    await releaseClaim();
   }
 }

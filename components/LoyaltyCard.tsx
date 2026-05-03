@@ -22,6 +22,10 @@ type LoyaltyData = {
     discountPct: number;
     bookingsUntilReward: number;
     bookingCount: number;
+    milestoneDiscountPct?: number;
+    rebookDiscountPct?: number;
+    rebookDiscount?: boolean;
+    milestoneDiscount?: boolean;
   };
   transactions?: Tx[];
 };
@@ -39,11 +43,11 @@ export default function LoyaltyCard({ lang = "es" }: { lang?: "es" | "en" }) {
   if (!data) return null;
 
   const { account, reward, transactions = [] } = data;
-  const progress = reward.everyN > 0
-    ? ((reward.bookingCount % reward.everyN) / reward.everyN) * 100
-    : 0;
 
   const dots = Array.from({ length: reward.everyN }, (_, i) => i < (reward.bookingCount % reward.everyN));
+
+  const targetMilestonePct = reward.milestoneDiscountPct ?? 15;
+  const rebookPct = reward.rebookDiscountPct ?? 7;
 
   return (
     <div className="bg-gradient-to-br from-[#1B4332] to-[#2D6A4F] rounded-2xl p-5 text-white shadow-sm">
@@ -72,11 +76,11 @@ export default function LoyaltyCard({ lang = "es" }: { lang?: "es" | "en" }) {
           <span>
             {reward.bookingsUntilReward > 0
               ? lang === "es"
-                ? `${reward.bookingsUntilReward} más para ${reward.discountPct}% desc.`
-                : `${reward.bookingsUntilReward} more for ${reward.discountPct}% off`
+                ? `${reward.bookingsUntilReward} más para ${targetMilestonePct}% (lealtad)`
+                : `${reward.bookingsUntilReward} more for ${targetMilestonePct}% (milestone)`
               : lang === "es"
-                ? `¡${reward.discountPct}% desc. en tu próxima!`
-                : `${reward.discountPct}% off your next!`}
+                ? `¡${reward.discountPct}% en la próxima tarifa!`
+                : `${reward.discountPct}% off the next fee!`}
           </span>
         </div>
 
@@ -93,11 +97,19 @@ export default function LoyaltyCard({ lang = "es" }: { lang?: "es" | "en" }) {
         </div>
       </div>
 
-      {reward.bookingsUntilReward === 0 && (
+      {reward.rebookDiscount && reward.discountPct > 0 && reward.bookingsUntilReward > 0 && (
+        <p className="text-[11px] text-white/80 text-center mb-3">
+          {lang === "es"
+            ? `Incluye ${rebookPct}% menos en la tarifa por reservar de nuevo en Naranjogo.`
+            : `${rebookPct}% off the platform fee when you book again on Naranjogo.`}
+        </p>
+      )}
+
+      {reward.bookingsUntilReward === 0 && reward.discountPct > 0 && (
         <div className="bg-white/10 rounded-xl px-3 py-2 text-xs font-semibold text-center">
           🎉 {lang === "es"
-            ? `¡Tu próxima reserva tiene ${reward.discountPct}% de descuento!`
-            : `Your next booking is ${reward.discountPct}% off!`}
+            ? `¡Tu próxima reserva tiene ${reward.discountPct}% de descuento en la tarifa!`
+            : `Your next booking gets ${reward.discountPct}% off the fee!`}
         </div>
       )}
 
