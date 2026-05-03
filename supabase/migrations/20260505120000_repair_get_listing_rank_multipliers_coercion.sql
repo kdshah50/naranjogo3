@@ -1,25 +1,6 @@
--- Provider ranking for search: behavior + reviews + admin soft penalty (bypass / trust).
--- Multiplier clamps to [0.25, 1.28] after combining behavior signals and seller penalty (0.25–1.0).
-
-ALTER TABLE public.users
-  ADD COLUMN IF NOT EXISTS provider_rank_multiplier numeric DEFAULT 1.0;
-
-UPDATE public.users SET provider_rank_multiplier = 1.0 WHERE provider_rank_multiplier IS NULL;
-
-ALTER TABLE public.users
-  ALTER COLUMN provider_rank_multiplier SET DEFAULT 1.0;
-
-ALTER TABLE public.users
-  ALTER COLUMN provider_rank_multiplier SET NOT NULL;
-
-ALTER TABLE public.users
-  DROP CONSTRAINT IF EXISTS users_provider_rank_multiplier_chk;
-ALTER TABLE public.users
-  ADD CONSTRAINT users_provider_rank_multiplier_chk
-  CHECK (provider_rank_multiplier >= 0.25 AND provider_rank_multiplier <= 1.0);
-
-COMMENT ON COLUMN public.users.provider_rank_multiplier IS
-  'Search visibility (default 1). Lower e.g. 0.55 to soft-penalize platform bypass; restore to 1 when resolved.';
+-- Repair get_listing_rank_multipliers when mixed uuid/text columns caused errors (e.g. uuid = text).
+-- Safe to run after 20260504100000; idempotent CREATE OR REPLACE.
+-- Resolves: users.id vs listings.seller_id join; listing_messages.sender_id vs conversation buyer/seller.
 
 CREATE OR REPLACE FUNCTION public.get_listing_rank_multipliers(p_listing_ids text[])
 RETURNS jsonb
