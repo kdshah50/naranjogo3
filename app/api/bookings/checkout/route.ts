@@ -6,6 +6,7 @@ import { isServicesListing } from "@/lib/listing-category";
 import { effectiveListingPriceMxnCents, listingHasActivePackage } from "@/lib/package-pricing";
 import { buyerHasSentInAppMessage, ensureContactGateFromMessages } from "@/lib/contact-gate";
 import { getPublicAppUrl } from "@/lib/app-url";
+import { expandUserAccountIdPool, userIsListingSellerAccount } from "@/lib/user-account-pool";
 
 export const dynamic = "force-dynamic";
 /** Allow Stripe + retries to finish on Vercel (requires Hobby 10s default or Pro for 60s). */
@@ -47,18 +48,21 @@ export async function POST(req: NextRequest) {
     if (listing.status !== "active") {
       return NextResponse.json({ error: "Este anuncio no está activo" }, { status: 400 });
     }
-    if (listing.seller_id === userId) {
-      return NextResponse.json({ error: "No puedes reservar tu propio anuncio" }, { status: 400 });
-    }
     if (!listing.seller_id) {
       return NextResponse.json({ error: "Este anuncio no tiene proveedor asignado" }, { status: 400 });
+    }
+
+    const myPool = await expandUserAccountIdPool(supabase, userId);
+
+    if (await userIsListingSellerAccount(supabase, userId, listing.seller_id as string)) {
+      return NextResponse.json({ error: "No puedes reservar tu propio anuncio" }, { status: 400 });
     }
 
     const { data: gate } = await supabase
       .from("listing_service_contact_gate")
       .select("contacted_in_app")
       .eq("listing_id", listingId)
-      .eq("buyer_id", userId)
+      .in("buyer_id", myPool)
       .maybeSingle();
 
     let contactOk = Boolean(gate?.contacted_in_app);

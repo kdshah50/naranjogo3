@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createAdminSupabase, getUserIdFromRequest, idMatchVariantsForIn } from "@/lib/auth-server";
 import {
-  createAdminSupabase,
-  getUserIdFromRequest,
-  idMatchVariantsForIn,
-  isSameUserId,
-} from "@/lib/auth-server";
+  expandUserAccountIdPool,
+  poolsOverlap,
+  userIsListingSellerAccount,
+} from "@/lib/user-account-pool";
 
 export const dynamic = "force-dynamic";
 
@@ -38,14 +38,18 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Anuncio sin vendedor" }, { status: 400 });
     }
 
-    console.log("[conversations] GET userId:", userId, "sellerId:", sellerId, "listingId:", listingId);
+    const myPool = await expandUserAccountIdPool(supabase, userId);
+    const listingSellerPool = await expandUserAccountIdPool(supabase, sellerId);
+    const isListingSeller = poolsOverlap(myPool, listingSellerPool);
 
-    if (isSameUserId(sellerId, userId)) {
+    console.log("[conversations] GET userId:", userId, "sellerId:", sellerId, "listingId:", listingId, "isListingSeller:", isListingSeller);
+
+    if (isListingSeller) {
       const { data: convsRaw, error: convErr } = await supabase
         .from("listing_conversations")
         .select("id,buyer_id,updated_at,created_at")
         .eq("listing_id", listing.id)
-        .in("seller_id", idMatchVariantsForIn(userId))
+        .in("seller_id", listingSellerPool)
         .order("updated_at", { ascending: false });
 
       if (convErr) {
@@ -53,9 +57,19 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: "No se pudo cargar conversaciones" }, { status: 500 });
       }
 
-      const convs = (convsRaw ?? []).filter((c) => !isSameUserId(c.buyer_id, userId));
+      const buyerPoolCache = new Map<string, string[]>();
+      const buyerPoolFor = async (bid: string) => {
+        if (!buyerPoolCache.has(bid)) buyerPoolCache.set(bid, await expandUserAccountIdPool(supabase, bid));
+        return buyerPoolCache.get(bid)!;
+      };
 
-      const buyerIds = Array.from(new Set((convs ?? []).map((c) => c.buyer_id)));
+      const convs: NonNullable<typeof convsRaw> = [];
+      for (const c of convsRaw ?? []) {
+        if (poolsOverlap(await buyerPoolFor(c.buyer_id), listingSellerPool)) continue;
+        convs.push(c);
+      }
+
+      const buyerIds = Array.from(new Set(convs.map((c) => c.buyer_id)));
       const buyerMap: Record<string, { display_name: string | null; phone: string | null }> = {};
       if (buyerIds.length > 0) {
         const expanded = [...new Set(buyerIds.flatMap((bid) => idMatchVariantsForIn(bid)))];
@@ -66,7 +80,7 @@ export async function GET(req: NextRequest) {
       }
 
       const threads = await Promise.all(
-        (convs ?? []).map(async (c) => {
+        convs.map(async (c) => {
           const { data: last } = await supabase
             .from("listing_messages")
             .select("body,created_at")
@@ -98,7 +112,7 @@ export async function GET(req: NextRequest) {
       .from("listing_conversations")
       .select("id")
       .eq("listing_id", listing.id)
-      .in("buyer_id", idMatchVariantsForIn(userId))
+      .in("buyer_id", myPool)
       .maybeSingle();
 
     if (convErr) {
@@ -168,15 +182,17 @@ export async function POST(req: NextRequest) {
     if (!sellerId) {
       return NextResponse.json({ error: "Anuncio sin vendedor" }, { status: 400 });
     }
-    if (isSameUserId(sellerId, userId)) {
+    if (await userIsListingSellerAccount(supabase, userId, sellerId)) {
       return NextResponse.json({ error: "No puedes chatear contigo mismo" }, { status: 400 });
     }
+
+    const myPool = await expandUserAccountIdPool(supabase, userId);
 
     const { data: existing } = await supabase
       .from("listing_conversations")
       .select("id")
       .eq("listing_id", listing.id)
-      .in("buyer_id", idMatchVariantsForIn(userId))
+      .in("buyer_id", myPool)
       .maybeSingle();
 
     if (existing) {
@@ -199,7 +215,7 @@ export async function POST(req: NextRequest) {
           .from("listing_conversations")
           .select("id")
           .eq("listing_id", listing.id)
-          .in("buyer_id", idMatchVariantsForIn(userId))
+          .in("buyer_id", myPool)
           .maybeSingle();
         if (row) return NextResponse.json({ conversationId: row.id });
       }

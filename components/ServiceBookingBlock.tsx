@@ -103,7 +103,6 @@ export default function ServiceBookingBlock({
     return () => window.removeEventListener("tianguis:listing-contact", onContact);
   }, [load]);
 
-  // Refetch when user returns to the tab (fixes stale state after sending a message)
   useEffect(() => {
     const onVis = () => {
       if (document.visibilityState === "visible") void load();
@@ -112,16 +111,19 @@ export default function ServiceBookingBlock({
     return () => document.removeEventListener("visibilitychange", onVis);
   }, [load]);
 
+  /** Server uses merged account (phone) to detect seller; client id match is fallback. */
+  const iAmSellerOnThisListing = Boolean(booking?.isSeller) || Boolean(sellerId && meId && sameUserId(meId, sellerId));
+
   // When step 1 completes, scroll the pay section into view (buyers only — not the seller on their own ad)
   useEffect(() => {
-    if (sellerId && meId && sameUserId(meId, sellerId)) return;
+    if (iAmSellerOnThisListing) return;
     const contacted = Boolean(booking?.contactedInApp);
     if (contacted && !prevContacted.current) {
       const el = document.getElementById("booking-section");
       el?.scrollIntoView({ behavior: "smooth", block: "center" });
     }
     prevContacted.current = contacted;
-  }, [booking?.contactedInApp, meId, sellerId]);
+  }, [booking?.contactedInApp, booking?.isSeller, iAmSellerOnThisListing, meId, sellerId]);
 
   const manualRefresh = async () => {
     setRefreshing(true);
@@ -167,7 +169,7 @@ export default function ServiceBookingBlock({
     );
   }
 
-  if (sellerId && meId && sameUserId(meId, sellerId)) {
+  if (iAmSellerOnThisListing) {
     return (
       <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
         <p className="font-semibold mb-1">{isService ? "Tu servicio" : "Tu anuncio"}</p>

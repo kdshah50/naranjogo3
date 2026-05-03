@@ -3,8 +3,8 @@ import {
   createAdminSupabase,
   getUserIdFromRequest,
   idMatchVariantsForIn,
-  isSameUserId,
 } from "@/lib/auth-server";
+import { expandUserAccountIdPool, poolsOverlap, userParticipatesInConversation } from "@/lib/user-account-pool";
 
 export const dynamic = "force-dynamic";
 
@@ -30,16 +30,21 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       return NextResponse.json({ error: "Conversación no encontrada" }, { status: 404 });
     }
 
-    const convRowId = conv.id;
-
-    if (!isSameUserId(conv.buyer_id, userId) && !isSameUserId(conv.seller_id, userId)) {
+    const allowed = await userParticipatesInConversation(supabase, userId, conv.buyer_id, conv.seller_id);
+    if (!allowed) {
       return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
+
+    const convRowId = conv.id;
+
+    const myPool = await expandUserAccountIdPool(supabase, userId);
+    const sellerPool = await expandUserAccountIdPool(supabase, conv.seller_id);
+    const isSeller = poolsOverlap(myPool, sellerPool);
 
     const { data: listing } = await supabase
       .from("listings")
       .select("id,title_es,seller_id")
-      .eq("id", conv.listing_id)
+      .in("id", idMatchVariantsForIn(conv.listing_id))
       .maybeSingle();
 
     const { data: messages, error: msgErr } = await supabase
@@ -53,14 +58,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       return NextResponse.json({ error: "No se pudo cargar mensajes" }, { status: 500 });
     }
 
-    const isSeller = isSameUserId(conv.seller_id, userId);
     const otherId = isSeller ? conv.buyer_id : conv.seller_id;
     let otherName = "";
     if (otherId) {
       const { data: otherUser } = await supabase
         .from("users")
         .select("display_name,phone")
-        .eq("id", otherId)
+        .in("id", idMatchVariantsForIn(otherId))
         .maybeSingle();
       otherName = otherUser?.display_name?.trim()
         || (otherUser?.phone ? `…${otherUser.phone.replace(/\D/g, "").slice(-4)}` : "");

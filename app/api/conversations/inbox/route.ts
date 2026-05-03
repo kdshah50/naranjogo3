@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminSupabase, getUserIdFromRequest, idMatchVariantsForIn, isSameUserId } from "@/lib/auth-server";
+import { expandUserAccountIdPool, poolsOverlap } from "@/lib/user-account-pool";
 
 export const dynamic = "force-dynamic";
 
@@ -27,19 +28,19 @@ export async function GET(req: NextRequest) {
     }
 
     const supabase = createAdminSupabase();
+    const myPool = await expandUserAccountIdPool(supabase, userId);
 
-    const idVars = idMatchVariantsForIn(userId);
     const [{ data: asBuyer, error: e1 }, { data: asSeller, error: e2 }] = await Promise.all([
       supabase
         .from("listing_conversations")
         .select("id,listing_id,buyer_id,seller_id,updated_at")
-        .in("buyer_id", idVars)
+        .in("buyer_id", myPool)
         .order("updated_at", { ascending: false })
         .limit(50),
       supabase
         .from("listing_conversations")
         .select("id,listing_id,buyer_id,seller_id,updated_at")
-        .in("seller_id", idVars)
+        .in("seller_id", myPool)
         .order("updated_at", { ascending: false })
         .limit(50),
     ]);
@@ -53,12 +54,23 @@ export async function GET(req: NextRequest) {
     const merged = [...(asBuyer ?? []), ...(asSeller ?? [])] as Row[];
     const all = merged.filter((r) => {
       if (seen.has(r.id)) return false;
-      if (isSameUserId(r.buyer_id, r.seller_id)) return false;
       seen.add(r.id);
       return true;
     });
-    const listingIds = Array.from(new Set(all.map((r) => r.listing_id)));
-    const userIds = Array.from(new Set(all.flatMap((r) => [r.buyer_id, r.seller_id])));
+
+    const bogus = await Promise.all(
+      all.map(async (r) => {
+        const [bp, sp] = await Promise.all([
+          expandUserAccountIdPool(supabase, r.buyer_id),
+          expandUserAccountIdPool(supabase, r.seller_id),
+        ]);
+        return poolsOverlap(bp, sp);
+      })
+    );
+    const filtered = all.filter((_, i) => !bogus[i]);
+
+    const listingIds = Array.from(new Set(filtered.map((r) => r.listing_id)));
+    const userIds = Array.from(new Set(filtered.flatMap((r) => [r.buyer_id, r.seller_id])));
 
     const listingMap: Record<string, { title_es: string | null }> = {};
     if (listingIds.length > 0) {
@@ -68,9 +80,7 @@ export async function GET(req: NextRequest) {
 
     let otherUsers: { id: string; display_name: string | null; phone: string | null }[] = [];
     if (userIds.length > 0) {
-      const idUnion = Array.from(
-        new Set(userIds.flatMap((id) => idMatchVariantsForIn(id)))
-      );
+      const idUnion = Array.from(new Set(userIds.flatMap((id) => idMatchVariantsForIn(id))));
       const { data: users } = await supabase
         .from("users")
         .select("id,display_name,phone")
@@ -79,8 +89,14 @@ export async function GET(req: NextRequest) {
     }
     const userById = (id: string) => otherUsers.find((u) => isSameUserId(u.id, id));
 
+    const buyerPoolCache = new Map<string, string[]>();
+    const buyerPoolFor = async (bid: string) => {
+      if (!buyerPoolCache.has(bid)) buyerPoolCache.set(bid, await expandUserAccountIdPool(supabase, bid));
+      return buyerPoolCache.get(bid)!;
+    };
+
     const enriched = await Promise.all(
-      all.map(async (r) => {
+      filtered.map(async (r) => {
         const { data: last } = await supabase
           .from("listing_messages")
           .select("body,created_at")
@@ -89,7 +105,7 @@ export async function GET(req: NextRequest) {
           .limit(1)
           .maybeSingle();
 
-        const isBuyer = isSameUserId(r.buyer_id, userId);
+        const isBuyer = poolsOverlap(myPool, await buyerPoolFor(r.buyer_id));
         const otherId = isBuyer ? r.seller_id : r.buyer_id;
         return {
           conversationId: r.id,

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createAdminSupabase, getUserIdFromRequest, idMatchVariantsForIn } from "@/lib/auth-server";
 import {
-  createAdminSupabase,
-  getUserIdFromRequest,
-  idMatchVariantsForIn,
-  isSameUserId,
-} from "@/lib/auth-server";
+  expandUserAccountIdPool,
+  poolsOverlap,
+  userParticipatesInConversation,
+} from "@/lib/user-account-pool";
 import { sendWhatsApp } from "@/lib/twilio";
 import { getPublicAppUrl } from "@/lib/app-url";
 
@@ -37,11 +37,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       return NextResponse.json({ error: "Conversación no encontrada" }, { status: 404 });
     }
 
-    const convRowId = conv.id;
-
-    if (!isSameUserId(conv.buyer_id, userId) && !isSameUserId(conv.seller_id, userId)) {
+    const allowed = await userParticipatesInConversation(supabase, userId, conv.buyer_id, conv.seller_id);
+    if (!allowed) {
       return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
+
+    const convRowId = conv.id;
+    const myPool = await expandUserAccountIdPool(supabase, userId);
+    const buyerPool = await expandUserAccountIdPool(supabase, conv.buyer_id);
 
     const { data: inserted, error: insErr } = await supabase
       .from("listing_messages")
@@ -56,51 +59,53 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     await supabase.from("listing_conversations").update({ updated_at: new Date().toISOString() }).eq("id", convRowId);
 
-    if (isSameUserId(conv.buyer_id, userId)) {
+    if (poolsOverlap(myPool, buyerPool)) {
       const now = new Date().toISOString();
       const { data: gate } = await supabase
         .from("listing_service_contact_gate")
-        .select("listing_id")
+        .select("listing_id,buyer_id")
         .eq("listing_id", conv.listing_id)
-        .eq("buyer_id", userId)
+        .in("buyer_id", myPool)
         .maybeSingle();
       if (!gate) {
-        const { error: insErr } = await supabase.from("listing_service_contact_gate").insert({
+        const { error: gateInsErr } = await supabase.from("listing_service_contact_gate").insert({
           listing_id: conv.listing_id,
           buyer_id: userId,
           contacted_in_app: true,
           updated_at: now,
         });
-        if (insErr) console.error("[messages] contact_gate insert", insErr);
+        if (gateInsErr) console.error("[messages] contact_gate insert", gateInsErr);
       } else {
         const { error: upErr } = await supabase
           .from("listing_service_contact_gate")
           .update({ contacted_in_app: true, updated_at: now })
           .eq("listing_id", conv.listing_id)
-          .eq("buyer_id", userId);
+          .eq("buyer_id", gate.buyer_id);
         if (upErr) console.error("[messages] contact_gate update", upErr);
       }
     }
 
-    // Notify the other party via WhatsApp (awaited so Vercel doesn't kill it)
-    const recipientId = isSameUserId(userId, conv.buyer_id) ? conv.seller_id : conv.buyer_id;
-    console.log("[notify] sender:", userId, "recipient:", recipientId, "conv:", conversationId,
-      "buyer_id:", conv.buyer_id, "seller_id:", conv.seller_id);
-    if (recipientId && isSameUserId(recipientId, userId)) {
-      console.warn("[notify] skipping self-notification (buyer_id === seller_id)");
+    const iAmBuyer = poolsOverlap(myPool, buyerPool);
+    const recipientRootId = iAmBuyer ? conv.seller_id : conv.buyer_id;
+    const recipientPool = await expandUserAccountIdPool(supabase, recipientRootId);
+
+    console.log("[notify] sender:", userId, "recipientRoot:", recipientRootId, "conv:", conversationId);
+
+    if (poolsOverlap(myPool, recipientPool)) {
+      console.warn("[notify] skipping notify — sender and recipient share merged account pool");
       return NextResponse.json({ message: inserted });
     }
+
     try {
-      const { data: recipient } = await supabase
+      const { data: recipientRows } = await supabase
         .from("users")
         .select("phone,display_name")
-        .in("id", idMatchVariantsForIn(recipientId))
-        .maybeSingle();
-
-      console.log("[notify] recipient lookup:", { recipientId, phone: recipient?.phone, name: recipient?.display_name });
+        .in("id", recipientPool)
+        .limit(1);
+      const recipient = recipientRows?.[0];
 
       if (!recipient?.phone) {
-        console.warn("[notify] no phone for recipient", recipientId);
+        console.warn("[notify] no phone for recipient", recipientRootId);
       } else {
         const { data: sender } = await supabase
           .from("users")
@@ -111,7 +116,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         const { data: listingRow } = await supabase
           .from("listings")
           .select("title_es")
-          .eq("id", conv.listing_id)
+          .in("id", idMatchVariantsForIn(conv.listing_id))
           .maybeSingle();
 
         const senderName = sender?.display_name?.trim() || "Un cliente";
@@ -130,9 +135,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
           `→ ${appUrl}/listing/${conv.listing_id}?chat=${conversationId}`,
         ].join("\n");
 
-        console.log("[notify] sending WhatsApp to:", recipient.phone, "for recipient:", recipientId);
+        console.log("[notify] sending WhatsApp to:", recipient.phone);
         const sent = await sendWhatsApp(recipient.phone, msg);
-        console.log("[notify]", sent ? "sent" : "failed", { to: recipient.phone, recipientId });
+        console.log("[notify]", sent ? "sent" : "failed", { to: recipient.phone });
       }
     } catch (e) {
       console.error("[notify] error", e);

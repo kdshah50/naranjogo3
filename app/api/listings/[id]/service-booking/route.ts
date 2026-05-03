@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminSupabase, getUserIdFromRequest, isSameUserId } from "@/lib/auth-server";
+import { createAdminSupabase, getUserIdFromRequest } from "@/lib/auth-server";
 import { isServicesListing } from "@/lib/listing-category";
 import { buyerHasSentInAppMessage, ensureContactGateFromMessages } from "@/lib/contact-gate";
 import { computeCommissionCents } from "@/lib/stripe";
 import { effectiveListingPriceMxnCents, listingHasActivePackage } from "@/lib/package-pricing";
+import { expandUserAccountIdPool, userIsListingSellerAccount } from "@/lib/user-account-pool";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +42,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       });
     }
 
-    if (sellerId && isSameUserId(userId, sellerId)) {
+    if (sellerId && (await userIsListingSellerAccount(supabase, userId, sellerId))) {
       return NextResponse.json({
         isService: isServicesCategory,
         isSeller: true,
@@ -51,11 +52,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       });
     }
 
+    const myPool = await expandUserAccountIdPool(supabase, userId);
+
     const { data: gate } = await supabase
       .from("listing_service_contact_gate")
       .select("contacted_in_app")
       .eq("listing_id", listingId)
-      .eq("buyer_id", userId)
+      .in("buyer_id", myPool)
       .maybeSingle();
 
     let contactedInApp = Boolean(gate?.contacted_in_app);
@@ -73,7 +76,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       .from("service_bookings")
       .select("id,payment_status,seller_phone_snapshot,paid_at")
       .eq("listing_id", listingId)
-      .eq("buyer_id", userId)
+      .in("buyer_id", myPool)
       .eq("payment_status", "paid")
       .order("paid_at", { ascending: false })
       .limit(1);
@@ -105,7 +108,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       .from("service_bookings")
       .select("id,stripe_checkout_session_id")
       .eq("listing_id", listingId)
-      .eq("buyer_id", userId)
+      .in("buyer_id", myPool)
       .eq("payment_status", "pending")
       .order("created_at", { ascending: false })
       .limit(1);
@@ -175,7 +178,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     if (!sellerId) {
       return NextResponse.json({ error: "Anuncio sin proveedor" }, { status: 400 });
     }
-    if (isSameUserId(sellerId, userId)) {
+    if (await userIsListingSellerAccount(supabase, userId, sellerId)) {
       return NextResponse.json({ error: "No puedes reservar tu propio anuncio" }, { status: 400 });
     }
 
@@ -184,6 +187,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     }
 
     if (action === "request") {
+      const myPool = await expandUserAccountIdPool(supabase, userId);
       const note = String((json as { note?: string }).note ?? "").trim();
       if (!note || note.length > 2000) {
         return NextResponse.json({ error: "Describe tu solicitud (1–2000 caracteres)" }, { status: 400 });
@@ -199,7 +203,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         .from("listing_service_contact_gate")
         .select("contacted_in_app")
         .eq("listing_id", listingId)
-        .eq("buyer_id", userId)
+        .in("buyer_id", myPool)
         .maybeSingle();
 
       let contactedInApp = Boolean(gate?.contacted_in_app);
