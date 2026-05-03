@@ -94,7 +94,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       const { data: recipient } = await supabase
         .from("users")
         .select("phone,display_name")
-        .eq("id", recipientId)
+        .in("id", idMatchVariantsForIn(recipientId))
         .maybeSingle();
 
       console.log("[notify] recipient lookup:", { recipientId, phone: recipient?.phone, name: recipient?.display_name });
@@ -105,7 +105,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         const { data: sender } = await supabase
           .from("users")
           .select("display_name")
-          .eq("id", userId)
+          .in("id", idMatchVariantsForIn(userId))
           .maybeSingle();
 
         const { data: listingRow } = await supabase

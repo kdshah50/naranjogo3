@@ -22,10 +22,11 @@ export async function GET(req: NextRequest) {
     }
 
     const supabase = createAdminSupabase();
+    const listingIdVariants = idMatchVariantsForIn(listingId);
     const { data: listing, error: listingError } = await supabase
       .from("listings")
       .select("id,seller_id,title_es")
-      .eq("id", listingId)
+      .in("id", listingIdVariants)
       .maybeSingle();
 
     if (listingError || !listing) {
@@ -43,7 +44,7 @@ export async function GET(req: NextRequest) {
       const { data: convsRaw, error: convErr } = await supabase
         .from("listing_conversations")
         .select("id,buyer_id,updated_at,created_at")
-        .eq("listing_id", listingId)
+        .eq("listing_id", listing.id)
         .in("seller_id", idMatchVariantsForIn(userId))
         .order("updated_at", { ascending: false });
 
@@ -57,9 +58,10 @@ export async function GET(req: NextRequest) {
       const buyerIds = Array.from(new Set((convs ?? []).map((c) => c.buyer_id)));
       const buyerMap: Record<string, { display_name: string | null; phone: string | null }> = {};
       if (buyerIds.length > 0) {
-        const { data: buyers } = await supabase.from("users").select("id,display_name,phone").in("id", buyerIds);
+        const expanded = [...new Set(buyerIds.flatMap((bid) => idMatchVariantsForIn(bid)))];
+        const { data: buyers } = await supabase.from("users").select("id,display_name,phone").in("id", expanded);
         for (const b of buyers ?? []) {
-          buyerMap[b.id] = { display_name: b.display_name, phone: b.phone };
+          buyerMap[b.id.trim().toLowerCase()] = { display_name: b.display_name, phone: b.phone };
         }
       }
 
@@ -72,7 +74,7 @@ export async function GET(req: NextRequest) {
             .order("created_at", { ascending: false })
             .limit(1)
             .maybeSingle();
-          const b = buyerMap[c.buyer_id];
+          const b = buyerMap[c.buyer_id.trim().toLowerCase()];
           const buyerLabel =
             b?.display_name?.trim() || (b?.phone ? `…${b.phone.replace(/\D/g, "").slice(-4)}` : "Comprador");
           return {
@@ -95,7 +97,7 @@ export async function GET(req: NextRequest) {
     const { data: conv, error: convErr } = await supabase
       .from("listing_conversations")
       .select("id")
-      .eq("listing_id", listingId)
+      .eq("listing_id", listing.id)
       .in("buyer_id", idMatchVariantsForIn(userId))
       .maybeSingle();
 
@@ -151,10 +153,11 @@ export async function POST(req: NextRequest) {
     }
 
     const supabase = createAdminSupabase();
+    const listingIdVars = idMatchVariantsForIn(listingId);
     const { data: listing, error: listingError } = await supabase
       .from("listings")
       .select("id,seller_id")
-      .eq("id", listingId)
+      .in("id", listingIdVars)
       .maybeSingle();
 
     if (listingError || !listing) {
@@ -172,7 +175,7 @@ export async function POST(req: NextRequest) {
     const { data: existing } = await supabase
       .from("listing_conversations")
       .select("id")
-      .eq("listing_id", listingId)
+      .eq("listing_id", listing.id)
       .in("buyer_id", idMatchVariantsForIn(userId))
       .maybeSingle();
 
@@ -183,7 +186,7 @@ export async function POST(req: NextRequest) {
     const { data: created, error: insertErr } = await supabase
       .from("listing_conversations")
       .insert({
-        listing_id: listingId,
+        listing_id: listing.id,
         buyer_id: userId,
         seller_id: sellerId,
       })
@@ -195,7 +198,7 @@ export async function POST(req: NextRequest) {
         const { data: row } = await supabase
           .from("listing_conversations")
           .select("id")
-          .eq("listing_id", listingId)
+          .eq("listing_id", listing.id)
           .in("buyer_id", idMatchVariantsForIn(userId))
           .maybeSingle();
         if (row) return NextResponse.json({ conversationId: row.id });

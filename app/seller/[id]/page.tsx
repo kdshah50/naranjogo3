@@ -4,6 +4,7 @@ import Image from "next/image";
 import type { Metadata } from "next";
 import SellerReviews, { RatingSummary } from "@/components/SellerReviews";
 import { getServiceRoleRestHeaders, getSupabaseUrl } from "@/lib/service-rest";
+import { idMatchVariantsForIn, postgrestInFilter } from "@/lib/user-id-variants";
 
 function fmtMXN(centavos: number) {
   return new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 0 }).format(centavos / 100);
@@ -37,10 +38,13 @@ function StatCard({ value, label }: { value: string | number; label: string }) {
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
   const supaUrl = getSupabaseUrl();
   const h = getServiceRoleRestHeaders();
-  const res = await fetch(
-    `${supaUrl}/rest/v1/users?id=eq.${params.id}&select=display_name,trust_badge`,
-    { headers: h, cache: "no-store" }
-  );
+  const v = idMatchVariantsForIn(params.id);
+  const fil = postgrestInFilter(v);
+  if (!fil) return { title: "Vendedor - Naranjogo" };
+  const res = await fetch(`${supaUrl}/rest/v1/users?id=${fil}&select=display_name,trust_badge`, {
+    headers: h,
+    cache: "no-store",
+  });
   const rows = res.ok ? await res.json() : [];
   const user = rows[0];
   if (!user) return { title: "Vendedor - Naranjogo" };
@@ -51,28 +55,34 @@ export default async function SellerPage({ params }: { params: { id: string } })
   const supaUrl = getSupabaseUrl();
   const h = getServiceRoleRestHeaders();
 
+  const idVariants = idMatchVariantsForIn(params.id);
+  const idIn = postgrestInFilter(idVariants);
+  if (!idIn) notFound();
+
   const sellerRes = await fetch(
-    `${supaUrl}/rest/v1/users?id=eq.${params.id}&select=id,display_name,avatar_url,trust_badge,ine_verified,rfc_verified,phone_verified,created_at`,
+    `${supaUrl}/rest/v1/users?id=${idIn}&select=id,display_name,avatar_url,trust_badge,ine_verified,rfc_verified,phone_verified,created_at`,
     { headers: h, cache: "no-store" }
   );
   const sellerRows = sellerRes.ok ? await sellerRes.json() : [];
   const seller = sellerRows[0];
   if (!seller) notFound();
 
+  const sellerKey = seller.id as string;
+
   const listingsRes = await fetch(
-    `${supaUrl}/rest/v1/listings?seller_id=eq.${params.id}&status=eq.active&order=created_at.desc&select=id,title_es,price_mxn,condition,location_city,photo_urls,shipping_available,negotiable`,
+    `${supaUrl}/rest/v1/listings?seller_id=${idIn}&status=eq.active&order=created_at.desc&select=id,title_es,price_mxn,condition,location_city,photo_urls,shipping_available,negotiable`,
     { headers: h, cache: "no-store" }
   );
   const listings = listingsRes.ok ? await listingsRes.json() : [];
 
   const soldRes = await fetch(
-    `${supaUrl}/rest/v1/listings?seller_id=eq.${params.id}&status=eq.sold&select=id`,
+    `${supaUrl}/rest/v1/listings?seller_id=${idIn}&status=eq.sold&select=id`,
     { headers: h, cache: "no-store" }
   );
   const sold = soldRes.ok ? await soldRes.json() : [];
 
   const reviewsRes = await fetch(
-    `${supaUrl}/rest/v1/seller_reviews?seller_id=eq.${params.id}&select=rating`,
+    `${supaUrl}/rest/v1/seller_reviews?seller_id=${idIn}&select=rating`,
     { headers: h, cache: "no-store" }
   );
   const reviewRows: { rating: number }[] = reviewsRes.ok ? await reviewsRes.json() : [];
@@ -192,7 +202,7 @@ export default async function SellerPage({ params }: { params: { id: string } })
           <h2 className="font-serif text-xl font-bold text-[#1C1917] mb-4">
             Reseñas {reviewCount > 0 && <span className="ml-2 text-sm font-normal text-[#6B7280]">({reviewCount})</span>}
           </h2>
-          <SellerReviews sellerId={params.id} />
+          <SellerReviews sellerId={sellerKey} />
         </div>
       </div>
     </main>

@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { jwtVerify } from "jose";
 import { getJwtSecretBytes } from "@/lib/jwt-secret";
+import { idMatchVariantsForIn as idMatchVariantsForInImpl } from "@/lib/user-id-variants";
 
 export const TIANGUIS_TOKEN_COOKIE = "tianguis_token";
 
@@ -24,11 +25,7 @@ export function isSameUserId(
 }
 
 /** For PostgREST `.in()` on TEXT uuid columns — `.eq` is case-sensitive vs normalized JWT sub. */
-export function idMatchVariantsForIn(id: string): string[] {
-  const t = id.trim();
-  if (!t) return [];
-  return Array.from(new Set([t, t.toLowerCase(), t.toUpperCase()]));
-}
+export const idMatchVariantsForIn = idMatchVariantsForInImpl;
 
 async function verifyTianguisCookie(token: string) {
   let secret: Uint8Array;

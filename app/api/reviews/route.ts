@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminSupabase, getUserIdFromRequest } from "@/lib/auth-server";
+import { createAdminSupabase, getUserIdFromRequest, idMatchVariantsForIn } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
   const { data: reviews, error } = await supabase
     .from("seller_reviews")
     .select("id,rating,comment,created_at,buyer_id,listing_id")
-    .eq("seller_id", sellerId)
+    .in("seller_id", idMatchVariantsForIn(sellerId))
     .order("created_at", { ascending: false })
     .limit(50);
 
@@ -27,31 +27,33 @@ export async function GET(req: NextRequest) {
   const buyerIds = Array.from(new Set((reviews ?? []).map((r) => r.buyer_id)));
   let buyerMap: Record<string, string> = {};
   if (buyerIds.length > 0) {
+    const expanded = [...new Set(buyerIds.flatMap((id) => idMatchVariantsForIn(id)))];
     const { data: buyers } = await supabase
       .from("users")
       .select("id,display_name")
-      .in("id", buyerIds);
+      .in("id", expanded);
     for (const b of buyers ?? []) {
-      buyerMap[b.id] = b.display_name || "Comprador";
+      buyerMap[b.id.trim().toLowerCase()] = b.display_name || "Comprador";
     }
   }
 
   const listingIds = Array.from(new Set((reviews ?? []).map((r) => r.listing_id)));
   let listingMap: Record<string, string> = {};
   if (listingIds.length > 0) {
+    const listingVariants = [...new Set(listingIds.flatMap((id) => idMatchVariantsForIn(id)))];
     const { data: listings } = await supabase
       .from("listings")
       .select("id,title_es")
-      .in("id", listingIds);
+      .in("id", listingVariants);
     for (const l of listings ?? []) {
-      listingMap[l.id] = l.title_es || "Servicio";
+      listingMap[l.id.trim().toLowerCase()] = l.title_es || "Servicio";
     }
   }
 
   const enriched = (reviews ?? []).map((r) => ({
     ...r,
-    buyer_name: buyerMap[r.buyer_id] ?? "Comprador",
-    listing_title: listingMap[r.listing_id] ?? "Servicio",
+    buyer_name: buyerMap[r.buyer_id.trim().toLowerCase()] ?? "Comprador",
+    listing_title: listingMap[r.listing_id.trim().toLowerCase()] ?? "Servicio",
   }));
 
   const avg =
