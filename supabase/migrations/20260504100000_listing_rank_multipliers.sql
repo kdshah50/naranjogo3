@@ -54,7 +54,7 @@ rpt AS (
   GROUP BY x.listing_id
 ),
 resp AS (
-  SELECT c.listing_id AS listing_id,
+  SELECT c.listing_id::text AS listing_id,
     percentile_cont(0.5) WITHIN GROUP (
       ORDER BY EXTRACT(EPOCH FROM (sm.first_seller - bm.first_buyer)) / 3600.0
     ) AS med_h
@@ -71,8 +71,8 @@ resp AS (
       AND m.sender_id = c.seller_id
       AND m.created_at >= bm.first_buyer
   ) sm ON sm.first_seller IS NOT NULL
-  WHERE c.listing_id IN (SELECT listing_id FROM ids)
-  GROUP BY c.listing_id
+  WHERE c.listing_id::text IN (SELECT listing_id FROM ids)
+  GROUP BY c.listing_id::text
 ),
 rev AS (
   SELECT sr.listing_id::text AS listing_id,
