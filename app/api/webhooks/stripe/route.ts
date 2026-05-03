@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminSupabase } from "@/lib/auth-server";
+import { createAdminSupabase, idMatchVariantsForIn } from "@/lib/auth-server";
 import { getStripe, stripePaymentIntentId } from "@/lib/stripe";
 import { awardPoints } from "@/lib/loyalty";
 import { maybeAwardReferralBonus } from "@/lib/referral";
+import { notifySellerBookingCommissionPaid } from "@/lib/seller-booking-notify";
 
 export const dynamic = "force-dynamic";
 
@@ -53,17 +54,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ received: true });
     }
 
-    const bookingId = session.metadata?.booking_id;
-    if (!bookingId) {
+    const bookingIdMeta = session.metadata?.booking_id?.trim() ?? "";
+    if (!bookingIdMeta) {
       console.error("[stripe-webhook] No booking_id or marketplace_order in metadata");
       return NextResponse.json({ received: true });
     }
+    const bookingIdVars = idMatchVariantsForIn(bookingIdMeta);
 
-    const { data: seller } = await supabase
-      .from("users")
-      .select("phone")
-      .eq("id", session.metadata?.seller_id ?? "")
-      .maybeSingle();
+    const sellerIdMeta = session.metadata?.seller_id?.trim() ?? "";
+    const sellerIdVars = sellerIdMeta ? idMatchVariantsForIn(sellerIdMeta) : [];
+    const { data: seller } =
+      sellerIdVars.length > 0
+        ? await supabase.from("users").select("phone").in("id", sellerIdVars).maybeSingle()
+        : { data: null as { phone: string | null } | null };
 
     const { error: upErr } = await supabase
       .from("service_bookings")
@@ -76,23 +79,29 @@ export async function POST(req: NextRequest) {
         status: "confirmed",
         updated_at: now,
       })
-      .eq("id", bookingId);
+      .in("id", bookingIdVars);
 
     if (upErr) {
       console.error("[stripe-webhook] booking update failed", upErr);
       return NextResponse.json({ error: "Persist failed" }, { status: 500 });
     }
 
+    try {
+      await notifySellerBookingCommissionPaid(supabase, bookingIdMeta);
+    } catch (notifyErr) {
+      console.error("[stripe-webhook] seller booking notify failed (non-fatal)", notifyErr);
+    }
+
     const buyerId = session.metadata?.buyer_id;
     const amountPaid = session.amount_total;
     if (buyerId && amountPaid && amountPaid > 0) {
       try {
-        await awardPoints(supabase, buyerId, bookingId, amountPaid);
+        await awardPoints(supabase, buyerId, bookingIdMeta, amountPaid);
       } catch (loyaltyErr) {
         console.error("[stripe-webhook] loyalty award failed (non-fatal)", loyaltyErr);
       }
       try {
-        await maybeAwardReferralBonus(supabase, buyerId, bookingId);
+        await maybeAwardReferralBonus(supabase, buyerId, bookingIdMeta);
       } catch (refErr) {
         console.error("[stripe-webhook] referral bonus failed (non-fatal)", refErr);
       }

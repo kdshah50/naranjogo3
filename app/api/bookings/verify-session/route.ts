@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminSupabase, idMatchVariantsForIn } from "@/lib/auth-server";
 import { getStripe, stripePaymentIntentId } from "@/lib/stripe";
+import { notifySellerBookingCommissionPaid } from "@/lib/seller-booking-notify";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -77,6 +78,18 @@ export async function GET(req: NextRequest) {
       if (!updatedRows?.length) {
         console.error("[verify-session] update matched 0 rows for booking", bookingRowId);
         return NextResponse.json({ error: "No se pudo confirmar la reserva" }, { status: 500 });
+      }
+
+      try {
+        await notifySellerBookingCommissionPaid(supabase, bookingRowId);
+      } catch (notifyErr) {
+        console.error("[verify-session] seller booking notify failed (non-fatal)", notifyErr);
+      }
+    } else {
+      try {
+        await notifySellerBookingCommissionPaid(supabase, bookingRowId);
+      } catch (notifyErr) {
+        console.error("[verify-session] seller booking notify failed (non-fatal)", notifyErr);
       }
     }
 
