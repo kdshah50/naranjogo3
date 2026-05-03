@@ -90,11 +90,12 @@ export default function ProfilePage() {
       editName:       "Editar nombre",
       saveName:       "Guardar",
       cancel:         "Cancelar",
-      myServices:     "Mis servicios",
-      noServices:     "No tienes servicios publicados aún.",
-      addService:     "Publicar un servicio",
+      myServices:     "Mis anuncios",
+      noServices:     "No tienes anuncios publicados aún.",
+      addService:     "Publicar servicio",
       pending:        "Pendiente aprobación",
       live:           "En línea",
+      sold:           "Vendido",
       archived:       "Archivado",
       logout:         "Cerrar sesión",
       namePlaceholder:"Tu nombre completo",
@@ -110,11 +111,12 @@ export default function ProfilePage() {
       editName:       "Edit name",
       saveName:       "Save",
       cancel:         "Cancel",
-      myServices:     "My services",
-      noServices:     "You haven't posted any services yet.",
+      myServices:     "My listings",
+      noServices:     "You haven't posted any listings yet.",
       addService:     "Post a service",
       pending:        "Pending approval",
       live:           "Live",
+      sold:           "Sold",
       archived:       "Archived",
       logout:         "Log out",
       namePlaceholder:"Your full name",
@@ -206,6 +208,7 @@ export default function ProfilePage() {
   const initials = (user.display_name?.trim() || fallbackPhone).slice(0, 2).toUpperCase();
   const activeListings   = listings.filter(l => l.status === "active" && l.is_verified);
   const pendingListings  = listings.filter(l => l.status === "active" && !l.is_verified);
+  const soldListings     = listings.filter(l => l.status === "sold");
   const archivedListings = listings.filter(l => l.status === "archived");
 
   return (
@@ -292,10 +295,11 @@ export default function ProfilePage() {
         </div>
 
         {/* Stats row */}
-        <div className="grid grid-cols-3 gap-3 mb-5">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
           {[
             { value: activeListings.length,  label: lang === "es" ? "En línea" : "Live" },
             { value: pendingListings.length,  label: lang === "es" ? "Pendientes" : "Pending" },
+            { value: soldListings.length,     label: t.sold },
             { value: archivedListings.length, label: lang === "es" ? "Archivados" : "Archived" },
           ].map(s => (
             <div key={s.label} className="bg-white rounded-2xl border border-[#E5E0D8] p-4 text-center">
@@ -403,7 +407,11 @@ export default function ProfilePage() {
           ) : (
             <div className="flex flex-col gap-3">
               {listings.map(l => (
-                <div key={l.id} className="flex items-center gap-3 p-3 rounded-xl bg-[#F4F0EB]">
+                <Link
+                  key={l.id}
+                  href={`/listing/${l.id}`}
+                  className="flex items-center gap-3 p-3 rounded-xl bg-[#F4F0EB] hover:bg-[#EDE9E4] transition-colors"
+                >
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-[#1C1917] truncate">{l.title_es}</p>
                     <p className="text-xs text-[#6B7280] mt-0.5">{fmtMXN(l.price_mxn)} · {l.location_city}</p>
@@ -411,13 +419,21 @@ export default function ProfilePage() {
                   <span className={`text-[10px] font-bold px-2 py-1 rounded-full flex-shrink-0 ${
                     l.is_verified && l.status === "active"
                       ? "bg-[#ECFDF5] text-[#065F46]"
+                      : l.status === "sold"
+                      ? "bg-[#EFF6FF] text-[#1D4ED8]"
                       : l.status === "archived"
                       ? "bg-[#F4F0EB] text-[#9CA3AF]"
                       : "bg-[#FFFBEB] text-[#92400E]"
                   }`}>
-                    {l.is_verified && l.status === "active" ? `✓ ${t.live}` : l.status === "archived" ? t.archived : `⏳ ${t.pending}`}
+                    {l.is_verified && l.status === "active"
+                      ? `✓ ${t.live}`
+                      : l.status === "sold"
+                      ? t.sold
+                      : l.status === "archived"
+                      ? t.archived
+                      : `⏳ ${t.pending}`}
                   </span>
-                </div>
+                </Link>
               ))}
             </div>
           )}

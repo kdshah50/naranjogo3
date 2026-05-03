@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminSupabase, getUserIdFromRequest, idMatchVariantsForIn } from "@/lib/auth-server";
 import { signedInePhotoUrl } from "@/lib/ine-storage";
+import { canonicalizeAuthPhone, normalizeAuthPhone } from "@/lib/phone";
+
+function phoneLookupVariants(phone: string | null | undefined): string[] {
+  if (phone == null || !String(phone).trim()) return [];
+  const raw = String(phone).trim();
+  const digits = canonicalizeAuthPhone(normalizeAuthPhone(raw));
+  const set = new Set<string>([raw, digits, `+${digits}`].filter(Boolean));
+  return [...set];
+}
 
 /** Session + profile payload for /profile (bypasses RLS that blocks anon reads on users/listings). */
 export async function GET(req: NextRequest) {
@@ -82,10 +91,24 @@ export async function GET(req: NextRequest) {
       if (signed) user.ine_photo_url = signed;
     }
 
+    /** All TEXT uuid variants that might appear as listings.seller_id for this account. */
+    const sellerIdPool = new Set<string>();
+    const addPool = (id: string | null | undefined) => {
+      for (const v of idMatchVariantsForIn(String(id ?? ""))) sellerIdPool.add(v);
+    };
+    addPool(userId);
+    addPool(user.id as string);
+    const phoneVariants = phoneLookupVariants(user.phone as string | null);
+    if (phoneVariants.length > 0) {
+      const { data: samePhoneRows } = await supabase.from("users").select("id").in("phone", phoneVariants);
+      for (const row of samePhoneRows ?? []) addPool(row.id);
+    }
+    const sellerIds = [...sellerIdPool].filter(Boolean);
+
     const { data: listings, error: listingsError } = await supabase
       .from("listings")
       .select("id,title_es,price_mxn,status,is_verified,category_id,location_city,created_at")
-      .in("seller_id", idMatchVariantsForIn(userId))
+      .in("seller_id", sellerIds.length > 0 ? sellerIds : idMatchVariantsForIn(userId))
       .order("created_at", { ascending: false });
 
     if (listingsError) {
