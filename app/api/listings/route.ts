@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceRoleRestHeaders, getSupabaseUrl } from "@/lib/service-rest";
 import { getUserIdFromRequest } from "@/lib/auth-server";
+import { rateLimitListingCreateByUser } from "@/lib/rate-limit";
 
 const PRICE_FLOORS: Record<string, number> = {
   electronics:  50000,
@@ -27,6 +28,22 @@ export async function POST(req: NextRequest) {
     const userId = await getUserIdFromRequest(req);
     if (!userId) {
       return NextResponse.json({ error: "Inicia sesión para publicar" }, { status: 401 });
+    }
+
+    const rl = await rateLimitListingCreateByUser(userId);
+    if (!rl.ok) {
+      return NextResponse.json(
+        {
+          error:
+            rl.reason === "hour"
+              ? "Demasiados anuncios en poco tiempo. Intenta de nuevo más tarde."
+              : "Límite diario de publicaciones alcanzado. Contacta soporte si necesitas más.",
+        },
+        {
+          status: 429,
+          headers: { "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) },
+        },
+      );
     }
 
     const body = await req.json();

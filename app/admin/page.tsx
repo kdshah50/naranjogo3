@@ -111,6 +111,40 @@ export default function AdminPage() {
   const [reportFilter, setReportFilter] = useState<"open" | "all">("open");
   const [reportSaving, setReportSaving] = useState<string | null>(null);
 
+  type DupListingMini = {
+    id: string;
+    seller_id: string;
+    title_es: string;
+    price_mxn: number;
+    created_at: string;
+    photo_sample: string | null;
+  };
+  type DupGroupRow = { reason: string; key: string; listings: DupListingMini[] };
+  const [dupGroups, setDupGroups] = useState<DupGroupRow[]>([]);
+  const [dupLoading, setDupLoading] = useState(false);
+  const [dupMeta, setDupMeta] = useState<{ scanned: number; groupCount: number } | null>(null);
+
+  const loadDupes = useCallback(async () => {
+    setDupLoading(true);
+    try {
+      const res = await fetch(
+        `/api/admin/suspected-duplicates?pin=${encodeURIComponent(pin.trim())}`,
+        { credentials: "same-origin" },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error((data as { error?: string }).error ?? "Error");
+      setDupGroups(Array.isArray(data.groups) ? data.groups : []);
+      setDupMeta({
+        scanned: typeof data.scanned === "number" ? data.scanned : 0,
+        groupCount: typeof data.groupCount === "number" ? data.groupCount : 0,
+      });
+    } catch {
+      setDupGroups([]);
+      setDupMeta(null);
+    }
+    setDupLoading(false);
+  }, [pin]);
+
   const load = useCallback(async () => {
     setLoading(true);
     const f = filter === "pending" ? "pending" : filter === "verified" ? "verified" : "all";
@@ -894,6 +928,62 @@ export default function AdminPage() {
               {f === "pending" ? "⏳ Pending approval" : f === "verified" ? "✅ Verified" : "📋 All"}
             </button>
           ))}
+        </div>
+
+        <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50/60 px-4 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <div>
+              <p className="text-sm font-bold text-amber-950">Posibles duplicados (heurística)</p>
+              <p className="text-xs text-amber-900/90">
+                Mismo vendedor + título normalizado + precio, o misma foto + precio. Buscar no modifica datos.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void loadDupes()}
+              disabled={dupLoading || !pin.trim()}
+              className="px-4 py-2 rounded-xl text-sm font-semibold bg-amber-800 text-white hover:bg-amber-900 disabled:opacity-40"
+            >
+              {dupLoading ? "Analizando…" : "Cargar análisis"}
+            </button>
+          </div>
+          {dupMeta && (
+            <p className="text-xs text-amber-900 mb-2">
+              Escaneados: {dupMeta.scanned} · Grupos: {dupMeta.groupCount}
+            </p>
+          )}
+          {dupGroups.length > 0 && (
+            <div className="space-y-3 max-h-80 overflow-y-auto mt-2">
+              {dupGroups.map((g, i) => (
+                <div key={`${g.key}-${i}`} className="bg-white rounded-xl border border-amber-200/80 p-3 text-xs">
+                  <p className="font-bold text-[#92400E] mb-1">
+                    {g.reason === "title_price" ? "Título + precio" : "Foto + precio"} · {g.listings.length}{" "}
+                    anuncios
+                  </p>
+                  <ul className="space-y-1 text-[#374151]">
+                    {g.listings.map((x) => (
+                      <li key={x.id} className="flex flex-wrap gap-x-2 gap-y-0.5 items-baseline">
+                        <a
+                          href={`/listing/${x.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-mono text-[11px] text-[#1B4332] font-semibold underline"
+                        >
+                          {x.id.slice(0, 8)}…
+                        </a>
+                        <span>{fmtDate(x.created_at)}</span>
+                        <span className="font-semibold">{fmtMXN(x.price_mxn)}</span>
+                        <span className="truncate max-w-[200px]">{x.title_es}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )}
+          {!dupLoading && dupMeta && dupGroups.length === 0 && (
+            <p className="text-xs text-amber-800 mt-1">Sin grupos bajo esta heurística (o sube el límite en API).</p>
+          )}
         </div>
 
         {/* Listings */}

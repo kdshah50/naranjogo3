@@ -10,6 +10,10 @@ import {
 import { sparseSearchTokens } from "@/lib/search-trade-hints";
 import { createAdminSupabase } from "@/lib/auth-server";
 import { fetchListingRankMultipliers } from "@/lib/listing-rank";
+import { duplicateScoreMultiplierById } from "@/lib/listing-duplicate-groups";
+
+/** Same seller + same normalized title + price: non-oldest listings get this × on fused _score (search hygiene). */
+const DUPLICATE_SOFT_SCORE_MULT = 0.38;
 
 /**
  * Hybrid retrieval (what is / isn’t implemented here):
@@ -89,11 +93,11 @@ function mergeUiPricePesosIntoParsed(
   return out;
 }
 
-const SELECT_COLS_FULL = "id,title_es,price_mxn,category_id,condition,location_city,location_lat,location_lng,shipping_available,negotiable,photo_urls,payment_methods,users!fk_listings_seller(display_name,trust_badge,ine_verified,rfc_verified,phone_verified)";
-const SELECT_COLS_BASE = "id,title_es,price_mxn,category_id,condition,location_city,location_lat,location_lng,shipping_available,negotiable,photo_urls,users!fk_listings_seller(display_name,trust_badge,ine_verified,rfc_verified,phone_verified)";
+const SELECT_COLS_FULL = "id,seller_id,created_at,title_es,price_mxn,category_id,condition,location_city,location_lat,location_lng,shipping_available,negotiable,photo_urls,payment_methods,users!fk_listings_seller(display_name,trust_badge,ine_verified,rfc_verified,phone_verified)";
+const SELECT_COLS_BASE = "id,seller_id,created_at,title_es,price_mxn,category_id,condition,location_city,location_lat,location_lng,shipping_available,negotiable,photo_urls,users!fk_listings_seller(display_name,trust_badge,ine_verified,rfc_verified,phone_verified)";
 
 const USER_EMBED_SELECT =
-  "id,users!fk_listings_seller(display_name,trust_badge,ine_verified,rfc_verified,phone_verified)";
+  "id,seller_id,created_at,users!fk_listings_seller(display_name,trust_badge,ine_verified,rfc_verified,phone_verified)";
 
 /** Dense / RPC rows often omit `users`; attach seller embed so listing cards can show trust badges. */
 async function enrichResultsWithSellerUsers(
@@ -121,6 +125,33 @@ async function enrichResultsWithSellerUsers(
       if (u != null) {
         l.users = embeddedSellerRow(u as Record<string, unknown> | Record<string, unknown>[]) ?? u;
       }
+    }
+  } catch {
+    /* non-fatal */
+  }
+}
+
+async function ensureListingDedupeFields(
+  listings: any[],
+  supaUrl: string,
+  headers: Record<string, string>,
+) {
+  const need = listings.filter((l) => l?.id && (!l.seller_id || !l.created_at));
+  if (!need.length) return;
+  const ids = [...new Set(need.map((l) => String(l.id)))];
+  const inList = ids.map((id) => encodeURIComponent(id)).join(",");
+  const url = `${supaUrl}/rest/v1/listings?id=in.(${inList})&select=id,seller_id,created_at`;
+  try {
+    const res = await fetch(url, { headers, cache: "no-store" });
+    if (!res.ok) return;
+    const parsed = await res.json();
+    const raw: any[] = Array.isArray(parsed) ? parsed : [];
+    const byId = new Map(raw.map((r) => [String(r.id), r]));
+    for (const l of listings) {
+      const row = byId.get(String(l.id));
+      if (!row) continue;
+      if (!l.seller_id && row.seller_id) l.seller_id = row.seller_id;
+      if (!l.created_at && row.created_at) l.created_at = row.created_at;
     }
   } catch {
     /* non-fatal */
@@ -312,6 +343,21 @@ export async function GET(req: NextRequest) {
 
   fused = fused.filter((l) => listingMatchesPriceFilters(l.price_mxn, effective));
 
+  await ensureListingDedupeFields(fused, supaUrl, headers);
+
+  const dupMult = duplicateScoreMultiplierById(fused, DUPLICATE_SOFT_SCORE_MULT);
+  let duplicateSoftPenaltyCount = 0;
+  fused = fused.map((l) => {
+    const d = dupMult.get(String(l.id)) ?? 1;
+    if (d < 1) duplicateSoftPenaltyCount++;
+    if (d >= 1) return l;
+    return {
+      ...l,
+      _duplicate_soft_mult: d,
+      _score: Math.round(l._score * d * 10000) / 10000,
+    };
+  });
+
   let rankMul: Record<string, number> = {};
   try {
     const supabase = createAdminSupabase();
@@ -347,7 +393,8 @@ export async function GET(req: NextRequest) {
     bestSimMargin: BEST_SIM_MARGIN,
     relFactor: REL_FACTOR,
     rankNote:
-      "Fused _score × get_listing_rank_multipliers (response, completion, cancel, repeat buyers, reviews, provider_rank_multiplier).",
+      "Fused _score × duplicate soft penalty (same seller + title + price) × get_listing_rank_multipliers (response, completion, cancel, repeat buyers, reviews, provider_rank_multiplier).",
+    duplicateSoftPenaltyCount,
     /** Set by Vercel at build time — use to confirm this deployment matches Git. */
     vercelGitSha: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
     vercelDeploymentId: process.env.VERCEL_DEPLOYMENT_ID ?? null,

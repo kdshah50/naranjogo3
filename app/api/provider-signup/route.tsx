@@ -9,6 +9,7 @@ import {
   SERVICE_LOCATION_OPTIONS,
   sanitizeAlternateServiceSlugs,
 } from "@/lib/provider-services";
+import { rateLimitListingCreateByUser } from "@/lib/rate-limit";
 
 const ADMIN_WHATSAPP = process.env.ADMIN_WHATSAPP_NUMBER ?? "";
 const TWILIO_SID     = process.env.TWILIO_ACCOUNT_SID ?? "";
@@ -150,6 +151,22 @@ export async function POST(req: NextRequest) {
       const newUser = await newUserRes.json();
       sellerId = newUser[0]?.id;
       if (!sellerId) return NextResponse.json({ error: "Failed to create user" }, { status: 500 });
+    }
+
+    const rl = await rateLimitListingCreateByUser(sellerId);
+    if (!rl.ok) {
+      return NextResponse.json(
+        {
+          error:
+            rl.reason === "hour"
+              ? "Demasiados registros en poco tiempo. Intenta más tarde."
+              : "Límite diario de anuncios alcanzado para este número. Contacta soporte.",
+        },
+        {
+          status: 429,
+          headers: { "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) },
+        },
+      );
     }
 
     // 2. Create listing — is_verified=false (pending admin approval)
