@@ -339,7 +339,7 @@ export default async function ListingPage({
         </div>
 
         <div className="mt-6">
-          <GuaranteeBadge />
+          <GuaranteeBadge lang={listingLang} />
         </div>
 
         {sellerId && (

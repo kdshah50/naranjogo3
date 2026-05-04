@@ -654,7 +654,7 @@ export default function MyBookingsPage() {
         )}
 
         <div className="mt-6">
-          <GuaranteeBadge compact />
+          <GuaranteeBadge compact lang={lang} />
         </div>
       </div>
     </main>
