@@ -47,6 +47,7 @@ export default function ServiceBookingBlock({
   sellerId,
   listingLang = "es",
   liveAvailability,
+  loginReturnTo,
 }: {
   listingId: string;
   isService: boolean;
@@ -55,6 +56,8 @@ export default function ServiceBookingBlock({
   listingLang?: Lang;
   /** When the listing shows synced / live openings (informational; flow unchanged). */
   liveAvailability?: { syncEnabled: boolean; upcomingSlotCount: number };
+  /** Full listing URL for post-login redirect (preserve `?lang=` / `?chat=`). */
+  loginReturnTo?: string;
 }) {
   const [meId, setMeId] = useState<string | null | undefined>(undefined);
   const [booking, setBooking] = useState<BookingState | null>(null);
@@ -209,7 +212,7 @@ export default function ServiceBookingBlock({
             : "Inicia sesión, envía un mensaje en la app y paga la tarifa de conexión para desbloquear WhatsApp."}
         </p>
         <Link
-          href={`/auth/login?returnTo=${encodeURIComponent(`/listing/${listingId}`)}`}
+          href={`/auth/login?returnTo=${encodeURIComponent(loginReturnTo ?? `/listing/${listingId}`)}`}
           className="inline-block px-4 py-2 rounded-xl bg-[#1B4332] text-white text-sm font-semibold"
         >
           Iniciar sesión para continuar

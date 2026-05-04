@@ -96,6 +96,12 @@ export default async function ListingPage({
   const price = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 0 }).format(listing.price_mxn / 100);
   const isServiceListing = isServicesListing(listing);
   const listingLang = langFromParam(searchParams?.lang);
+  const listingQueryBase = new URLSearchParams();
+  if (listingLang === "en") listingQueryBase.set("lang", "en");
+  const listingBasePath = `/listing/${params.id}${listingQueryBase.toString() ? `?${listingQueryBase}` : ""}`;
+  const listingQueryWithChat = new URLSearchParams(listingQueryBase);
+  if (searchParams?.chat) listingQueryWithChat.set("chat", searchParams.chat);
+  const listingReturnPath = `/listing/${params.id}${listingQueryWithChat.toString() ? `?${listingQueryWithChat}` : ""}`;
   const calendarSyncEnabled = Boolean(
     (listing as { calendar_sync_enabled?: boolean }).calendar_sync_enabled
   );
@@ -141,7 +147,7 @@ export default async function ListingPage({
   }
 
   return (
-    <main className="min-h-screen bg-[#FDF8F1]">
+    <main id="listing-top" className="min-h-screen bg-[#FDF8F1]">
       <div className="max-w-3xl mx-auto px-4 py-8">
         <ListingPhotoGallery photos={Array.isArray(listing.photo_urls) ? listing.photo_urls : []} title={listing.title_es} />
         <div className="flex items-start justify-between mb-3">
@@ -305,13 +311,21 @@ export default async function ListingPage({
           </Link>
         )}
         <div className="flex flex-col gap-3">
-          <ListingChat listingId={params.id} initialConversationId={searchParams?.chat} />
+          <ListingChat
+            listingId={params.id}
+            initialConversationId={searchParams?.chat}
+            loginReturnTo={listingReturnPath}
+            fullListingHref={listingBasePath}
+            showFullListingLink={Boolean(searchParams?.chat)}
+            lang={listingLang}
+          />
           <div id="booking-section">
             <ServiceBookingBlock
               listingId={params.id}
               isService={isServiceListing}
               sellerId={listing.seller_id ?? null}
               listingLang={listingLang}
+              loginReturnTo={listingReturnPath}
               liveAvailability={
                 isServiceListing
                   ? {

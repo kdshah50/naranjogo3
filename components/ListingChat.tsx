@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import type { Lang } from "@/lib/i18n-lang";
 
 type Msg = { id: string; sender_id: string; body: string; created_at: string };
 
@@ -16,9 +17,19 @@ type Thread = {
 export default function ListingChat({
   listingId,
   initialConversationId,
+  loginReturnTo,
+  fullListingHref,
+  showFullListingLink,
+  lang = "es",
 }: {
   listingId: string;
   initialConversationId?: string;
+  /** Full path (incl. `?lang=` / `?chat=`) for post-login redirect. */
+  loginReturnTo?: string;
+  /** Same listing URL without `chat` — “back” to full listing view. */
+  fullListingHref?: string;
+  showFullListingLink?: boolean;
+  lang?: Lang;
 }) {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -241,7 +252,7 @@ export default function ListingChat({
       <div id="listing-inapp-chat" className="rounded-xl border border-[#E5E0D8] bg-[#F4F0EB] p-4 text-center">
         <p className="text-sm text-[#374151] mb-3">Inicia sesión para escribir al vendedor dentro de la app.</p>
         <Link
-          href={`/auth/login?returnTo=${encodeURIComponent(`/listing/${listingId}`)}`}
+          href={`/auth/login?returnTo=${encodeURIComponent(loginReturnTo ?? `/listing/${listingId}`)}`}
           className="inline-block px-4 py-2 rounded-xl bg-[#1B4332] text-white text-sm font-semibold"
         >
           Entrar
@@ -252,9 +263,19 @@ export default function ListingChat({
 
   return (
     <div id="listing-inapp-chat" className="rounded-xl border border-[#E5E0D8] bg-white overflow-hidden">
-      <div className="px-4 py-3 border-b border-[#E5E0D8] bg-[#F4F0EB]">
-        <h3 className="text-sm font-bold text-[#1C1917]">Mensajes en la app</h3>
-        <p className="text-xs text-[#6B7280] mt-0.5">El vendedor verá tus mensajes aquí y en “Mensajes”.</p>
+      <div className="px-4 py-3 border-b border-[#E5E0D8] bg-[#F4F0EB] flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-bold text-[#1C1917]">Mensajes en la app</h3>
+          <p className="text-xs text-[#6B7280] mt-0.5">El vendedor verá tus mensajes aquí y en “Mensajes”.</p>
+        </div>
+        {showFullListingLink && fullListingHref ? (
+          <Link
+            href={`${fullListingHref}#listing-top`}
+            className="text-xs font-semibold text-[#1B4332] hover:underline shrink-0"
+          >
+            {lang === "en" ? "View listing page" : "Ver ficha del anuncio"}
+          </Link>
+        ) : null}
       </div>
 
       {role === "seller" && threads.length > 0 && (
