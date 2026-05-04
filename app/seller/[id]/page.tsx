@@ -70,10 +70,18 @@ export default async function SellerPage({ params }: { params: { id: string } })
   const sellerKey = seller.id as string;
 
   const listingsRes = await fetch(
-    `${supaUrl}/rest/v1/listings?seller_id=${idIn}&status=eq.active&order=created_at.desc&select=id,title_es,price_mxn,condition,location_city,photo_urls,shipping_available,negotiable`,
+    `${supaUrl}/rest/v1/listings?seller_id=${idIn}&status=eq.active&order=created_at.desc&select=id,title_es,price_mxn,condition,location_city,photo_urls,shipping_available,negotiable,category_id`,
     { headers: h, cache: "no-store" }
   );
   const listings = listingsRes.ok ? await listingsRes.json() : [];
+
+  /** Prefer a service listing for the booking / WhatsApp gate; else newest active. */
+  const primaryListingId = (() => {
+    if (!Array.isArray(listings) || listings.length === 0) return null;
+    const rows = listings as { id: string; category_id?: string | null }[];
+    const service = rows.find((l) => String(l.category_id ?? "").trim().toLowerCase() === "services");
+    return (service ?? rows[0])?.id ?? null;
+  })();
 
   const soldRes = await fetch(
     `${supaUrl}/rest/v1/listings?seller_id=${idIn}&status=eq.sold&select=id`,
@@ -124,6 +132,27 @@ export default async function SellerPage({ params }: { params: { id: string } })
               <StatCard value={sold.length} label="Vendidos" />
               <StatCard value={reviewCount} label="Reseñas" />
             </div>
+            {primaryListingId && (
+              <div className="w-full mt-5 space-y-2 border-t border-[#E5E0D8] pt-5">
+                <Link
+                  href={`/listing/${primaryListingId}`}
+                  className="flex w-full items-center justify-center rounded-2xl bg-[#1B4332] px-4 py-4 text-center text-base font-bold text-white shadow-md transition hover:brightness-110"
+                >
+                  Ver anuncios y agendar
+                </Link>
+                <p className="text-center text-xs text-[#6B7280] leading-snug">
+                  Abre un anuncio, escribe en la app y paga la tarifa en Naranjogo. El WhatsApp del vendedor se muestra después del pago.
+                </p>
+                <p className="text-center">
+                  <Link
+                    href={`/seller/${params.id}#seller-listings`}
+                    className="text-xs font-semibold text-[#1B4332] hover:underline"
+                  >
+                    Ver todos los anuncios ({listings.length})
+                  </Link>
+                </p>
+              </div>
+            )}
           </div>
         </div>
         <div className="bg-[#ECFDF5] border border-[#A7F3D0] rounded-2xl p-4 mb-6 flex items-center gap-3">
@@ -165,7 +194,7 @@ export default async function SellerPage({ params }: { params: { id: string } })
             </p>
           )}
         </div>
-        <div>
+        <div id="seller-listings" className="scroll-mt-24">
           <h2 className="font-serif text-xl font-bold text-[#1C1917] mb-4">
             Articulos activos <span className="ml-2 text-sm font-normal text-[#6B7280]">({listings.length})</span>
           </h2>
@@ -176,11 +205,17 @@ export default async function SellerPage({ params }: { params: { id: string } })
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
               {listings.map((listing: any) => (
-                <Link key={listing.id} href={`/listing/${listing.id}`} className="group">
+                <Link key={listing.id} href={`/listing/${listing.id}`} className="group block">
                   <div className="bg-white rounded-2xl overflow-hidden border border-[#E5E0D8] hover:shadow-lg transition-all duration-200">
                     <div className="relative aspect-[4/3] bg-[#F4F0EB]">
                       {listing.photo_urls?.[0] ? (
-                        <Image src={listing.photo_urls[0]} alt={listing.title_es} fill className="object-cover" sizes="(max-width: 640px) 50vw, 33vw" />
+                        <Image
+                          src={listing.photo_urls[0]}
+                          alt={listing.title_es}
+                          fill
+                          className="object-cover pointer-events-none select-none"
+                          sizes="(max-width: 640px) 50vw, 33vw"
+                        />
                       ) : (
                         <div className="absolute inset-0 flex items-center justify-center text-4xl text-[#E5E0D8]">box</div>
                       )}
