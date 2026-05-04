@@ -227,13 +227,18 @@ export default function ListingChat({
 
   if (loading) {
     return (
-      <div className="rounded-xl border border-[#E5E0D8] bg-white p-4 text-center text-sm text-[#6B7280]">Cargando mensajes…</div>
+      <div
+        id="listing-inapp-chat"
+        className="rounded-xl border border-[#E5E0D8] bg-white p-4 text-center text-sm text-[#6B7280]"
+      >
+        Cargando mensajes…
+      </div>
     );
   }
 
   if (!role) {
     return (
-      <div className="rounded-xl border border-[#E5E0D8] bg-[#F4F0EB] p-4 text-center">
+      <div id="listing-inapp-chat" className="rounded-xl border border-[#E5E0D8] bg-[#F4F0EB] p-4 text-center">
         <p className="text-sm text-[#374151] mb-3">Inicia sesión para escribir al vendedor dentro de la app.</p>
         <Link
           href={`/auth/login?returnTo=${encodeURIComponent(`/listing/${listingId}`)}`}
@@ -246,7 +251,7 @@ export default function ListingChat({
   }
 
   return (
-    <div className="rounded-xl border border-[#E5E0D8] bg-white overflow-hidden">
+    <div id="listing-inapp-chat" className="rounded-xl border border-[#E5E0D8] bg-white overflow-hidden">
       <div className="px-4 py-3 border-b border-[#E5E0D8] bg-[#F4F0EB]">
         <h3 className="text-sm font-bold text-[#1C1917]">Mensajes en la app</h3>
         <p className="text-xs text-[#6B7280] mt-0.5">El vendedor verá tus mensajes aquí y en “Mensajes”.</p>

@@ -84,8 +84,10 @@ export default function WhatsAppCTA({ listingId }: { listingId: string }) {
     <button
       type="button"
       onClick={() => {
-        const el = document.getElementById("booking-section");
-        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+        const chat = document.getElementById("listing-inapp-chat");
+        const booking = document.getElementById("booking-section");
+        const el = chat ?? booking;
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
       }}
       className="w-full py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-3 shadow-md hover:shadow-lg transition-all relative overflow-hidden group"
       style={{ background: "linear-gradient(135deg, #20BD5A 0%, #128C7E 100%)", color: "white" }}
