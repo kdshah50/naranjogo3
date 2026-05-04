@@ -240,13 +240,19 @@ export default async function ListingPage({
         )}
         {/* WhatsApp CTA — hero button (contact gate + commission same as services) */}
         <div className="mb-6">
-          <WhatsAppCTA listingId={params.id} />
+          <WhatsAppCTA listingId={params.id} lang={listingLang} />
           <p className="text-center text-xs text-[#6B7280] mt-2">
-            {isServiceListing
-              ? packagePromoActive
-                ? "Plan de varias visitas: chatea, paga una sola tarifa de plataforma y desbloquea el WhatsApp para todo el plan."
-                : "Platica primero, paga la tarifa y recibe el WhatsApp del proveedor"
-              : "Escribe por la app, paga la tarifa de conexión y desbloquea el WhatsApp del vendedor"}
+            {listingLang === "en"
+              ? isServiceListing
+                ? packagePromoActive
+                  ? "Multi-visit plan: message in the app first, pay one platform fee, then you get WhatsApp for the full plan."
+                  : "First message in the app to schedule, pay the platform fee, then you’ll get the provider’s WhatsApp."
+                : "Message in the app, pay the connection fee, then you’ll get the seller’s WhatsApp."
+              : isServiceListing
+                ? packagePromoActive
+                  ? "Plan de varias visitas: primero escribe en la app, paga una sola tarifa de plataforma y obtén el WhatsApp para todo el plan."
+                  : "Primero envía un mensaje en la app para agendar, paga la tarifa de plataforma y recibirás el WhatsApp del proveedor."
+                : "Escribe por la app, paga la tarifa de conexión y recibirás el WhatsApp del vendedor."}
           </p>
         </div>
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import type { Lang } from "@/lib/i18n-lang";
 
 function WhatsAppIcon({ size = 20 }: { size?: number }) {
   return (
@@ -10,23 +11,34 @@ function WhatsAppIcon({ size = 20 }: { size?: number }) {
   );
 }
 
-function LockIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-      <path d="M7 11V7a5 5 0 0110 0v4" />
-    </svg>
-  );
-}
-
 type BookingInfo = {
   hasPaidBooking: boolean;
   revealedWhatsappUrl: string | null;
 };
 
-export default function WhatsAppCTA({ listingId }: { listingId: string }) {
+export default function WhatsAppCTA({
+  listingId,
+  lang = "es",
+}: {
+  listingId: string;
+  /** From listing `?lang=` — affects hero CTA labels only. */
+  lang?: Lang;
+}) {
   const [state, setState] = useState<"loading" | "locked" | "unlocked">("loading");
   const [waUrl, setWaUrl] = useState<string | null>(null);
+
+  const t =
+    lang === "en"
+      ? {
+          loading: "Loading…",
+          contactWa: "Contact on WhatsApp",
+          scheduleCta: "Send a message to schedule",
+        }
+      : {
+          loading: "Cargando…",
+          contactWa: "Contactar por WhatsApp",
+          scheduleCta: "Enviar mensaje para agendar",
+        };
 
   const load = useCallback(async () => {
     try {
@@ -60,7 +72,7 @@ export default function WhatsAppCTA({ listingId }: { listingId: string }) {
         style={{ background: "#25D366", color: "white" }}
       >
         <WhatsAppIcon size={22} />
-        <span>WhatsApp</span>
+        <span>{t.loading}</span>
       </div>
     );
   }
@@ -75,7 +87,7 @@ export default function WhatsAppCTA({ listingId }: { listingId: string }) {
         style={{ background: "#25D366", color: "white" }}
       >
         <WhatsAppIcon size={22} />
-        Contactar por WhatsApp
+        {t.contactWa}
       </a>
     );
   }
@@ -89,12 +101,13 @@ export default function WhatsAppCTA({ listingId }: { listingId: string }) {
         const el = chat ?? booking;
         if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
       }}
-      className="w-full py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-3 shadow-md hover:shadow-lg transition-all relative overflow-hidden group"
+      className="w-full py-4 rounded-2xl font-bold text-base sm:text-lg flex items-center justify-center gap-3 shadow-md hover:shadow-lg transition-all relative overflow-hidden group text-center px-3 leading-snug"
       style={{ background: "linear-gradient(135deg, #20BD5A 0%, #128C7E 100%)", color: "white" }}
     >
-      <WhatsAppIcon size={22} />
-      <span>Desbloquear WhatsApp</span>
-      <LockIcon />
+      <span className="shrink-0 inline-flex">
+        <WhatsAppIcon size={22} />
+      </span>
+      <span>{t.scheduleCta}</span>
       <span className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
     </button>
   );
