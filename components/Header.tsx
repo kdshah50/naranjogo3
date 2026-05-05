@@ -78,19 +78,31 @@ function HeaderInner() {
             </Suspense>
 
             {user ? (
-              /* Logged-in user avatar + menu */
-              <div className="relative">
+              /* Logged-in user: avatar opens menu; trust emoji links straight to bookings */
+              <div className="relative flex items-center gap-1">
                 <button
+                  type="button"
                   onClick={() => setShowMenu(!showMenu)}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#F4F0EB] hover:bg-[#E5E0D8] transition-colors"
+                  className="flex items-center justify-center px-2.5 py-1.5 rounded-xl bg-[#F4F0EB] hover:bg-[#E5E0D8] transition-colors"
+                  aria-expanded={showMenu}
+                  aria-haspopup="menu"
+                  aria-label={lang === "en" ? "Account menu" : "Menú de cuenta"}
                 >
                   <div className="w-6 h-6 rounded-full bg-[#1B4332] flex items-center justify-center text-white text-[10px] font-bold">
                     {(user.phone.length >= 2 ? user.phone.slice(-2) : "••").toUpperCase()}
                   </div>
-                  <span className="text-xs font-semibold text-[#1B4332]">
+                </button>
+                <Link
+                  href="/my-bookings"
+                  className="flex items-center justify-center min-w-[2.25rem] px-2 py-1.5 rounded-xl bg-[#F4F0EB] hover:bg-[#E5E0D8] transition-colors border border-transparent hover:border-[#E5E0D8]"
+                  title={lang === "en" ? "My bookings — reservations & reviews" : "Mis reservas y reseñas"}
+                  aria-label={lang === "en" ? "My bookings" : "Mis reservas"}
+                  onClick={() => setShowMenu(false)}
+                >
+                  <span className="text-sm leading-none" aria-hidden>
                     {badgeIcon(user.badge)}
                   </span>
-                </button>
+                </Link>
                 {showMenu && (
                   <div className="absolute right-0 top-full mt-2 w-44 bg-white border border-[#E5E0D8] rounded-xl shadow-lg overflow-hidden z-50">
                     <Link
