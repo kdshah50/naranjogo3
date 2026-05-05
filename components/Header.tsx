@@ -100,6 +100,20 @@ function HeaderInner() {
                     >
                       {lang === "en" ? "Messages" : "Mensajes"}
                     </Link>
+                    <Link
+                      href="/my-bookings"
+                      className="flex items-center gap-2 px-4 py-3 text-sm hover:bg-[#F4F0EB] transition-colors"
+                      onClick={() => setShowMenu(false)}
+                    >
+                      📋 {lang === "en" ? "My bookings" : "Mis reservas"}
+                    </Link>
+                    <Link
+                      href="/profile#loyalty-section"
+                      className="flex items-center gap-2 px-4 py-3 text-sm hover:bg-[#F4F0EB] transition-colors"
+                      onClick={() => setShowMenu(false)}
+                    >
+                      ⭐ {lang === "en" ? "Loyalty & points" : "Lealtad y puntos"}
+                    </Link>
                     <Link href="/profile"
                       className="flex items-center gap-2 px-4 py-3 text-sm hover:bg-[#F4F0EB] transition-colors"
                       onClick={() => setShowMenu(false)}>

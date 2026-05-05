@@ -19,6 +19,10 @@ type BookingState = {
   hasPendingBooking: boolean;
   pendingBookingId: string | null;
   commissionAmountCents: number;
+  /** Pre-loyalty fee when a loyalty discount applies (for strikethrough UI). */
+  commissionBeforeLoyaltyCents?: number | null;
+  loyaltyDiscountPctApplied?: number | null;
+  loyaltyDiscountCents?: number | null;
   commissionPct: number;
   hasPackage?: boolean;
   packageSessionCount?: number | null;
@@ -458,14 +462,62 @@ export default function ServiceBookingBlock({
             />
           </div>
 
-          <div className="bg-[#F4F0EB] rounded-xl p-3 flex items-center justify-between">
-            <div>
+          {booking.loyaltyDiscountPctApplied != null &&
+            booking.loyaltyDiscountPctApplied > 0 &&
+            booking.commissionBeforeLoyaltyCents != null &&
+            booking.commissionBeforeLoyaltyCents > booking.commissionAmountCents && (
+              <div className="space-y-2">
+                <div className="bg-gradient-to-r from-emerald-700 to-[#065F46] rounded-xl p-3 text-center">
+                  <p className="text-xs font-semibold text-white leading-snug">
+                    {listingLang === "en"
+                      ? `⭐ ${booking.loyaltyDiscountPctApplied}% loyalty discount applied — the amount below matches what you pay in Stripe.`
+                      : `⭐ ${booking.loyaltyDiscountPctApplied}% de descuento por lealtad aplicado — el monto de abajo es el que pagarás en Stripe.`}
+                  </p>
+                </div>
+                {loyaltyHint && !loyaltyHint.milestoneDiscount && loyaltyHint.bookingsUntil > 0 && (
+                  <p className="text-[11px] text-center text-emerald-800 font-medium leading-snug px-1">
+                    {listingLang === "en" ? (
+                      <>
+                        {loyaltyHint.bookingsUntil} more paid booking{loyaltyHint.bookingsUntil !== 1 ? "s" : ""} until{" "}
+                        {loyaltyHint.milestoneDiscountPct ?? 15}% off (every {loyaltyHint.everyN ?? 5}).
+                      </>
+                    ) : (
+                      <>
+                        Te faltan {loyaltyHint.bookingsUntil} reserva{loyaltyHint.bookingsUntil !== 1 ? "s" : ""} pagada
+                        {loyaltyHint.bookingsUntil !== 1 ? "s" : ""} para el {loyaltyHint.milestoneDiscountPct ?? 15}% (cada{" "}
+                        {loyaltyHint.everyN ?? 5}).
+                      </>
+                    )}
+                  </p>
+                )}
+              </div>
+            )}
+
+          <div className="bg-[#F4F0EB] rounded-xl p-3 flex items-center justify-between gap-2">
+            <div className="min-w-0">
               <p className="text-xs text-[#6B7280]">
-                Tarifa {isService ? "de servicio" : "de conexión"} ({booking.commissionPct}%)
+                {listingLang === "en" ? "Platform fee" : "Tarifa"}{" "}
+                {isService ? (listingLang === "en" ? "(service)" : "de servicio") : listingLang === "en" ? "(connection)" : "de conexión"}{" "}
+                ({booking.commissionPct}%)
               </p>
-              <p className="text-lg font-bold text-[#1C1917]">{formatMXN(booking.commissionAmountCents)}</p>
+              <div className="flex flex-wrap items-baseline gap-2 mt-0.5">
+                {booking.commissionBeforeLoyaltyCents != null &&
+                  booking.commissionBeforeLoyaltyCents > booking.commissionAmountCents && (
+                    <p className="text-sm text-[#9CA3AF] line-through decoration-[#9CA3AF]">
+                      {formatMXN(booking.commissionBeforeLoyaltyCents)}
+                    </p>
+                  )}
+                <p className="text-lg font-bold text-[#1C1917]">{formatMXN(booking.commissionAmountCents)}</p>
+              </div>
+              {booking.loyaltyDiscountCents != null && booking.loyaltyDiscountCents > 0 && (
+                <p className="text-[11px] text-emerald-700 font-semibold mt-1">
+                  {listingLang === "en"
+                    ? `You save ${formatMXN(booking.loyaltyDiscountCents)} on the fee.`
+                    : `Ahorras ${formatMXN(booking.loyaltyDiscountCents)} en la tarifa.`}
+                </p>
+              )}
             </div>
-            <span className="text-xs text-[#6B7280]">MXN</span>
+            <span className="text-xs text-[#6B7280] shrink-0">MXN</span>
           </div>
 
           <button
@@ -474,32 +526,57 @@ export default function ServiceBookingBlock({
             onClick={() => void startCheckout()}
             className="w-full py-3 rounded-xl bg-[#1B4332] text-white text-sm font-semibold disabled:opacity-40 flex items-center justify-center gap-2"
           >
-            {busy ? "Procesando…" : `Pagar ${formatMXN(booking.commissionAmountCents)} y obtener contacto`}
+            {busy
+              ? "Procesando…"
+              : listingLang === "en"
+                ? `Pay ${formatMXN(booking.commissionAmountCents)} and get contact`
+                : `Pagar ${formatMXN(booking.commissionAmountCents)} y obtener contacto`}
           </button>
 
           <p className="text-center text-xs text-[#6B7280]">
-            Pago seguro con Stripe. Al pagar recibirás el WhatsApp/teléfono del {partyLabel}.
+            {listingLang === "en"
+              ? "Secure payment with Stripe. After paying you get the provider’s WhatsApp / phone."
+              : `Pago seguro con Stripe. Al pagar recibirás el WhatsApp/teléfono del ${partyLabel}.`}
           </p>
 
-          {loyaltyHint && loyaltyHint.discountPct > 0 && (
+          {loyaltyHint && loyaltyHint.discountPct > 0 && booking.commissionBeforeLoyaltyCents == null && (
             <div className="bg-gradient-to-r from-[#1B4332] to-[#2D6A4F] rounded-xl p-3 text-center space-y-1">
               {loyaltyHint.milestoneDiscount && loyaltyHint.bookingsUntil === 0 ? (
                 <p className="text-xs font-semibold text-white">
-                  🎉 ¡Esta reserva incluye {loyaltyHint.discountPct}% de descuento en la tarifa (lealtad)!
+                  🎉{" "}
+                  {listingLang === "en"
+                    ? `This booking includes ${loyaltyHint.discountPct}% off the fee (loyalty milestone).`
+                    : `¡Esta reserva incluye ${loyaltyHint.discountPct}% de descuento en la tarifa (lealtad)!`}
                 </p>
               ) : loyaltyHint.rebookDiscount ? (
                 <p className="text-xs font-semibold text-white">
-                  ⭐ {loyaltyHint.discountPct}% de descuento por volver a reservar en Naranjogo (solo en la app).
+                  ⭐{" "}
+                  {listingLang === "en"
+                    ? `${loyaltyHint.discountPct}% off for booking again on Naranjogo (app only). Final amount is confirmed at checkout.`
+                    : `${loyaltyHint.discountPct}% de descuento por volver a reservar en Naranjogo (solo en la app). El monto final se confirma al pagar.`}
                 </p>
               ) : (
                 <p className="text-xs font-semibold text-white">
-                  🎉 ¡Esta reserva tiene {loyaltyHint.discountPct}% de descuento!
+                  🎉{" "}
+                  {listingLang === "en"
+                    ? `This booking has ${loyaltyHint.discountPct}% off the fee.`
+                    : `¡Esta reserva tiene ${loyaltyHint.discountPct}% de descuento!`}
                 </p>
               )}
               {!loyaltyHint.milestoneDiscount && (
                 <p className="text-[10px] text-white/85 leading-snug">
-                  A {loyaltyHint.bookingsUntil} reserva{loyaltyHint.bookingsUntil !== 1 ? "s" : ""} del
-                  bonus {loyaltyHint.milestoneDiscountPct ?? 15}% (cada {loyaltyHint.everyN ?? 5} reservas pagadas).
+                  {listingLang === "en" ? (
+                    <>
+                      {loyaltyHint.bookingsUntil} more paid booking
+                      {loyaltyHint.bookingsUntil !== 1 ? "s" : ""} until {loyaltyHint.milestoneDiscountPct ?? 15}% (every{" "}
+                      {loyaltyHint.everyN ?? 5}).
+                    </>
+                  ) : (
+                    <>
+                      A {loyaltyHint.bookingsUntil} reserva{loyaltyHint.bookingsUntil !== 1 ? "s" : ""} del bonus{" "}
+                      {loyaltyHint.milestoneDiscountPct ?? 15}% (cada {loyaltyHint.everyN ?? 5} reservas pagadas).
+                    </>
+                  )}
                 </p>
               )}
             </div>
@@ -507,8 +584,18 @@ export default function ServiceBookingBlock({
           {loyaltyHint && loyaltyHint.discountPct === 0 && loyaltyHint.bookingsUntil > 0 && (
             <div className="bg-gradient-to-r from-[#1B4332]/90 to-[#2D6A4F]/90 rounded-xl p-3 text-center">
               <p className="text-xs text-white/90">
-                ⭐ {loyaltyHint.bookingsUntil} reserva{loyaltyHint.bookingsUntil !== 1 ? "s" : ""} más para{" "}
-                {loyaltyHint.milestoneDiscountPct ?? 15}% en la tarifa (lealtad).
+                ⭐{" "}
+                {listingLang === "en" ? (
+                  <>
+                    {loyaltyHint.bookingsUntil} more paid booking{loyaltyHint.bookingsUntil !== 1 ? "s" : ""} until{" "}
+                    {loyaltyHint.milestoneDiscountPct ?? 15}% off the fee.
+                  </>
+                ) : (
+                  <>
+                    {loyaltyHint.bookingsUntil} reserva{loyaltyHint.bookingsUntil !== 1 ? "s" : ""} más para{" "}
+                    {loyaltyHint.milestoneDiscountPct ?? 15}% en la tarifa (lealtad).
+                  </>
+                )}
               </p>
             </div>
           )}

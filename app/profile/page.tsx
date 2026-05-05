@@ -440,7 +440,7 @@ export default function ProfilePage() {
         </div>
 
         {/* Loyalty + referral */}
-        <div className="mb-5">
+        <div id="loyalty-section" className="mb-5 scroll-mt-24">
           <LoyaltyCard lang={lang} />
         </div>
         <ReferralCard lang={lang} />

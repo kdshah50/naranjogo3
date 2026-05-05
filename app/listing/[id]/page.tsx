@@ -319,7 +319,7 @@ export default async function ListingPage({
             showFullListingLink={Boolean(searchParams?.chat)}
             lang={listingLang}
           />
-          <div id="booking-section">
+          <div id="booking-section" className="scroll-mt-28">
             <ServiceBookingBlock
               listingId={params.id}
               isService={isServiceListing}

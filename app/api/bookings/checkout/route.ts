@@ -4,7 +4,7 @@ import { getStripe, computeCommissionCents, DEFAULT_COMMISSION_PCT, MIN_COMMISSI
 import { getNextBookingDiscount, redeemDiscount } from "@/lib/loyalty";
 import { isServicesListing } from "@/lib/listing-category";
 import { effectiveListingPriceMxnCents, listingHasActivePackage } from "@/lib/package-pricing";
-import { buyerHasSentInAppMessage, ensureContactGateFromMessages } from "@/lib/contact-gate";
+import { buyerHasSentInAppMessage, ensureContactGateFromMessages, unlockContactGateIfRepeatBuyerWithSeller } from "@/lib/contact-gate";
 import { getPublicAppUrl } from "@/lib/app-url";
 import { expandUserAccountIdPool, userIsListingSellerAccount } from "@/lib/user-account-pool";
 
@@ -72,6 +72,15 @@ export async function POST(req: NextRequest) {
         await ensureContactGateFromMessages(supabase, listingId, userId);
         contactOk = true;
       }
+    }
+    if (!contactOk) {
+      contactOk = await unlockContactGateIfRepeatBuyerWithSeller(
+        supabase,
+        listingId,
+        userId,
+        listing.seller_id as string,
+        myPool
+      );
     }
     if (!contactOk) {
       return NextResponse.json(

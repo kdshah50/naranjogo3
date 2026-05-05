@@ -41,3 +41,30 @@ export async function ensureContactGateFromMessages(
   );
   if (error) console.error("[contact-gate] upsert", error);
 }
+
+/**
+ * If the buyer already completed a paid booking with this seller (any listing), treat the contact
+ * gate as satisfied so they can pay again without re-sending a first message (rebook / new service).
+ */
+export async function unlockContactGateIfRepeatBuyerWithSeller(
+  supabase: SupabaseClient,
+  listingId: string,
+  canonicalBuyerId: string,
+  sellerId: string,
+  buyerIdPool: string[]
+): Promise<boolean> {
+  const { data: prior, error } = await supabase
+    .from("service_bookings")
+    .select("id")
+    .eq("seller_id", sellerId)
+    .in("buyer_id", buyerIdPool)
+    .eq("payment_status", "paid")
+    .limit(1);
+  if (error) {
+    console.error("[contact-gate] repeat buyer check", error);
+    return false;
+  }
+  if (!prior?.length) return false;
+  await ensureContactGateFromMessages(supabase, listingId, canonicalBuyerId);
+  return true;
+}

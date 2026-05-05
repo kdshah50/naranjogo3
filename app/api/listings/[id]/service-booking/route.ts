@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminSupabase, getUserIdFromRequest, idMatchVariantsForIn } from "@/lib/auth-server";
 import { isServicesListing } from "@/lib/listing-category";
-import { buyerHasSentInAppMessage, ensureContactGateFromMessages } from "@/lib/contact-gate";
-import { computeCommissionCents } from "@/lib/stripe";
+import { buyerHasSentInAppMessage, ensureContactGateFromMessages, unlockContactGateIfRepeatBuyerWithSeller } from "@/lib/contact-gate";
+import { computeCommissionCents, MIN_COMMISSION_CENTS_MXN } from "@/lib/stripe";
+import { getNextBookingDiscount } from "@/lib/loyalty";
 import {
   effectiveListingPriceMxnCents,
   listingHasActivePackage,
@@ -73,6 +74,16 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         await ensureContactGateFromMessages(supabase, listingId, userId);
       }
     }
+    if (!contactedInApp && sellerId) {
+      const unlocked = await unlockContactGateIfRepeatBuyerWithSeller(
+        supabase,
+        listingId,
+        userId,
+        String(sellerId),
+        myPool
+      );
+      if (unlocked) contactedInApp = true;
+    }
 
     const hasContacted = contactedInApp;
 
@@ -133,7 +144,26 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       package_session_count: listingPricing?.package_session_count,
       package_total_price_mxn: listingPricing?.package_total_price_mxn,
     });
-    const commCents = computeCommissionCents(base, commPct);
+    let commCents = computeCommissionCents(base, commPct);
+    if (!Number.isFinite(commCents) || commCents < MIN_COMMISSION_CENTS_MXN) {
+      commCents = MIN_COMMISSION_CENTS_MXN;
+    }
+
+    let commissionBeforeLoyaltyCents: number | null = null;
+    let loyaltyDiscountPctApplied: number | null = null;
+    let loyaltyDiscountCents: number | null = null;
+    try {
+      const reward = await getNextBookingDiscount(supabase, userId);
+      if (reward.discountPct > 0) {
+        commissionBeforeLoyaltyCents = commCents;
+        loyaltyDiscountPctApplied = reward.discountPct;
+        loyaltyDiscountCents = Math.round(commCents * reward.discountPct / 100);
+        commCents = Math.max(commCents - loyaltyDiscountCents, MIN_COMMISSION_CENTS_MXN);
+      }
+    } catch (loyaltyErr) {
+      console.error("[service-booking] loyalty preview failed (non-fatal)", loyaltyErr);
+    }
+
     const hasPackage = listingHasActivePackage({
       package_session_count: listingPricing?.package_session_count,
       package_total_price_mxn: listingPricing?.package_total_price_mxn,
@@ -160,6 +190,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       hasPendingBooking: !!pendingBooking,
       pendingBookingId: pendingBooking?.id ?? null,
       commissionAmountCents: commCents,
+      commissionBeforeLoyaltyCents,
+      loyaltyDiscountPctApplied,
+      loyaltyDiscountCents,
       commissionPct: commPct,
       hasPackage,
       packageSessionCount: hasPackage ? listingPricing?.package_session_count : null,

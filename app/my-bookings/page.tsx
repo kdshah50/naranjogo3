@@ -467,7 +467,7 @@ export default function MyBookingsPage() {
 
                   <div className="flex flex-wrap gap-2">
                     <Link
-                      href={`/listing/${b.listing_id}`}
+                      href={`/listing/${b.listing_id}#booking-section`}
                       className="flex-1 min-w-[120px] py-2.5 rounded-xl bg-[#1B4332] text-white text-xs font-semibold text-center hover:bg-[#2D6A4F] transition-colors"
                     >
                       {t.rebook}
