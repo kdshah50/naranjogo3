@@ -19,3 +19,6 @@ listings-api/*.db
 .next
 .vercel
 .env*.local
+
+# TypeScript incremental build cache (local only)
+tsconfig.tsbuildinfo
