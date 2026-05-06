@@ -6,7 +6,7 @@ const CREST = "/tianguis-crest.jpg";
 export type TianguisWordmarkVariant = "header" | "footer" | "auth";
 
 /**
- * Crest + “Tianguis✦” wordmark. Used site-wide (Header, login, footer).
+ * Crest + “Tianguis✦” wordmark. “Tianguis” is one word: T is styled inline with no break/space before ianguis.
  */
 export default function TianguisWordmark({
   variant,
@@ -24,24 +24,28 @@ export default function TianguisWordmark({
         ? "h-11 w-[34px] sm:h-12 sm:w-[37px]"
         : "h-5 w-[15px]";
 
-  const typography =
+  /** One wrapper + T in span + “ianguis” as immediate text (no JSX whitespace). */
+  const word =
+    variant === "header" ? (
+      <span className="font-serif text-lg text-[#1C1917] leading-none whitespace-nowrap">
+        <span className="text-xl font-bold text-[#1B4332]">T</span>ianguis
+      </span>
+    ) : variant === "auth" ? (
+      <span className="font-serif text-2xl text-[#1C1917] leading-none whitespace-nowrap">
+        <span className="text-3xl font-bold text-[#1B4332]">T</span>ianguis
+      </span>
+    ) : (
+      <span className="font-serif text-xs text-[#1C1917] leading-none whitespace-nowrap">
+        <span className="text-xs font-bold text-[#1B4332]">T</span>ianguis
+      </span>
+    );
+
+  const starClass =
     variant === "header"
-      ? {
-          t1: "font-serif text-xl font-bold text-[#1B4332]",
-          t2: "font-serif text-lg text-[#1C1917]",
-          star: "text-[#D4A017] text-xs font-bold ml-0.5",
-        }
+      ? "text-[#D4A017] text-xs font-bold ml-0.5 shrink-0"
       : variant === "auth"
-        ? {
-            t1: "font-serif text-3xl font-bold text-[#1B4332]",
-            t2: "font-serif text-2xl text-[#1C1917]",
-            star: "text-[#D4A017] text-sm font-bold ml-0.5 mt-1",
-          }
-        : {
-            t1: "font-serif text-xs font-bold text-[#1B4332]",
-            t2: "font-serif text-xs text-[#1C1917]",
-            star: "text-[#D4A017] text-[10px] font-bold ml-0.5",
-          };
+        ? "text-[#D4A017] text-sm font-bold ml-0.5 mt-0.5 shrink-0"
+        : "text-[#D4A017] text-[10px] font-bold ml-0.5 shrink-0";
 
   const wrap = `inline-flex items-center gap-1.5 sm:gap-2 flex-shrink-0 ${className}`;
 
@@ -56,12 +60,8 @@ export default function TianguisWordmark({
         sizes={variant === "header" ? "34px" : variant === "auth" ? "48px" : "20px"}
         priority={variant === "header"}
       />
-      {/* Single word unit — no flex gap between T and ianguis */}
-      <span className="inline-flex items-baseline gap-0 whitespace-nowrap leading-none">
-        <span className={typography.t1}>T</span>
-        <span className={typography.t2}>ianguis</span>
-      </span>
-      <span className={typography.star}>✦</span>
+      {word}
+      <span className={starClass}>✦</span>
     </>
   );
 
