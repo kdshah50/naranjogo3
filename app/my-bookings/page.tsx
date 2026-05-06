@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import GuaranteeBadge from "@/components/GuaranteeBadge";
 import RoutineHabitsCard from "@/components/RoutineHabitsCard";
+import BuyerRetentionPanel from "@/components/BuyerRetentionPanel";
 import { useAppLang, useAppLangActions } from "@/hooks/use-app-lang";
 
 type Booking = {
@@ -520,6 +521,7 @@ function MyBookingsPageInner() {
         <p className="text-sm text-[#6B7280] mb-4">{t.subtitle}</p>
 
         <div className="mb-6">
+          <BuyerRetentionPanel variant="banner" lang={lang} />
           <RoutineHabitsCard lang={lang} />
         </div>
 

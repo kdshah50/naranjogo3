@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Suspense, useEffect, useState, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import GuaranteeBadge from "@/components/GuaranteeBadge";
+import BuyerRetentionPanel, { withLang } from "@/components/BuyerRetentionPanel";
 import { useAppLang } from "@/hooks/use-app-lang";
 import { formatCurrencyMXN } from "@/lib/locale-format";
 import type { Lang } from "@/lib/i18n-lang";
@@ -49,6 +50,7 @@ const BS: Record<
     problems: string;
     refund: string;
     contactFooter: string;
+    guaranteeCta: string;
   }
 > = {
   es: {
@@ -79,6 +81,7 @@ const BS: Record<
     refund: "Solicita un reembolso",
     contactFooter:
       "Este contacto también está disponible en la página del servicio mientras tu reserva esté activa.",
+    guaranteeCta: "Centro de garantía y ayuda",
   },
   en: {
     loadFallback: "Loading…",
@@ -107,6 +110,7 @@ const BS: Record<
     problems: "Issues with the service?",
     refund: "Request a refund",
     contactFooter: "This contact is also on the service page while your booking is active.",
+    guaranteeCta: "Guarantee & support hub",
   },
 };
 
@@ -309,25 +313,31 @@ function BookingSuccessContent() {
           {/* Footer */}
           <div className="px-6 py-4 bg-[#F4F0EB] flex justify-between items-center flex-wrap gap-2">
             <Link
-              href={`/listing/${data.listingId}`}
+              href={withLang(`/listing/${data.listingId}`, lang)}
               className="text-sm text-[#1B4332] font-semibold hover:underline"
             >
               {t.backListing}
             </Link>
-            <Link href="/my-bookings" className="text-sm text-[#1B4332] font-semibold hover:underline">
+            <Link href={withLang("/my-bookings", lang)} className="text-sm text-[#1B4332] font-semibold hover:underline">
               {t.myBookings}
             </Link>
-            <Link href="/messages" className="text-sm text-[#1B4332] font-semibold hover:underline">
+            <Link href={withLang("/messages", lang)} className="text-sm text-[#1B4332] font-semibold hover:underline">
               {t.messages}
             </Link>
           </div>
         </div>
 
+        {isPaid && data.isBuyer && (
+          <div className="mt-6">
+            <BuyerRetentionPanel variant="post_payment" lang={lang} listingId={data.listingId} />
+          </div>
+        )}
+
         {isPaid && (
           <div className="mt-6 px-6">
             <p className="text-center text-sm text-[#374151] mb-2">
               {t.reviewBlurb}{" "}
-              <Link href="/my-bookings" className="font-semibold text-[#1B4332] hover:underline">
+              <Link href={withLang("/my-bookings", lang)} className="font-semibold text-[#1B4332] hover:underline">
                 {t.myBookings}
               </Link>
               .
@@ -340,9 +350,13 @@ function BookingSuccessContent() {
             <GuaranteeBadge lang={lang} />
             <p className="text-center text-xs text-[#6B7280] mt-3">
               {t.problems}{" "}
-              <a href="/claims" className="text-[#1B4332] font-semibold hover:underline">
+              <Link href={withLang("/claims", lang)} className="text-[#1B4332] font-semibold hover:underline">
                 {t.refund}
-              </a>
+              </Link>
+              {" · "}
+              <Link href={withLang("/claims", lang)} className="text-[#1B4332] font-semibold hover:underline">
+                {t.guaranteeCta}
+              </Link>
             </p>
           </div>
         )}

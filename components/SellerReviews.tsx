@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import type { Lang } from "@/lib/i18n-lang";
 
 type Review = {
   id: string;
@@ -9,6 +10,7 @@ type Review = {
   created_at: string;
   buyer_name: string;
   listing_title: string;
+  booking_id?: string | null;
 };
 
 type ReviewsData = {
@@ -70,11 +72,20 @@ function StarsInteractive({
   );
 }
 
-function timeAgo(dateStr: string): string {
+function timeAgo(dateStr: string, lang: Lang): string {
   const d = new Date(dateStr);
   const now = new Date();
   const diffMs = now.getTime() - d.getTime();
   const mins = Math.floor(diffMs / 60000);
+  if (lang === "en") {
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    if (days < 30) return `${days}d ago`;
+    const months = Math.floor(days / 30);
+    return `${months} mo ago`;
+  }
   if (mins < 60) return `hace ${mins}m`;
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `hace ${hrs}h`;
@@ -185,7 +196,8 @@ export function RatingSummary({
 }
 
 /** Full reviews list for a seller profile */
-export default function SellerReviews({ sellerId }: { sellerId: string }) {
+export default function SellerReviews({ sellerId, lang = "es" }: { sellerId: string; lang?: Lang }) {
+  const es = lang === "es";
   const [data, setData] = useState<ReviewsData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -206,14 +218,18 @@ export default function SellerReviews({ sellerId }: { sellerId: string }) {
 
   if (loading) {
     return (
-      <div className="py-8 text-center text-sm text-[#6B7280]">Cargando reseñas…</div>
+      <div className="py-8 text-center text-sm text-[#6B7280]">
+        {es ? "Cargando reseñas…" : "Loading reviews…"}
+      </div>
     );
   }
 
   if (!data || data.total === 0) {
     return (
       <div className="bg-white border border-[#E5E0D8] rounded-2xl p-6 text-center">
-        <p className="text-[#6B7280] text-sm">Este vendedor aún no tiene reseñas.</p>
+        <p className="text-[#6B7280] text-sm">
+          {es ? "Este proveedor aún no tiene reseñas." : "This provider has no reviews yet."}
+        </p>
       </div>
     );
   }
@@ -225,7 +241,10 @@ export default function SellerReviews({ sellerId }: { sellerId: string }) {
         <span className="text-3xl font-bold text-[#1C1917]">{data.average}</span>
         <div>
           <Stars rating={Math.round(data.average)} size={18} />
-          <p className="text-xs text-[#6B7280] mt-0.5">{data.total} reseña{data.total !== 1 ? "s" : ""}</p>
+          <p className="text-xs text-[#6B7280] mt-0.5">
+            {data.total}{" "}
+            {es ? (data.total !== 1 ? "reseñas" : "reseña") : data.total !== 1 ? "reviews" : "review"}
+          </p>
         </div>
       </div>
 
@@ -233,17 +252,31 @@ export default function SellerReviews({ sellerId }: { sellerId: string }) {
       <div className="space-y-3">
         {data.reviews.map((r) => (
           <div key={r.id} className="bg-white border border-[#E5E0D8] rounded-xl p-4">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-[#F4F0EB] flex items-center justify-center text-xs font-bold text-[#1B4332]">
+            <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-8 h-8 rounded-full bg-[#F4F0EB] flex items-center justify-center text-xs font-bold text-[#1B4332] flex-shrink-0">
                   {(r.buyer_name?.[0] ?? "C").toUpperCase()}
                 </div>
-                <div>
-                  <p className="text-sm font-semibold text-[#1C1917]">{r.buyer_name}</p>
-                  <p className="text-[10px] text-[#9CA3AF]">{r.listing_title}</p>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <p className="text-sm font-semibold text-[#1C1917]">{r.buyer_name}</p>
+                    {r.booking_id ? (
+                      <span
+                        className="inline-flex items-center rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+                        title={
+                          es
+                            ? "Reserva pagada verificada en Naranjogo"
+                            : "Verified paid booking on Naranjogo"
+                        }
+                      >
+                        {es ? "✓ Reserva verificada" : "✓ Verified booking"}
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="text-[10px] text-[#9CA3AF] truncate">{r.listing_title}</p>
                 </div>
               </div>
-              <span className="text-[10px] text-[#9CA3AF]">{timeAgo(r.created_at)}</span>
+              <span className="text-[10px] text-[#9CA3AF] flex-shrink-0">{timeAgo(r.created_at, lang)}</span>
             </div>
             <Stars rating={r.rating} size={14} />
             {r.comment && (

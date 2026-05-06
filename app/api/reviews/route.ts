@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
 
   const { data: reviews, error } = await supabase
     .from("seller_reviews")
-    .select("id,rating,comment,created_at,buyer_id,listing_id")
+    .select("id,rating,comment,created_at,buyer_id,listing_id,booking_id")
     .in("seller_id", idMatchVariantsForIn(sellerId))
     .order("created_at", { ascending: false })
     .limit(50);

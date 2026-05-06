@@ -344,18 +344,25 @@ export default async function ListingPage({
 
         {sellerId && (
           <div className="mt-8">
-            <h2 className="font-serif text-xl font-bold text-[#1C1917] mb-4">
-              Reseñas del vendedor
-              {reviewCount > 0 && <span className="ml-2 text-sm font-normal text-[#6B7280]">({reviewCount})</span>}
+            <h2 className="font-serif text-xl font-bold text-[#1C1917] mb-1">
+              {listingLang === "en" ? "Reviews" : "Reseñas del proveedor"}
+              {reviewCount > 0 && (
+                <span className="ml-2 text-sm font-normal text-[#6B7280]">({reviewCount})</span>
+              )}
             </h2>
+            <p className="text-xs text-[#6B7280] mb-3 leading-relaxed">
+              {listingLang === "en"
+                ? "Written by buyers after a paid, completed booking on Naranjogo — not anonymous social reviews."
+                : "Escritas por compradores tras una reserva pagada y completada en Naranjogo — no son reseñas anónimas de redes."}
+            </p>
             <p className="text-xs text-[#6B7280] mb-4">
-              <Link href="/my-bookings" className="text-[#1B4332] font-semibold hover:underline">
+              <Link href={listingLang === "en" ? "/my-bookings?lang=en" : "/my-bookings"} className="text-[#1B4332] font-semibold hover:underline">
                 {listingLang === "en"
                   ? "Leave a star rating from My bookings after a paid booking."
                   : "Deja tu calificación con estrellas en Mis reservas después de una reserva pagada."}
               </Link>
             </p>
-            <SellerReviews sellerId={sellerId} />
+            <SellerReviews sellerId={sellerId} lang={listingLang} />
           </div>
         )}
 
