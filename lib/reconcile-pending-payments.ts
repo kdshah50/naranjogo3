@@ -73,6 +73,7 @@ export async function reconcileOneCheckoutSession(
     })
     .in("id", idVars)
     .eq("payment_status", "pending")
+    .neq("status", "cancelled")
     .select("id");
 
   if (upErr) {

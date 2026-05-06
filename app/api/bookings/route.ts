@@ -19,7 +19,9 @@ export async function GET(req: NextRequest) {
 
   let query = supabase
     .from("service_bookings")
-    .select("id,listing_id,seller_id,buyer_id,commission_amount_cents,payment_status,paid_at,status,created_at,package_session_count,ticket_code")
+    .select(
+      "id,listing_id,seller_id,buyer_id,commission_amount_cents,payment_status,paid_at,status,created_at,package_session_count,ticket_code,cancelled_at,cancelled_by_role,cancel_reason_code"
+    )
     .order("created_at", { ascending: false })
     .limit(50);
 
@@ -48,6 +50,16 @@ export async function GET(req: NextRequest) {
     for (const r of revRows ?? []) {
       if (r.booking_id) reviewedSet.add(r.booking_id);
     }
+  }
+
+  let sellerStrikeCount: number | undefined;
+  if (sellerMode) {
+    const { data: meRow } = await supabase
+      .from("users")
+      .select("provider_strike_count")
+      .eq("id", userId)
+      .maybeSingle();
+    sellerStrikeCount = meRow?.provider_strike_count ?? 0;
   }
 
   const enriched = await Promise.all(
@@ -85,5 +97,8 @@ export async function GET(req: NextRequest) {
     })
   );
 
-  return NextResponse.json({ bookings: enriched });
+  return NextResponse.json({
+    bookings: enriched,
+    ...(sellerMode && sellerStrikeCount !== undefined ? { sellerStrikeCount } : {}),
+  });
 }

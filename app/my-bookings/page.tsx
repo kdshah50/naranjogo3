@@ -18,6 +18,7 @@ type Booking = {
   created_at: string;
   has_review?: boolean;
   package_session_count?: number | null;
+  cancel_reason_code?: string | null;
   listing_title: string;
   seller_name: string;
 };
@@ -164,6 +165,9 @@ export default function MyBookingsPage() {
   const [apptLocal, setApptLocal] = useState<Record<string, string>>({});
   const [apptBeforeH, setApptBeforeH] = useState<Record<string, number>>({});
   const [lang, setLang] = useState<"es" | "en">("es");
+  const [busyCancelId, setBusyCancelId] = useState<string | null>(null);
+  const [buyerCancelCode, setBuyerCancelCode] = useState<Record<string, string>>({});
+  const [cancelMsg, setCancelMsg] = useState<Record<string, string>>({});
 
   useEffect(() => {
     try {
@@ -190,6 +194,11 @@ export default function MyBookingsPage() {
       .then(([bData, rData]) => {
         const list = Array.isArray(bData.bookings) ? bData.bookings : [];
         setBookings(list);
+        const initCancel: Record<string, string> = {};
+        for (const x of list as Booking[]) {
+          initCancel[x.id] = "changed_mind";
+        }
+        setBuyerCancelCode((prev) => ({ ...initCancel, ...prev }));
         setReminders(Array.isArray(rData.reminders) ? rData.reminders : []);
         const initDays: Record<string, number> = {};
         const initWa: Record<string, boolean> = {};
@@ -257,7 +266,19 @@ export default function MyBookingsPage() {
           phaseScheduled: "Agendado",
           phaseInProgress: "En curso",
           phaseCompleted: "Completado",
+          phaseCancelled: "Cancelada",
           guaranteeLink: "Garantía / no-show",
+          cancelBooking: "Cancelar reserva",
+          cancelHint:
+            "Solo antes de que el proveedor marque “en curso”. No hay reembolso automático de la comisión; el equipo revisa caso por caso con la garantía.",
+          cancelReason: "Motivo",
+          cancelDo: "Confirmar cancelación",
+          cancelReasonSchedule: "Conflicto de agenda",
+          cancelReasonMind: "Cambié de opinión",
+          cancelReasonOtherProv: "Contraté a otro proveedor",
+          cancelReasonOther: "Otro",
+          cancelledBlurb:
+            "Reserva cancelada. Si hubo incumplimiento del proveedor, abre un reclamo en garantía (conserva tus mensajes como evidencia).",
         }
       : {
           back: "← My profile",
@@ -295,11 +316,56 @@ export default function MyBookingsPage() {
           phaseScheduled: "Scheduled",
           phaseInProgress: "In progress",
           phaseCompleted: "Completed",
+          phaseCancelled: "Cancelled",
           guaranteeLink: "Guarantee / no-show",
+          cancelBooking: "Cancel booking",
+          cancelHint:
+            "Only before the provider marks the visit “in progress.” Platform fees are not refunded automatically; support reviews disputes via the guarantee.",
+          cancelReason: "Reason",
+          cancelDo: "Confirm cancellation",
+          cancelReasonSchedule: "Schedule conflict",
+          cancelReasonMind: "Changed my mind",
+          cancelReasonOtherProv: "Booked another provider",
+          cancelReasonOther: "Other",
+          cancelledBlurb:
+            "This booking was cancelled. If the provider failed to show up or broke commitments, file a guarantee claim (keep WhatsApp messages as evidence).",
         };
 
   const pendingFor = (bookingId: string) =>
     reminders.filter((r) => r.booking_id === bookingId && r.status === "pending");
+
+  const canBuyerCancel = (b: Booking) =>
+    b.payment_status === "paid" && ["pending", "confirmed", "scheduled"].includes(b.status);
+
+  const cancelBuyerBooking = async (bookingId: string) => {
+    const code = buyerCancelCode[bookingId] ?? "changed_mind";
+    setBusyCancelId(bookingId);
+    setCancelMsg((m) => ({ ...m, [bookingId]: "" }));
+    try {
+      const res = await fetch(`/api/bookings/${bookingId}`, {
+        method: "PATCH",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "cancelled", cancelReasonCode: code }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((data as { error?: string }).error ?? "Error");
+      setBookings((prev) =>
+        prev.map((x) => (x.id === bookingId ? { ...x, status: "cancelled", cancel_reason_code: code } : x)),
+      );
+      setCancelMsg((m) => ({
+        ...m,
+        [bookingId]: lang === "es" ? "✓ Reserva cancelada" : "✓ Booking cancelled",
+      }));
+    } catch (e) {
+      setCancelMsg((m) => ({
+        ...m,
+        [bookingId]: e instanceof Error ? e.message : "Error",
+      }));
+    } finally {
+      setBusyCancelId(null);
+    }
+  };
 
   const cancelReminder = async (reminderId: string, bookingId: string) => {
     try {
@@ -491,13 +557,15 @@ export default function MyBookingsPage() {
                           </span>
                         )}
                         <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#F4F0EB] text-[#374151]">
-                          {b.status === "scheduled"
-                            ? t.phaseScheduled
-                            : b.status === "in_progress"
-                              ? t.phaseInProgress
-                              : b.status === "completed"
-                                ? t.phaseCompleted
-                                : t.phaseConfirmed}
+                          {b.status === "cancelled"
+                            ? t.phaseCancelled
+                            : b.status === "scheduled"
+                              ? t.phaseScheduled
+                              : b.status === "in_progress"
+                                ? t.phaseInProgress
+                                : b.status === "completed"
+                                  ? t.phaseCompleted
+                                  : t.phaseConfirmed}
                         </span>
                         <Link
                           href={`/claims?booking=${encodeURIComponent(b.id)}`}
@@ -521,6 +589,45 @@ export default function MyBookingsPage() {
                       {t.rebook}
                     </Link>
                   </div>
+
+                  {canBuyerCancel(b) && (
+                    <details className="mt-3 rounded-xl border border-red-100 bg-red-50/40 px-3 py-2">
+                      <summary className="text-xs font-semibold text-red-900 cursor-pointer list-none">
+                        {t.cancelBooking}
+                      </summary>
+                      <p className="text-[10px] text-red-800/90 mt-2 leading-relaxed">{t.cancelHint}</p>
+                      <div className="flex flex-col gap-2 mt-2">
+                        <label className="text-[10px] text-[#6B7280]">{t.cancelReason}</label>
+                        <select
+                          value={buyerCancelCode[b.id] ?? "changed_mind"}
+                          onChange={(e) =>
+                            setBuyerCancelCode((prev) => ({ ...prev, [b.id]: e.target.value }))
+                          }
+                          className="border border-[#E5E0D8] rounded-lg px-2 py-1.5 text-xs bg-white text-[#1C1917]"
+                        >
+                          <option value="schedule_conflict">{t.cancelReasonSchedule}</option>
+                          <option value="changed_mind">{t.cancelReasonMind}</option>
+                          <option value="found_other_provider">{t.cancelReasonOtherProv}</option>
+                          <option value="other">{t.cancelReasonOther}</option>
+                        </select>
+                        <button
+                          type="button"
+                          disabled={busyCancelId === b.id}
+                          onClick={() => void cancelBuyerBooking(b.id)}
+                          className="w-full py-2 rounded-xl bg-red-700 text-white text-xs font-semibold disabled:opacity-50"
+                        >
+                          {busyCancelId === b.id ? "…" : t.cancelDo}
+                        </button>
+                        {cancelMsg[b.id] && (
+                          <p
+                            className={`text-[10px] ${cancelMsg[b.id].startsWith("✓") ? "text-emerald-600" : "text-red-600"}`}
+                          >
+                            {cancelMsg[b.id]}
+                          </p>
+                        )}
+                      </div>
+                    </details>
+                  )}
 
                   {pendingFor(b.id).length > 0 && (
                     <div className="mt-3 space-y-1.5">
@@ -686,6 +793,8 @@ export default function MyBookingsPage() {
 
                   {b.has_review ? (
                     <p className="text-xs text-emerald-600 mt-3">✓ {t.reviewed}</p>
+                  ) : b.status === "cancelled" ? (
+                    <p className="text-xs text-amber-800 mt-3 leading-relaxed">{t.cancelledBlurb}</p>
                   ) : b.status === "completed" ? (
                     <ReviewBlock
                       booking={b}

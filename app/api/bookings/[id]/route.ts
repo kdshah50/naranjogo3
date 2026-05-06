@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminSupabase, getUserIdFromRequest } from "@/lib/auth-server";
 import { expandUserAccountIdPool, poolsOverlap } from "@/lib/user-account-pool";
+import { notifyBookingCancelledParty } from "@/lib/booking-cancel-notify";
+import {
+  canBuyerCancelBooking,
+  canSellerCancelBooking,
+  normalizeCancelNote,
+  parseCancelReasonCode,
+} from "@/lib/booking-cancellation";
 import { notifyBuyerCompletedReviewPrompt } from "@/lib/buyer-completed-review-notify";
 import { notifyBuyerLifecyclePhase } from "@/lib/buyer-phase-notify";
 import { appendBookingEvent, BookingLifecycleStatus, canTransitionLifecycle } from "@/lib/booking-lifecycle";
@@ -30,7 +37,12 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       return NextResponse.json({ error: "Reserva no encontrada" }, { status: 404 });
     }
 
-    if (booking.buyer_id !== userId && booking.seller_id !== userId) {
+    const myPool = await expandUserAccountIdPool(supabase, userId);
+    const buyerPoolBooking = await expandUserAccountIdPool(supabase, String(booking.buyer_id));
+    const sellerPoolBooking = await expandUserAccountIdPool(supabase, String(booking.seller_id));
+    const isBuyer = poolsOverlap(myPool, buyerPoolBooking);
+    const isSeller = poolsOverlap(myPool, sellerPoolBooking);
+    if (!isBuyer && !isSeller) {
       return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
 
@@ -49,9 +61,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     const isPaid = booking.payment_status === "paid";
     const phone = isPaid ? (booking.seller_phone_snapshot || seller?.phone) : null;
     const waDigits = phone?.replace(/\D/g, "") ?? "";
-    const waUrl = isPaid && waDigits
-      ? `https://wa.me/${waDigits}?text=${encodeURIComponent(`Hola! Ya reservé tu servicio "${listing?.title_es ?? ""}" en Naranjogo.`)}`
-      : null;
+    const waUrl =
+      isPaid && waDigits
+        ? `https://wa.me/${waDigits}?text=${encodeURIComponent(`Hola! Ya reservé tu servicio "${listing?.title_es ?? ""}" en Naranjogo.`)}`
+        : null;
 
     const appUrl = getPublicAppUrl();
 
@@ -61,26 +74,34 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       ticketCode: booking.ticket_code ?? null,
       paymentStatus: booking.payment_status,
       status: booking.status,
+      cancelledAt: booking.cancelled_at ?? null,
+      cancelledByRole: booking.cancelled_by_role ?? null,
+      cancelReasonCode: booking.cancel_reason_code ?? null,
+      cancelNote: booking.cancel_note ?? null,
       commissionAmountCents: booking.commission_amount_cents,
       commissionPct: booking.commission_pct,
       paidAt: booking.paid_at,
       createdAt: booking.created_at,
-      isBuyer: booking.buyer_id === userId,
+      isBuyer,
       tracking: {
         buyerBookingsUrl: `${appUrl}/my-bookings`,
         sellerBookingsUrl: `${appUrl}/seller-bookings`,
         listingUrl: `${appUrl}/listing/${booking.listing_id}`,
         claimsUrl: `${appUrl}/claims?booking=${encodeURIComponent(booking.id)}`,
       },
-      listing: listing ? {
-        title: listing.title_es,
-        photo: listing.photo_urls?.[0] ?? null,
-        priceMxn: listing.price_mxn,
-      } : null,
-      seller: seller ? {
-        displayName: seller.display_name,
-        avatarUrl: seller.avatar_url,
-      } : null,
+      listing: listing
+        ? {
+            title: listing.title_es,
+            photo: listing.photo_urls?.[0] ?? null,
+            priceMxn: listing.price_mxn,
+          }
+        : null,
+      seller: seller
+        ? {
+            displayName: seller.display_name,
+            avatarUrl: seller.avatar_url,
+          }
+        : null,
       contact: isPaid ? { whatsappUrl: waUrl } : null,
     });
   } catch (e) {
@@ -90,7 +111,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 }
 
 /**
- * PATCH { status: "scheduled" | "in_progress" | "completed" } — seller advances lifecycle (audit log + buyer WhatsApp on transitions).
+ * PATCH { status } — seller advances lifecycle, or buyer/seller cancels paid booking (audit + WhatsApp).
  */
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -101,14 +122,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     const body = await req.json().catch(() => ({}));
     const nextRaw = String(body?.status ?? "").toLowerCase();
-    const allowed: BookingLifecycleStatus[] = ["scheduled", "in_progress", "completed"];
-    if (!allowed.includes(nextRaw as BookingLifecycleStatus)) {
-      return NextResponse.json(
-        { error: "status debe ser: scheduled, in_progress o completed" },
-        { status: 400 }
-      );
-    }
-    const nextStatus = nextRaw as BookingLifecycleStatus;
 
     const bookingId = params.id?.trim();
     if (!bookingId) {
@@ -116,6 +129,138 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
 
     const supabase = createAdminSupabase();
+
+    if (nextRaw === "cancelled") {
+      const cancelNote = normalizeCancelNote(body?.cancelNote ?? body?.cancel_note);
+      const cancelAsRoleRaw = body?.cancelAsRole ?? body?.cancel_as_role;
+      const cancelAsRole =
+        cancelAsRoleRaw === "buyer" || cancelAsRoleRaw === "seller" ? cancelAsRoleRaw : null;
+
+      const { data: booking, error: fetchErr } = await supabase
+        .from("service_bookings")
+        .select("id,buyer_id,seller_id,payment_status,status")
+        .eq("id", bookingId)
+        .maybeSingle();
+
+      if (fetchErr || !booking) {
+        return NextResponse.json({ error: "Reserva no encontrada" }, { status: 404 });
+      }
+
+      if (booking.payment_status !== "paid") {
+        return NextResponse.json({ error: "Solo se pueden cancelar reservas pagadas" }, { status: 400 });
+      }
+
+      if (booking.status === "cancelled") {
+        return NextResponse.json({ ok: true, unchanged: true, status: "cancelled" });
+      }
+
+      const myPool = await expandUserAccountIdPool(supabase, userId);
+      const sellerPoolBooking = await expandUserAccountIdPool(supabase, String(booking.seller_id));
+      const buyerPoolBooking = await expandUserAccountIdPool(supabase, String(booking.buyer_id));
+      const isSeller = poolsOverlap(myPool, sellerPoolBooking);
+      const isBuyer = poolsOverlap(myPool, buyerPoolBooking);
+
+      if (!isSeller && !isBuyer) {
+        return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+      }
+
+      let role: "buyer" | "seller";
+      if (isSeller && isBuyer) {
+        if (!cancelAsRole) {
+          return NextResponse.json(
+            { error: "Indica cancelAsRole: buyer o seller (cuenta vinculada a ambas partes)." },
+            { status: 400 }
+          );
+        }
+        role = cancelAsRole;
+      } else if (isSeller) {
+        role = "seller";
+      } else {
+        role = "buyer";
+      }
+
+      if (role === "buyer" && !canBuyerCancelBooking(String(booking.status))) {
+        return NextResponse.json(
+          { error: "No puedes cancelar en este estado (contacta soporte o usa garantía si hubo incumplimiento)." },
+          { status: 400 }
+        );
+      }
+      if (role === "seller" && !canSellerCancelBooking(String(booking.status))) {
+        return NextResponse.json({ error: "No puedes cancelar una reserva ya terminada." }, { status: 400 });
+      }
+
+      const reasonCode = parseCancelReasonCode(body?.cancelReasonCode ?? body?.cancel_reason_code, role);
+      if (!reasonCode) {
+        return NextResponse.json(
+          {
+            error:
+              role === "buyer"
+                ? "cancelReasonCode inválido (schedule_conflict, changed_mind, found_other_provider, other)."
+                : "cancelReasonCode inválido (seller_unavailable, mutual_agreement, buyer_no_show, other).",
+          },
+          { status: 400 }
+        );
+      }
+
+      if (!canTransitionLifecycle(booking.status, "cancelled")) {
+        return NextResponse.json(
+          { error: `No se puede cancelar desde el estado "${booking.status}".` },
+          { status: 400 }
+        );
+      }
+
+      const fromStatus = String(booking.status);
+      const now = new Date().toISOString();
+      const { data: updated, error: upErr } = await supabase
+        .from("service_bookings")
+        .update({
+          status: "cancelled",
+          cancelled_at: now,
+          cancelled_by_role: role,
+          cancel_reason_code: reasonCode,
+          cancel_note: cancelNote,
+          updated_at: now,
+        })
+        .eq("id", bookingId)
+        .eq("payment_status", "paid")
+        .eq("status", fromStatus)
+        .select("id,status")
+        .maybeSingle();
+
+      if (upErr || !updated) {
+        return NextResponse.json(
+          { error: "No se pudo cancelar (¿otro dispositivo cambió el estado?). Refresca e intenta." },
+          { status: 409 }
+        );
+      }
+
+      await appendBookingEvent(supabase, {
+        bookingId,
+        actorId: userId,
+        eventType: "cancellation",
+        fromStatus,
+        toStatus: "cancelled",
+        meta: { role, cancel_reason_code: reasonCode, cancel_note: cancelNote },
+      });
+
+      try {
+        await notifyBookingCancelledParty(supabase, bookingId, role, reasonCode);
+      } catch (e) {
+        console.error("[bookings/:id] PATCH cancel WhatsApp failed (non-fatal)", e);
+      }
+
+      return NextResponse.json({ ok: true, status: "cancelled" });
+    }
+
+    const allowed: BookingLifecycleStatus[] = ["scheduled", "in_progress", "completed"];
+    if (!allowed.includes(nextRaw as BookingLifecycleStatus)) {
+      return NextResponse.json(
+        { error: "status debe ser: scheduled, in_progress, completed o cancelled" },
+        { status: 400 }
+      );
+    }
+    const nextStatus = nextRaw as BookingLifecycleStatus;
+
     const { data: booking, error: fetchErr } = await supabase
       .from("service_bookings")
       .select("id,buyer_id,seller_id,payment_status,status,ticket_code")

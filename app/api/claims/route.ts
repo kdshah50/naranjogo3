@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminSupabase, getUserIdFromRequest } from "@/lib/auth-server";
 import { getAdminPin, isAdminPinConfigured } from "@/lib/admin-pin";
+import { recordGuaranteeNoShowStrikeIfNeeded } from "@/lib/seller-strikes";
 
 export const dynamic = "force-dynamic";
 
@@ -172,6 +173,16 @@ export async function PATCH(req: NextRequest) {
 
   const supabase = createAdminSupabase();
 
+  const { data: claimRow, error: fetchClaimErr } = await supabase
+    .from("guarantee_claims")
+    .select("id,booking_id,seller_id,reason,status")
+    .eq("id", claimId)
+    .maybeSingle();
+
+  if (fetchClaimErr || !claimRow) {
+    return NextResponse.json({ error: "Reclamo no encontrado" }, { status: 404 });
+  }
+
   const updates: Record<string, unknown> = { status };
   if (adminNote) updates.admin_note = adminNote;
   if (refundCents !== null) updates.refund_amount_cents = refundCents;
@@ -179,11 +190,21 @@ export async function PATCH(req: NextRequest) {
     updates.resolved_at = new Date().toISOString();
   }
 
-  const { error } = await supabase
-    .from("guarantee_claims")
-    .update(updates)
-    .eq("id", claimId);
+  const { error } = await supabase.from("guarantee_claims").update(updates).eq("id", claimId);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ ok: true });
+
+  try {
+    const strike = await recordGuaranteeNoShowStrikeIfNeeded(supabase, {
+      claimId,
+      bookingId: String(claimRow.booking_id),
+      sellerId: String(claimRow.seller_id),
+      adminStatus: status,
+      claimReason: String(claimRow.reason),
+    });
+    return NextResponse.json({ ok: true, strikeRecorded: strike.recorded });
+  } catch (e) {
+    console.error("[claims] PATCH strike hook failed (non-fatal)", e);
+    return NextResponse.json({ ok: true });
+  }
 }

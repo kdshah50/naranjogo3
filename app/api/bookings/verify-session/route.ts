@@ -72,6 +72,7 @@ export async function GET(req: NextRequest) {
           updated_at: now,
         })
         .in("id", idVars)
+        .neq("status", "cancelled")
         .select("id");
 
       if (upErr) {

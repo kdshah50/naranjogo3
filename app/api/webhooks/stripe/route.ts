@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
         ? await supabase.from("users").select("phone").in("id", sellerIdVars).maybeSingle()
         : { data: null as { phone: string | null } | null };
 
-    const { error: upErr } = await supabase
+    const { data: bookingPaySynced, error: upErr } = await supabase
       .from("service_bookings")
       .update({
         payment_status: "paid",
@@ -81,11 +81,17 @@ export async function POST(req: NextRequest) {
         status: "confirmed",
         updated_at: now,
       })
-      .in("id", bookingIdVars);
+      .in("id", bookingIdVars)
+      .neq("status", "cancelled")
+      .select("id");
 
     if (upErr) {
       console.error("[stripe-webhook] booking update failed", upErr);
       return NextResponse.json({ error: "Persist failed" }, { status: 500 });
+    }
+
+    if (!bookingPaySynced?.length) {
+      return NextResponse.json({ received: true });
     }
 
     try {
