@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import TianguisWordmark from "@/components/TianguisWordmark";
 import { formatMxLocalInput, formatUsLocalInput } from "@/lib/phone";
 import { useAppLang } from "@/hooks/use-app-lang";
 import type { Lang } from "@/lib/i18n-lang";
@@ -108,11 +109,9 @@ export default function LoginForm() {
   return (
     <main className="min-h-screen bg-[#FDF8F1] flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
-        <Link href="/" className="flex justify-center mb-8">
-          <span className="font-serif text-3xl font-bold text-[#1B4332]">T</span>
-          <span className="font-serif text-2xl text-[#1C1917]">ianguis</span>
-          <span className="text-[#D4A017] text-sm font-bold ml-0.5 mt-1">✦</span>
-        </Link>
+        <div className="flex justify-center mb-8">
+          <TianguisWordmark variant="auth" />
+        </div>
         <div className="bg-white rounded-2xl border border-[#E5E0D8] p-8 shadow-sm">
           <h1 className="font-serif text-2xl font-bold text-[#1C1917] mb-2">{ui.title}</h1>
           <p className="text-sm text-[#6B7280] mb-6">{ui.sub}</p>

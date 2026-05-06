@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { canonicalizeAuthPhone, nationalDigitsForDisplay, normalizeAuthPhone } from "@/lib/phone";
+import TianguisWordmark from "@/components/TianguisWordmark";
 import { useAppLang } from "@/hooks/use-app-lang";
 import type { Lang } from "@/lib/i18n-lang";
 
@@ -143,6 +144,9 @@ export default function VerifyForm() {
   return (
     <main className="min-h-screen bg-[#FDF8F1] flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
+        <div className="flex justify-center mb-6">
+          <TianguisWordmark variant="auth" />
+        </div>
         <div className="text-center mb-8">
           <div className="text-4xl mb-3">💬</div>
           <h1 className="font-serif text-2xl font-bold text-[#1C1917] mb-2">{vf.title}</h1>
