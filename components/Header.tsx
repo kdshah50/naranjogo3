@@ -3,6 +3,7 @@ import { useState, Suspense, useEffect } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import HeaderWeather from "./HeaderWeather";
 
 const SellModal = dynamic(() => import("./SellModal"), { ssr: false });
 const CartHeaderLink = dynamic(() => import("@/components/cart/CartHeaderLink"), { ssr: false });
@@ -162,6 +163,7 @@ function HeaderInner() {
           </div>
         </div>
       </header>
+      {user && <HeaderWeather lang={lang === "en" ? "en" : "es"} />}
       {showSell && <SellModal onClose={() => setShowSell(false)} />}
     </>
   );
