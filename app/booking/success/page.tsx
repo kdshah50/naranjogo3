@@ -17,7 +17,7 @@ type BookingData = {
   isBuyer: boolean;
   listing: { title: string; photo: string | null; priceMxn: number } | null;
   seller: { displayName: string; avatarUrl: string | null } | null;
-  contact: { phone: string | null; whatsappUrl: string | null } | null;
+  contact: { whatsappUrl: string | null } | null;
 };
 
 function formatMXN(cents: number): string {
@@ -147,10 +147,6 @@ function BookingSuccessContent() {
     !isPaid &&
     data.paymentStatus !== "failed" &&
     data.paymentStatus !== "refunded";
-  const phone = data.contact?.phone;
-  const displayPhone = phone?.replace(/(\d{2})(\d{2,3})(\d{3})(\d{4})/, "+$1 $2 $3 $4") ?? "";
-  const digits = phone?.replace(/\D/g, "") ?? "";
-
   return (
     <main className="min-h-screen bg-[#FDF8F1]">
       <div className="max-w-lg mx-auto px-4 py-12">
@@ -209,38 +205,24 @@ function BookingSuccessContent() {
             </div>
           )}
 
-          {/* Contact info — only if paid */}
-          {isPaid && phone && (
-            <div className="px-6 py-5 space-y-4">
-              <div>
-                <p className="text-xs text-[#6B7280] mb-1 font-medium uppercase tracking-wide">
-                  Contacto del proveedor
-                </p>
-                <div className="bg-[#F4F0EB] rounded-xl p-4">
-                  <p className="text-2xl font-bold text-[#1C1917] tracking-wide text-center">
-                    {displayPhone}
-                  </p>
-                </div>
-              </div>
-
-              {data.contact?.whatsappUrl && (
-                <a
-                  href={data.contact.whatsappUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full py-4 rounded-xl font-semibold text-base flex items-center justify-center gap-2 transition-colors"
-                  style={{ background: "#25D366", color: "white" }}
-                >
-                  Contactar por WhatsApp
-                </a>
-              )}
-
+          {/* WhatsApp only — phone number not shown */}
+          {isPaid && data.contact?.whatsappUrl && (
+            <div className="px-6 py-5 space-y-3">
+              <p className="text-xs text-[#6B7280] font-medium uppercase tracking-wide">
+                Contacto del proveedor
+              </p>
               <a
-                href={`tel:+${digits}`}
-                className="w-full py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 border border-[#1B4332] text-[#1B4332] hover:bg-[#ECFDF5]"
+                href={data.contact.whatsappUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-4 rounded-xl font-semibold text-base flex items-center justify-center gap-2 transition-colors"
+                style={{ background: "#25D366", color: "white" }}
               >
-                Llamar al proveedor
+                Contactar por WhatsApp
               </a>
+              <p className="text-[11px] text-[#6B7280] text-center leading-snug">
+                Abrimos WhatsApp por ti; no mostramos el número en pantalla.
+              </p>
             </div>
           )}
 

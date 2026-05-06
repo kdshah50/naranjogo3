@@ -14,7 +14,6 @@ type BookingState = {
   contactedInApp: boolean;
   hasPaidBooking: boolean;
   paidBookingId: string | null;
-  revealedPhone: string | null;
   revealedWhatsappUrl: string | null;
   hasPendingBooking: boolean;
   pendingBookingId: string | null;
@@ -197,8 +196,8 @@ export default function ServiceBookingBlock({
         <p className="font-semibold mb-1">{isService ? "Tu servicio" : "Tu anuncio"}</p>
         <p className="text-amber-800">
           {isService
-            ? "Los clientes deben escribirte por mensajes en la app y pagar la tarifa de servicio antes de recibir tu número de contacto."
-            : "Los compradores deben escribirte por la app y pagar la tarifa de conexión antes de recibir tu WhatsApp o teléfono."}
+            ? "Los clientes deben escribirte por mensajes en la app y pagar la tarifa de servicio antes de poder abrir tu WhatsApp desde Naranjogo."
+            : "Los compradores deben escribirte por la app y pagar la tarifa de conexión antes de poder abrir tu WhatsApp desde Naranjogo."}
         </p>
       </div>
     );
@@ -212,7 +211,7 @@ export default function ServiceBookingBlock({
         </p>
         <p className="text-xs text-[#6B7280] mb-3">
           {isService
-            ? "Inicia sesión, platica con el proveedor y paga la tarifa de servicio para obtener su contacto directo."
+            ? "Inicia sesión, platica con el proveedor y paga la tarifa de servicio para abrir su WhatsApp desde aquí."
             : "Inicia sesión, envía un mensaje en la app y paga la tarifa de conexión para desbloquear WhatsApp."}
         </p>
         <Link
@@ -261,14 +260,8 @@ export default function ServiceBookingBlock({
           ph: "Ventanas preferidas: ej. mar/jue por la tarde, o sábado antes de 13 h…",
         };
 
-  // STEP 3: Contact revealed — buyer has paid
-  if (hasPaid && booking.revealedPhone) {
-    const digits = booking.revealedPhone.replace(/\D/g, "");
-    const displayPhone = booking.revealedPhone.replace(
-      /(\d{2})(\d{2,3})(\d{3})(\d{4})/,
-      "+$1 $2 $3 $4"
-    );
-
+  // STEP 3: Contact revealed — buyer has paid (WhatsApp link only; phone not exposed in UI/API)
+  if (hasPaid && booking.revealedWhatsappUrl) {
     const paidTitle =
       listingLang === "en"
         ? isService
@@ -285,8 +278,8 @@ export default function ServiceBookingBlock({
 
     const paidLeadGoods =
       listingLang === "en"
-        ? "You've already paid the connection fee. Here's the seller's contact:"
-        : "Ya pagaste la tarifa de conexión. Aquí está el contacto del vendedor:";
+        ? "You've already paid the connection fee. Open WhatsApp below to message the seller."
+        : "Ya pagaste la tarifa de conexión. Abre WhatsApp abajo para escribir al vendedor.";
 
     const whatsAppCta = listingLang === "en" ? "Contact on WhatsApp" : "Contactar por WhatsApp";
 
@@ -316,12 +309,6 @@ export default function ServiceBookingBlock({
                 : `Este pago cubre tu plan de ${booking.packageSessionCount} visitas. Agenda cada cita por WhatsApp; tu próxima reserva en Naranjogo puede sumar descuentos por lealtad.`}
             </p>
           )}
-          {!isService && (
-            <div className="bg-white rounded-xl p-3 border border-emerald-200">
-              <p className="text-xs text-[#6B7280] mb-1">Teléfono / WhatsApp</p>
-              <p className="text-lg font-bold text-[#1C1917] tracking-wide">{displayPhone}</p>
-            </div>
-          )}
           {booking.revealedWhatsappUrl && (
             <a
               href={booking.revealedWhatsappUrl}
@@ -331,14 +318,6 @@ export default function ServiceBookingBlock({
               style={{ background: "#25D366", color: "white" }}
             >
               {whatsAppCta}
-            </a>
-          )}
-          {!isService && (
-            <a
-              href={`tel:+${digits}`}
-              className="w-full py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 border border-[#1B4332] text-[#1B4332] hover:bg-[#ECFDF5]"
-            >
-              {listingLang === "en" ? "Call" : "Llamar"}
             </a>
           )}
           <p className="text-xs text-emerald-900/90 leading-relaxed border-t border-emerald-200/60 pt-3">
@@ -437,7 +416,7 @@ export default function ServiceBookingBlock({
           <span>
             {booking.hasPackage && booking.packageSessionCount
               ? `WhatsApp del proveedor para las ${booking.packageSessionCount} visitas`
-              : "Recibe el contacto directo (WhatsApp / teléfono)"}
+              : "Abre WhatsApp del vendedor (enlace en la app)"}
           </span>
         </div>
       </div>
@@ -449,7 +428,7 @@ export default function ServiceBookingBlock({
             <p className="text-xs text-blue-800 leading-relaxed">
               <strong>Paso 1:</strong> En <strong>Mensajes en la app</strong> (recuadro de arriba), escribe al{" "}
               {partyLabel} y envía el mensaje. <strong>Después de enviarlo</strong>, aparece el botón{" "}
-              <strong>Pagar … y obtener contacto</strong>
+              <strong>Pagar … y desbloquear WhatsApp</strong>
               {isService
                 ? " (no pagas el precio del anuncio en Stripe — solo la tarifa del paso 2)."
                 : " (el pago en Stripe es solo la tarifa de conexión, no el precio del artículo)."}
@@ -473,7 +452,7 @@ export default function ServiceBookingBlock({
             <p className="text-xs text-amber-800">
               <strong>Paso 2:</strong>{" "}
               {isService
-                ? "Paga la tarifa de servicio para recibir el número de contacto del proveedor."
+                ? "Paga la tarifa de servicio para abrir el WhatsApp del proveedor."
                 : "Paga la tarifa de conexión para recibir el WhatsApp del vendedor."}
             </p>
           </div>
@@ -558,14 +537,14 @@ export default function ServiceBookingBlock({
             {busy
               ? "Procesando…"
               : listingLang === "en"
-                ? `Pay ${formatMXN(booking.commissionAmountCents)} and get contact`
-                : `Pagar ${formatMXN(booking.commissionAmountCents)} y obtener contacto`}
+                ? `Pay ${formatMXN(booking.commissionAmountCents)} and open WhatsApp`
+                : `Pagar ${formatMXN(booking.commissionAmountCents)} y abrir WhatsApp`}
           </button>
 
           <p className="text-center text-xs text-[#6B7280]">
             {listingLang === "en"
-              ? "Secure payment with Stripe. After paying you get the provider’s WhatsApp / phone."
-              : `Pago seguro con Stripe. Al pagar recibirás el WhatsApp/teléfono del ${partyLabel}.`}
+              ? "Secure payment with Stripe. After paying you can open the seller’s WhatsApp from here."
+              : `Pago seguro con Stripe. Al pagar podrás abrir el WhatsApp del ${partyLabel} desde aquí.`}
           </p>
 
           {loyaltyHint && loyaltyHint.discountPct > 0 && booking.commissionBeforeLoyaltyCents == null && (

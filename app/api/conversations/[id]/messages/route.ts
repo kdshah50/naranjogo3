@@ -7,8 +7,19 @@ import {
 } from "@/lib/user-account-pool";
 import { sendWhatsApp } from "@/lib/twilio";
 import { getPublicAppUrl } from "@/lib/app-url";
+import { buyerPaidContactFeeForListing } from "@/lib/contact-gate";
 
 export const dynamic = "force-dynamic";
+
+/** Pasted wa.me links, WhatsApp URL handlers, tel:, or Google-style share text — blocked for sellers until buyer pays. */
+function bodyLeaksExternalWhatsAppInvite(raw: string): boolean {
+  const b = raw.trim();
+  if (/wa\.me\//i.test(b)) return true;
+  if (/whatsapp\.com/i.test(b)) return true;
+  if (/chat\s+on\s+whatsapp\s+with/i.test(b)) return true;
+  if (/tel:\s*\+?\d/i.test(b)) return true;
+  return false;
+}
 
 /** POST { body } — append message; must be buyer or seller. */
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
@@ -45,6 +56,20 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const convRowId = conv.id;
     const myPool = await expandUserAccountIdPool(supabase, userId);
     const buyerPool = await expandUserAccountIdPool(supabase, conv.buyer_id);
+    const iAmBuyer = poolsOverlap(myPool, buyerPool);
+
+    if (!iAmBuyer && bodyLeaksExternalWhatsAppInvite(body)) {
+      const paid = await buyerPaidContactFeeForListing(supabase, conv.listing_id, conv.buyer_id);
+      if (!paid) {
+        return NextResponse.json(
+          {
+            error:
+              "No puedes enviar enlaces de WhatsApp ni teléfono hasta que el comprador pague la tarifa en la app. Coordina aquí por mensaje.",
+          },
+          { status: 400 }
+        );
+      }
+    }
 
     const { data: inserted, error: insErr } = await supabase
       .from("listing_messages")
@@ -85,7 +110,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       }
     }
 
-    const iAmBuyer = poolsOverlap(myPool, buyerPool);
     const recipientRootId = iAmBuyer ? conv.seller_id : conv.buyer_id;
     const recipientPool = await expandUserAccountIdPool(supabase, recipientRootId);
 

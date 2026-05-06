@@ -185,7 +185,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       contactedInApp,
       hasPaidBooking: !!latestPaid,
       paidBookingId: latestPaid?.id ?? null,
-      revealedPhone,
       revealedWhatsappUrl,
       hasPendingBooking: !!pendingBooking,
       pendingBookingId: pendingBooking?.id ?? null,

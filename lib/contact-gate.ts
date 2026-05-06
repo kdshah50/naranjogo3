@@ -43,8 +43,29 @@ export async function ensureContactGateFromMessages(
 }
 
 /**
- * If the buyer already completed a paid booking with this seller (any listing), treat the contact
- * gate as satisfied so they can pay again without re-sending a first message (rebook / new service).
+ * True if this buyer completed a paid platform/contact fee booking on this listing (allows off-platform WhatsApp).
+ */
+export async function buyerPaidContactFeeForListing(
+  supabase: SupabaseClient,
+  listingId: string,
+  buyerRootId: string
+): Promise<boolean> {
+  const pool = await expandUserAccountIdPool(supabase, buyerRootId);
+  const { count, error } = await supabase
+    .from("service_bookings")
+    .select("id", { count: "exact", head: true })
+    .eq("listing_id", listingId)
+    .in("buyer_id", pool)
+    .eq("payment_status", "paid");
+  if (error) {
+    console.error("[contact-gate] buyerPaidContactFeeForListing", error);
+    return false;
+  }
+  return (count ?? 0) > 0;
+}
+
+/**
+ * If the buyer already paid this seller before (any listing), satisfy the contact gate without a new first message.
  */
 export async function unlockContactGateIfRepeatBuyerWithSeller(
   supabase: SupabaseClient,

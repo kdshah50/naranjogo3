@@ -67,7 +67,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         displayName: seller.display_name,
         avatarUrl: seller.avatar_url,
       } : null,
-      contact: isPaid ? { phone, whatsappUrl: waUrl } : null,
+      contact: isPaid ? { whatsappUrl: waUrl } : null,
     });
   } catch (e) {
     console.error("[bookings/:id] GET", e);

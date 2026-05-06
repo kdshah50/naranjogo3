@@ -158,7 +158,7 @@ export async function GET(req: NextRequest) {
               avatarUrl: seller.avatar_url,
             }
           : null,
-        contact: isPaid ? { phone, whatsappUrl: waUrl } : null,
+        contact: isPaid ? { whatsappUrl: waUrl } : null,
       },
       { headers: { "Cache-Control": "no-store, max-age=0" } }
     );
