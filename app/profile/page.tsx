@@ -1,11 +1,13 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import LoyaltyCard from "@/components/LoyaltyCard";
 import ReferralCard from "@/components/ReferralCard";
 import RoutineHabitsCard from "@/components/RoutineHabitsCard";
 import SellerStripePayoutCard from "@/components/SellerStripePayoutCard";
+import { useAppLang, useAppLangActions } from "@/hooks/use-app-lang";
+import { formatCurrencyMXN } from "@/lib/locale-format";
 
 type User = {
   id: string;
@@ -33,10 +35,6 @@ type Listing = {
   created_at: string;
 };
 
-function fmtMXN(c: number) {
-  return new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 0 }).format(c / 100);
-}
-
 function badgeInfo(badge: string) {
   const map: Record<string, { icon: string; label: string; color: string; bg: string }> = {
     diamond: { icon: "💎", label: "Diamond", color: "#1D4ED8", bg: "#EFF6FF" },
@@ -48,6 +46,20 @@ function badgeInfo(badge: string) {
 }
 
 export default function ProfilePage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-[#FDF8F1] flex items-center justify-center">
+          <div className="w-8 h-8 border-2 border-[#1B4332] border-t-transparent rounded-full animate-spin" />
+        </main>
+      }
+    >
+      <ProfilePageInner />
+    </Suspense>
+  );
+}
+
+function ProfilePageInner() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [listings, setListings] = useState<Listing[]>([]);
@@ -55,21 +67,13 @@ export default function ProfilePage() {
   const [editing, setEditing] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [saving, setSaving] = useState(false);
-  const [lang, setLang] = useState<"es" | "en">("es");
+  const lang = useAppLang();
+  const { setLang } = useAppLangActions();
   const [ineUploading, setIneUploading] = useState(false);
   const [ineMsg, setIneMsg] = useState("");
   const [favorites, setFavorites] = useState<
     { listing_id: string; title: string; price_mxn: number; location_city: string | null }[]
   >([]);
-
-  useEffect(() => {
-    try {
-      const s = localStorage.getItem("naranjo_lang");
-      if (s === "en" || s === "es") setLang(s);
-    } catch {
-      /* ignore */
-    }
-  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -220,10 +224,7 @@ export default function ProfilePage() {
           <Link href="/" className="text-sm text-[#6B7280] hover:text-[#1B4332] transition-colors">← {lang === "es" ? "Inicio" : "Home"}</Link>
           <div className="flex bg-[#F4F0EB] rounded-lg p-1 gap-1">
             {(["es", "en"] as const).map(l => (
-              <button key={l} onClick={() => {
-                setLang(l);
-                try { localStorage.setItem("naranjo_lang", l); } catch { /* ignore */ }
-              }}
+              <button key={l} onClick={() => { setLang(l); }}
                 className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${lang === l ? "bg-white text-[#1B4332] shadow-sm" : "text-[#6B7280]"}`}>
                 {l.toUpperCase()}
               </button>
@@ -414,7 +415,7 @@ export default function ProfilePage() {
                 >
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-[#1C1917] truncate">{l.title_es}</p>
-                    <p className="text-xs text-[#6B7280] mt-0.5">{fmtMXN(l.price_mxn)} · {l.location_city}</p>
+                    <p className="text-xs text-[#6B7280] mt-0.5">{formatCurrencyMXN(l.price_mxn, lang)} · {l.location_city}</p>
                   </div>
                   <span className={`text-[10px] font-bold px-2 py-1 rounded-full flex-shrink-0 ${
                     l.is_verified && l.status === "active"
@@ -467,7 +468,7 @@ export default function ProfilePage() {
                   >
                     <p className="text-sm font-semibold text-[#1C1917] truncate">{f.title}</p>
                     <p className="text-xs text-[#6B7280]">
-                      {fmtMXN(f.price_mxn)}
+                      {formatCurrencyMXN(f.price_mxn, lang)}
                       {f.location_city ? ` · ${f.location_city}` : ""}
                     </p>
                   </Link>

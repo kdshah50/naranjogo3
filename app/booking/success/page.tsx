@@ -2,9 +2,12 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useState, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import GuaranteeBadge from "@/components/GuaranteeBadge";
+import { useAppLang } from "@/hooks/use-app-lang";
+import { formatCurrencyMXN } from "@/lib/locale-format";
+import type { Lang } from "@/lib/i18n-lang";
 
 type BookingData = {
   id: string;
@@ -19,13 +22,93 @@ type BookingData = {
   contact: { whatsappUrl: string | null } | null;
 };
 
-function formatMXN(cents: number): string {
-  return new Intl.NumberFormat("es-MX", {
-    style: "currency",
-    currency: "MXN",
-    maximumFractionDigits: 0,
-  }).format(cents / 100);
-}
+const BS: Record<
+  Lang,
+  {
+    loadFallback: string;
+    noRef: string;
+    loadErr: string;
+    notFound: string;
+    home: string;
+    confirming: string;
+    paidTitle: string;
+    pendingTitle: string;
+    paidSub: string;
+    pendingSub: string;
+    retryHint: string;
+    retryBtn: string;
+    seller: string;
+    feePaid: string;
+    providerContact: string;
+    waBtn: string;
+    waNote: string;
+    backListing: string;
+    myBookings: string;
+    messages: string;
+    reviewBlurb: string;
+    problems: string;
+    refund: string;
+    contactFooter: string;
+  }
+> = {
+  es: {
+    loadFallback: "Cargando…",
+    noRef: "No se encontró la reserva",
+    loadErr: "No se pudo cargar la reserva",
+    notFound: "Reserva no encontrada",
+    home: "Volver al inicio",
+    confirming: "Confirmando tu pago…",
+    paidTitle: "Reserva confirmada",
+    pendingTitle: "Pago pendiente",
+    paidSub: "Tu pago fue procesado exitosamente",
+    pendingSub: "Estamos procesando tu pago, espera un momento…",
+    retryHint:
+      "Si ya pagaste en Stripe y esto no cambia, reintenta la confirmación (sincroniza con el banco).",
+    retryBtn: "Reintentar confirmación",
+    seller: "Proveedor:",
+    feePaid: "Tarifa pagada:",
+    providerContact: "Contacto del proveedor",
+    waBtn: "Contactar por WhatsApp",
+    waNote: "Abrimos WhatsApp por ti; no mostramos el número en pantalla.",
+    backListing: "← Volver al anuncio",
+    myBookings: "Mis reservas",
+    messages: "Mensajes",
+    reviewBlurb:
+      "Cuando el proveedor marque el servicio como completado, te avisaremos por WhatsApp para que puedas dejar tu reseña en",
+    problems: "¿Problemas con el servicio?",
+    refund: "Solicita un reembolso",
+    contactFooter:
+      "Este contacto también está disponible en la página del servicio mientras tu reserva esté activa.",
+  },
+  en: {
+    loadFallback: "Loading…",
+    noRef: "Booking not found",
+    loadErr: "Could not load booking",
+    notFound: "Booking not found",
+    home: "Back to home",
+    confirming: "Confirming your payment…",
+    paidTitle: "Booking confirmed",
+    pendingTitle: "Payment pending",
+    paidSub: "Your payment was processed successfully",
+    pendingSub: "We're processing your payment, please wait…",
+    retryHint:
+      "If you already paid in Stripe and this doesn't update, retry confirmation (syncs with your bank).",
+    retryBtn: "Retry confirmation",
+    seller: "Provider:",
+    feePaid: "Platform fee paid:",
+    providerContact: "Provider contact",
+    waBtn: "Contact via WhatsApp",
+    waNote: "We open WhatsApp for you; we don't show the phone number on screen.",
+    backListing: "← Back to listing",
+    myBookings: "My bookings",
+    messages: "Messages",
+    reviewBlurb:
+      "When the provider marks the service complete, we'll notify you on WhatsApp so you can leave your review in",
+    problems: "Issues with the service?",
+    refund: "Request a refund",
+    contactFooter: "This contact is also on the service page while your booking is active.",
+  },
+};
 
 export default function BookingSuccessPage() {
   return (
@@ -52,6 +135,8 @@ function isTerminalPaymentStatus(ps: string | undefined) {
 }
 
 function BookingSuccessContent() {
+  const lang = useAppLang();
+  const t = BS[lang];
   const searchParams = useSearchParams();
   const stripeSessionId = searchParams.get("session_id");
   const bookingId = searchParams.get("id");
@@ -60,10 +145,12 @@ function BookingSuccessContent() {
   const [error, setError] = useState("");
   const [pollAttempt, setPollAttempt] = useState(0);
   const [retryBump, setRetryBump] = useState(0);
+  const langRef = useRef(lang);
+  langRef.current = lang;
 
   useEffect(() => {
     if (!stripeSessionId && !bookingId) {
-      setError("No se encontró la reserva");
+      setError(BS[langRef.current].noRef);
       setLoading(false);
       return;
     }
@@ -79,7 +166,7 @@ function BookingSuccessContent() {
         cache: "no-store",
       });
       if (!res.ok) {
-        if (mounted) setError("No se pudo cargar la reserva");
+        if (mounted) setError(BS[langRef.current].loadErr);
         if (mounted) setLoading(false);
         return;
       }
@@ -121,7 +208,7 @@ function BookingSuccessContent() {
       <main className="min-h-screen bg-[#FDF8F1] flex items-center justify-center">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-[#1B4332] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-sm text-[#6B7280]">Confirmando tu pago…</p>
+          <p className="text-sm text-[#6B7280]">{t.confirming}</p>
         </div>
       </main>
     );
@@ -131,9 +218,9 @@ function BookingSuccessContent() {
     return (
       <main className="min-h-screen bg-[#FDF8F1] flex items-center justify-center px-4">
         <div className="max-w-md w-full bg-white rounded-2xl p-8 text-center shadow-sm">
-          <p className="text-red-600 text-sm mb-4">{error || "Reserva no encontrada"}</p>
+          <p className="text-red-600 text-sm mb-4">{error || t.notFound}</p>
           <Link href="/" className="text-sm text-[#1B4332] font-semibold hover:underline">
-            Volver al inicio
+            {t.home}
           </Link>
         </div>
       </main>
@@ -154,24 +241,20 @@ function BookingSuccessContent() {
           <div className={`px-6 py-5 text-center ${isPaid ? "bg-emerald-50" : "bg-amber-50"}`}>
             <div className="text-4xl mb-2">{isPaid ? "✓" : "⏳"}</div>
             <h1 className="text-xl font-bold text-[#1C1917]">
-              {isPaid ? "Reserva confirmada" : "Pago pendiente"}
+              {isPaid ? t.paidTitle : t.pendingTitle}
             </h1>
             <p className="text-sm text-[#6B7280] mt-1">
-              {isPaid
-                ? "Tu pago fue procesado exitosamente"
-                : "Estamos procesando tu pago, espera un momento…"}
+              {isPaid ? t.paidSub : t.pendingSub}
             </p>
             {showRetryPaid && (
               <div className="mt-4 space-y-2">
-                <p className="text-xs text-amber-800">
-                  Si ya pagaste en Stripe y esto no cambia, reintenta la confirmación (sincroniza con el banco).
-                </p>
+                <p className="text-xs text-amber-800">{t.retryHint}</p>
                 <button
                   type="button"
                   onClick={() => retryConfirmation()}
                   className="text-sm font-semibold text-[#1B4332] underline hover:no-underline"
                 >
-                  Reintentar confirmación
+                  {t.retryBtn}
                 </button>
               </div>
             )}
@@ -194,10 +277,12 @@ function BookingSuccessContent() {
                 <div>
                   <p className="text-sm font-semibold text-[#1C1917]">{data.listing.title}</p>
                   {data.seller && (
-                    <p className="text-xs text-[#6B7280]">Proveedor: {data.seller.displayName}</p>
+                    <p className="text-xs text-[#6B7280]">
+                      {t.seller} {data.seller.displayName}
+                    </p>
                   )}
                   <p className="text-xs text-[#6B7280] mt-0.5">
-                    Tarifa pagada: {formatMXN(data.commissionAmountCents)}
+                    {t.feePaid} {formatCurrencyMXN(data.commissionAmountCents, lang)}
                   </p>
                 </div>
               </div>
@@ -207,9 +292,7 @@ function BookingSuccessContent() {
           {/* WhatsApp only — phone number not shown */}
           {isPaid && data.contact?.whatsappUrl && (
             <div className="px-6 py-5 space-y-3">
-              <p className="text-xs text-[#6B7280] font-medium uppercase tracking-wide">
-                Contacto del proveedor
-              </p>
+              <p className="text-xs text-[#6B7280] font-medium uppercase tracking-wide">{t.providerContact}</p>
               <a
                 href={data.contact.whatsappUrl}
                 target="_blank"
@@ -217,11 +300,9 @@ function BookingSuccessContent() {
                 className="w-full py-4 rounded-xl font-semibold text-base flex items-center justify-center gap-2 transition-colors"
                 style={{ background: "#25D366", color: "white" }}
               >
-                Contactar por WhatsApp
+                {t.waBtn}
               </a>
-              <p className="text-[11px] text-[#6B7280] text-center leading-snug">
-                Abrimos WhatsApp por ti; no mostramos el número en pantalla.
-              </p>
+              <p className="text-[11px] text-[#6B7280] text-center leading-snug">{t.waNote}</p>
             </div>
           )}
 
@@ -231,19 +312,13 @@ function BookingSuccessContent() {
               href={`/listing/${data.listingId}`}
               className="text-sm text-[#1B4332] font-semibold hover:underline"
             >
-              ← Volver al anuncio
+              {t.backListing}
             </Link>
-            <Link
-              href="/my-bookings"
-              className="text-sm text-[#1B4332] font-semibold hover:underline"
-            >
-              Mis reservas
+            <Link href="/my-bookings" className="text-sm text-[#1B4332] font-semibold hover:underline">
+              {t.myBookings}
             </Link>
-            <Link
-              href="/messages"
-              className="text-sm text-[#1B4332] font-semibold hover:underline"
-            >
-              Mensajes
+            <Link href="/messages" className="text-sm text-[#1B4332] font-semibold hover:underline">
+              {t.messages}
             </Link>
           </div>
         </div>
@@ -251,10 +326,9 @@ function BookingSuccessContent() {
         {isPaid && (
           <div className="mt-6 px-6">
             <p className="text-center text-sm text-[#374151] mb-2">
-              Cuando el proveedor marque el servicio como completado, te avisaremos por WhatsApp para que puedas dejar
-              tu reseña en{" "}
+              {t.reviewBlurb}{" "}
               <Link href="/my-bookings" className="font-semibold text-[#1B4332] hover:underline">
-                Mis reservas
+                {t.myBookings}
               </Link>
               .
             </p>
@@ -263,21 +337,17 @@ function BookingSuccessContent() {
 
         {isPaid && (
           <div className="mt-6">
-            <GuaranteeBadge />
+            <GuaranteeBadge lang={lang} />
             <p className="text-center text-xs text-[#6B7280] mt-3">
-              ¿Problemas con el servicio?{" "}
+              {t.problems}{" "}
               <a href="/claims" className="text-[#1B4332] font-semibold hover:underline">
-                Solicita un reembolso
+                {t.refund}
               </a>
             </p>
           </div>
         )}
 
-        {isPaid && (
-          <p className="text-center text-xs text-[#6B7280] mt-4">
-            Este contacto también está disponible en la página del servicio mientras tu reserva esté activa.
-          </p>
-        )}
+        {isPaid && <p className="text-center text-xs text-[#6B7280] mt-4">{t.contactFooter}</p>}
       </div>
     </main>
   );

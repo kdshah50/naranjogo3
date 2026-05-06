@@ -1,6 +1,9 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useRouter } from "next/navigation";
+import { useAppLang } from "@/hooks/use-app-lang";
+import { formatCurrencyMXN, formatDateMedium, formatDateTimeShort } from "@/lib/locale-format";
+import { adminLabels } from "@/lib/admin-labels";
 
 type Listing = {
   id: string;
@@ -36,14 +39,23 @@ type UserRow = {
   review_avg?: number;
 };
 
-function fmtMXN(c: number) {
-  return new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 0 }).format(c / 100);
-}
-function fmtDate(d: string) {
-  return new Date(d).toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" });
+export default function AdminPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-[#FDF8F1] flex items-center justify-center">
+          <div className="w-8 h-8 border-2 border-[#1B4332] border-t-transparent rounded-full animate-spin" />
+        </main>
+      }
+    >
+      <AdminPageInner />
+    </Suspense>
+  );
 }
 
-export default function AdminPage() {
+function AdminPageInner() {
+  const lang = useAppLang();
+  const ad = adminLabels(lang);
   const router = useRouter();
   const [pin, setPin] = useState("");
   const [authed, setAuthed] = useState(false);
@@ -306,15 +318,15 @@ export default function AdminPage() {
       }
       setPinError(true);
       if (res.status === 404) {
-        setPinErrorDetail("No está el servicio de verificación. Haz redeploy en Vercel con el código nuevo.");
+        setPinErrorDetail(ad.noVerifyService);
       } else if (res.status === 401) {
-        setPinErrorDetail(data.error ?? "PIN incorrecto (revisa ADMIN_PIN en el servidor).");
+        setPinErrorDetail(data.error ?? ad.pinWrongDetail);
       } else {
-        setPinErrorDetail(data.error ?? `Error ${res.status}. Revisa logs en Vercel.`);
+        setPinErrorDetail(data.error ?? ad.errorWithStatus(res.status));
       }
     } catch {
       setPinError(true);
-      setPinErrorDetail("Sin conexión o error de red.");
+      setPinErrorDetail(ad.noConnection);
     } finally {
       setPinLoading(false);
     }
@@ -348,7 +360,7 @@ export default function AdminPage() {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      throw new Error(typeof data?.error === "string" ? data.error : "Error al guardar");
+      throw new Error(typeof data?.error === "string" ? data.error : ad.saveError);
     }
   };
 
@@ -392,7 +404,7 @@ export default function AdminPage() {
       showMsg(`✅ Approved — comisión ${pct}%${pkg.package_session_count ? ` — paquete ${pkg.package_session_count} sesiones` : ""}`);
       await load();
     } catch (e: unknown) {
-      showMsg(e instanceof Error ? e.message : "No se pudo aprobar", true);
+      showMsg(e instanceof Error ? e.message : ad.approveFail, true);
     } finally {
       setSaving(null);
     }
@@ -402,10 +414,10 @@ export default function AdminPage() {
     setSaving(id);
     try {
       await postAdmin({ id, action: "reject" });
-      showMsg("🗑️ Anuncio archivado");
+      showMsg(ad.listingArchived);
       await load();
     } catch (e: any) {
-      showMsg(e?.message ?? "No se pudo rechazar", true);
+      showMsg(e?.message ?? ad.rejectFail, true);
     } finally {
       setSaving(null);
     }
@@ -416,10 +428,10 @@ export default function AdminPage() {
     const pct = parseFloat(commissions[id] ?? "5");
     try {
       await postAdmin({ id, action: "commission", commission_pct: pct });
-      showMsg(`✅ Comisión actualizada a ${pct}%`);
+      showMsg(ad.commissionUpdated(pct));
       await load();
     } catch (e: any) {
-      showMsg(e?.message ?? "No se pudo actualizar la comisión", true);
+      showMsg(e?.message ?? ad.commissionUpdateFail, true);
     } finally {
       setSaving(null);
     }
@@ -432,7 +444,7 @@ export default function AdminPage() {
       showMsg(enabled ? "✅ Live calendar sync ON" : "✅ Live calendar sync OFF");
       await load();
     } catch (e: unknown) {
-      showMsg(e instanceof Error ? e.message : "No se pudo actualizar", true);
+      showMsg(e instanceof Error ? e.message : ad.updateFail, true);
     } finally {
       setSaving(null);
     }
@@ -443,7 +455,7 @@ export default function AdminPage() {
     <main className="min-h-screen bg-[#FDF8F1] flex items-center justify-center px-4">
       <div className="bg-white rounded-3xl border border-[#E5E0D8] p-10 max-w-sm w-full text-center shadow-sm">
         <div className="text-4xl mb-4">🔐</div>
-        <h1 className="font-serif text-xl font-bold text-[#1B4332] mb-6">Admin — Naranjogo</h1>
+        <h1 className="font-serif text-xl font-bold text-[#1B4332] mb-6">{ad.pinTitle}</h1>
         <div className="relative mb-3">
           <input
             type={showPin ? "text" : "password"}
@@ -460,12 +472,12 @@ export default function AdminPage() {
             type="button"
             onClick={() => setShowPin((s) => !s)}
             className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-semibold text-[#1B4332] hover:underline px-2 py-1 rounded-lg">
-            {showPin ? "Ocultar" : "Mostrar"}
+            {showPin ? ad.hide : ad.show}
           </button>
         </div>
         {pinError && (
           <p className="text-xs text-red-600 mb-3 text-left leading-relaxed">
-            {pinErrorDetail ?? "PIN incorrecto"}
+            {pinErrorDetail ?? ad.wrongPin}
           </p>
         )}
         <button
@@ -473,7 +485,7 @@ export default function AdminPage() {
           disabled={pinLoading || !pin.trim()}
           onClick={() => void submitPin()}
           className="w-full bg-[#1B4332] text-white font-semibold py-3 rounded-xl text-sm hover:bg-[#2D6A4F] transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-          {pinLoading ? "…" : "Enter"}
+          {pinLoading ? "…" : ad.enter}
         </button>
       </div>
     </main>
@@ -487,24 +499,24 @@ export default function AdminPage() {
         {/* Header */}
         <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
           <div>
-            <h1 className="font-serif text-2xl font-bold text-[#1B4332]">Naranjogo Admin</h1>
-            <p className="text-sm text-[#6B7280]">Provider approval, verification & trust management</p>
+            <h1 className="font-serif text-2xl font-bold text-[#1B4332]">{ad.headerTitle}</h1>
+            <p className="text-sm text-[#6B7280]">{ad.headerSub}</p>
           </div>
           <div className="flex items-center flex-wrap gap-2 justify-end">
-            <a href="/" className="text-sm text-[#6B7280] hover:text-[#1B4332]">← Volver al sitio</a>
+            <a href="/" className="text-sm text-[#6B7280] hover:text-[#1B4332]">{ad.backSite}</a>
             <button
               type="button"
               onClick={lockAdminPanel}
               className="text-sm font-medium text-[#6B7280] hover:text-[#1B4332] border border-[#E5E0D8] rounded-lg px-3 py-1.5 bg-white"
             >
-              Salir del panel
+              {ad.leavePanel}
             </button>
             <button
               type="button"
               onClick={sessionLogout}
               className="text-sm font-semibold text-white bg-[#1B4332] hover:bg-[#2D6A4F] rounded-lg px-3 py-1.5"
             >
-              Cerrar sesión
+              {ad.logout}
             </button>
           </div>
         </div>
@@ -515,25 +527,25 @@ export default function AdminPage() {
             className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
               tab === "listings" ? "bg-[#1B4332] text-white" : "bg-white border border-[#E5E0D8] text-[#6B7280] hover:border-[#1B4332]"
             }`}>
-            📋 Listings
+            {ad.tabListings}
           </button>
           <button onClick={() => setTab("sellers")}
             className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
               tab === "sellers" ? "bg-[#1B4332] text-white" : "bg-white border border-[#E5E0D8] text-[#6B7280] hover:border-[#1B4332]"
             }`}>
-            👤 Sellers & Trust
+            {ad.tabSellers}
           </button>
           <button onClick={() => setTab("reports")}
             className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
               tab === "reports" ? "bg-red-600 text-white" : "bg-white border border-[#E5E0D8] text-[#6B7280] hover:border-red-400"
             }`}>
-            🚩 Reports
+            {ad.tabReports}
           </button>
           <button onClick={() => setTab("claims")}
             className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
               tab === "claims" ? "bg-emerald-600 text-white" : "bg-white border border-[#E5E0D8] text-[#6B7280] hover:border-emerald-400"
             }`}>
-            🛡️ Claims
+            {ad.tabClaims}
           </button>
         </div>
 
@@ -553,10 +565,10 @@ export default function AdminPage() {
         {tab === "sellers" && (
           <>
             {usersLoading ? (
-              <div className="text-center py-20 text-[#6B7280]">Loading sellers...</div>
+              <div className="text-center py-20 text-[#6B7280]">{ad.loadingSellers}</div>
             ) : users.length === 0 ? (
               <div className="text-center py-20 bg-white rounded-2xl border border-[#E5E0D8]">
-                <p className="text-[#6B7280] text-sm">No users found</p>
+                <p className="text-[#6B7280] text-sm">{ad.noUsers}</p>
               </div>
             ) : (
               <div className="flex flex-col gap-4">
@@ -577,10 +589,10 @@ export default function AdminPage() {
                             {u.display_name?.[0] ?? "?"}
                           </div>
                           <div>
-                            <p className="font-semibold text-[#1C1917]">{u.display_name || "Sin nombre"}</p>
-                            <p className="text-xs text-[#6B7280]">{u.phone ?? "No phone"}</p>
+                            <p className="font-semibold text-[#1C1917]">{u.display_name || ad.noName}</p>
+                            <p className="text-xs text-[#6B7280]">{u.phone ?? ad.noPhone}</p>
                             <p className="text-[10px] text-[#9CA3AF] mt-0.5">
-                              Joined {new Date(u.created_at).toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" })}
+                              {ad.joined} {formatDateMedium(u.created_at, lang)}
                             </p>
                           </div>
                         </div>
@@ -625,18 +637,21 @@ export default function AdminPage() {
                         {u.ine_photo_url && (
                           <a href={u.ine_photo_url} target="_blank" rel="noopener noreferrer"
                             className="bg-blue-50 rounded-xl px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition-colors">
-                            📸 Ver foto INE →
+                            {ad.viewIne}
                           </a>
                         )}
                         {!u.curp && !u.rfc && !u.ine_photo_url && (
-                          <span className="text-xs text-[#9CA3AF]">Sin documentos de verificación</span>
+                          <span className="text-xs text-[#9CA3AF]">{ad.noDocs}</span>
                         )}
                       </div>
 
                       {/* Review stats & auto-promotion */}
                       <div className="flex flex-wrap gap-3 items-center mb-3 text-xs">
                         <span className="text-[#6B7280]">
-                          ★ {(u.review_avg ?? 0).toFixed(1)} · {u.review_count ?? 0} reseña{(u.review_count ?? 0) !== 1 ? "s" : ""}
+                          ★ {(u.review_avg ?? 0).toFixed(1)} · {u.review_count ?? 0}{" "}
+                          {lang === "es"
+                            ? `reseña${(u.review_count ?? 0) !== 1 ? "s" : ""}`
+                            : `review${(u.review_count ?? 0) !== 1 ? "s" : ""}`}
                         </span>
                         {(() => {
                           const rc = u.review_count ?? 0;
@@ -646,16 +661,16 @@ export default function AdminPage() {
                           else if (rc >= 3 && ra >= 3.5) earned = "gold";
                           const rank: Record<string, number> = { none: 0, bronze: 1, gold: 2, diamond: 3 };
                           const willPromote = (rank[earned] ?? 0) > (rank[badge] ?? 0);
-                          if (willPromote) return <span className="text-emerald-600 font-semibold">↑ Auto-promote → {earned}</span>;
-                          if (rc < 3) return <span className="text-[#9CA3AF]">{3 - rc} more for Gold</span>;
-                          if (rc < 10) return <span className="text-[#9CA3AF]">{10 - rc} more for Diamond</span>;
+                          if (willPromote) return <span className="text-emerald-600 font-semibold">{ad.autoPromote(earned)}</span>;
+                          if (rc < 3) return <span className="text-[#9CA3AF]">{ad.moreForGold(3 - rc)}</span>;
+                          if (rc < 10) return <span className="text-[#9CA3AF]">{ad.moreForDiamond(10 - rc)}</span>;
                           return null;
                         })()}
                       </div>
 
                       {/* Admin actions */}
                       <div className="flex flex-wrap gap-2 items-center border-t border-[#E5E0D8] pt-3">
-                        <span className="text-xs font-semibold text-[#6B7280] mr-1">Trust badge:</span>
+                        <span className="text-xs font-semibold text-[#6B7280] mr-1">{ad.trustBadge}</span>
                         {(["none", "bronze", "gold", "diamond"] as const).map(b => (
                           <button key={b} onClick={() => updateUser(u.id, { trust_badge: b })}
                             disabled={userSaving === u.id || badge === b}
@@ -711,29 +726,21 @@ export default function AdminPage() {
                       ? "bg-red-600 text-white"
                       : "bg-white border border-[#E5E0D8] text-[#6B7280] hover:border-red-400"
                   }`}>
-                  {f === "open" ? "Open" : "All"}
+                  {f === "open" ? ad.open : ad.all}
                 </button>
               ))}
             </div>
 
             {reportsLoading ? (
-              <div className="text-center py-20 text-[#6B7280]">Loading reports...</div>
+              <div className="text-center py-20 text-[#6B7280]">{ad.loadingReports}</div>
             ) : reports.length === 0 ? (
               <div className="text-center py-20 bg-white rounded-2xl border border-[#E5E0D8]">
                 <p className="text-4xl mb-3">✓</p>
-                <p className="text-[#6B7280] text-sm">No {reportFilter === "open" ? "open " : ""}reports</p>
+                <p className="text-[#6B7280] text-sm">{ad.noOpenReports(reportFilter === "open")}</p>
               </div>
             ) : (
               <div className="flex flex-col gap-4">
-                {reports.map(r => {
-                  const reasonLabels: Record<string, string> = {
-                    fraud: "Fraude",
-                    fake_listing: "Anuncio falso",
-                    misleading: "Engañoso",
-                    inappropriate: "Inapropiado",
-                    spam: "Spam",
-                    other: "Otro",
-                  };
+                {reports.map((r) => {
                   const statusColors: Record<string, string> = {
                     open: "bg-red-50 text-red-700",
                     reviewed: "bg-yellow-50 text-yellow-700",
@@ -745,25 +752,32 @@ export default function AdminPage() {
                       <div className="flex flex-wrap gap-3 items-start justify-between mb-3">
                         <div>
                           <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${statusColors[r.status] ?? statusColors.open}`}>
-                            {r.status.replace("_", " ")}
+                            {ad.reportStatus(r.status)}
                           </span>
                           <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-orange-50 text-orange-700 ml-2">
-                            {reasonLabels[r.reason] ?? r.reason}
+                            {ad.reportReasons(r.reason)}
                           </span>
                         </div>
-                        <span className="text-[10px] text-[#9CA3AF]">
-                          {new Date(r.created_at).toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
-                        </span>
+                        <span className="text-[10px] text-[#9CA3AF]">{formatDateTimeShort(r.created_at, lang)}</span>
                       </div>
 
                       {r.listing_title && (
                         <p className="text-sm font-semibold text-[#1C1917] mb-1">
-                          Anuncio: <a href={`/listing/${r.listing_id}`} className="text-[#1B4332] hover:underline">{r.listing_title}</a>
+                          {ad.listing}:{" "}
+                          <a href={`/listing/${r.listing_id}`} className="text-[#1B4332] hover:underline">
+                            {r.listing_title}
+                          </a>
                         </p>
                       )}
                       <div className="flex flex-wrap gap-4 text-xs text-[#6B7280] mb-2">
-                        <span>Reportado por: {r.reporter_name}</span>
-                        {r.seller_name && <span>Vendedor: {r.seller_name}</span>}
+                        <span>
+                          {ad.reportedBy}: {r.reporter_name}
+                        </span>
+                        {r.seller_name && (
+                          <span>
+                            {ad.seller}: {r.seller_name}
+                          </span>
+                        )}
                       </div>
 
                       {r.details && (
@@ -771,7 +785,9 @@ export default function AdminPage() {
                       )}
 
                       {r.admin_note && (
-                        <p className="text-xs text-[#6B7280] italic mb-3">Admin: {r.admin_note}</p>
+                        <p className="text-xs text-[#6B7280] italic mb-3">
+                          {ad.adminNote}: {r.admin_note}
+                        </p>
                       )}
 
                       {r.status === "open" && (
@@ -779,20 +795,23 @@ export default function AdminPage() {
                           <button
                             onClick={() => updateReport(r.id, "reviewed")}
                             disabled={reportSaving === r.id}
-                            className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-yellow-50 text-yellow-700 hover:bg-yellow-100 disabled:opacity-40 transition-colors">
-                            {reportSaving === r.id ? "…" : "Mark Reviewed"}
+                            className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-yellow-50 text-yellow-700 hover:bg-yellow-100 disabled:opacity-40 transition-colors"
+                          >
+                            {reportSaving === r.id ? "…" : ad.reportMarkReviewed}
                           </button>
                           <button
                             onClick={() => updateReport(r.id, "action_taken")}
                             disabled={reportSaving === r.id}
-                            className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-40 transition-colors">
-                            {reportSaving === r.id ? "…" : "Action Taken"}
+                            className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-40 transition-colors"
+                          >
+                            {reportSaving === r.id ? "…" : ad.reportActionTaken}
                           </button>
                           <button
                             onClick={() => updateReport(r.id, "dismissed")}
                             disabled={reportSaving === r.id}
-                            className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-gray-50 text-gray-500 hover:bg-gray-100 disabled:opacity-40 transition-colors">
-                            {reportSaving === r.id ? "…" : "Dismiss"}
+                            className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-gray-50 text-gray-500 hover:bg-gray-100 disabled:opacity-40 transition-colors"
+                          >
+                            {reportSaving === r.id ? "…" : ad.reportDismiss}
                           </button>
                         </div>
                       )}
@@ -815,29 +834,21 @@ export default function AdminPage() {
                       ? "bg-emerald-600 text-white"
                       : "bg-white border border-[#E5E0D8] text-[#6B7280] hover:border-emerald-400"
                   }`}>
-                  {f === "open" ? "Open" : "All"}
+                  {f === "open" ? ad.open : ad.all}
                 </button>
               ))}
             </div>
 
             {claimsLoading ? (
-              <div className="text-center py-20 text-[#6B7280]">Loading claims...</div>
+              <div className="text-center py-20 text-[#6B7280]">{ad.loadingClaims}</div>
             ) : claims.length === 0 ? (
               <div className="text-center py-20 bg-white rounded-2xl border border-[#E5E0D8]">
                 <p className="text-4xl mb-3">🛡️</p>
-                <p className="text-[#6B7280] text-sm">No {claimFilter === "open" ? "open " : ""}guarantee claims</p>
+                <p className="text-[#6B7280] text-sm">{ad.noOpenClaims(claimFilter === "open")}</p>
               </div>
             ) : (
               <div className="flex flex-col gap-4">
-                {claims.map(c => {
-                  const reasonLabels: Record<string, string> = {
-                    no_show: "No se presentó",
-                    poor_quality: "Mala calidad",
-                    incomplete: "Incompleto",
-                    overcharged: "Cobro excesivo",
-                    safety_issue: "Seguridad",
-                    other: "Otro",
-                  };
+                {claims.map((c) => {
                   const statusColors: Record<string, string> = {
                     open: "bg-amber-50 text-amber-700",
                     under_review: "bg-blue-50 text-blue-700",
@@ -850,26 +861,33 @@ export default function AdminPage() {
                       <div className="flex flex-wrap gap-3 items-start justify-between mb-3">
                         <div>
                           <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${statusColors[c.status] ?? statusColors.open}`}>
-                            {c.status.replace("_", " ")}
+                            {ad.claimStatus(c.status)}
                           </span>
                           <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-orange-50 text-orange-700 ml-2">
-                            {reasonLabels[c.reason] ?? c.reason}
+                            {ad.claimReasons(c.reason)}
                           </span>
                         </div>
-                        <span className="text-[10px] text-[#9CA3AF]">
-                          {new Date(c.created_at).toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" })}
-                        </span>
+                        <span className="text-[10px] text-[#9CA3AF]">{formatDateMedium(c.created_at, lang)}</span>
                       </div>
 
                       {c.listing_title && (
                         <p className="text-sm font-semibold text-[#1C1917] mb-1">
-                          Servicio: <a href={`/listing/${c.listing_id}`} className="text-[#1B4332] hover:underline">{c.listing_title}</a>
+                          {ad.service}:{" "}
+                          <a href={`/listing/${c.listing_id}`} className="text-[#1B4332] hover:underline">
+                            {c.listing_title}
+                          </a>
                         </p>
                       )}
                       <div className="flex flex-wrap gap-4 text-xs text-[#6B7280] mb-2">
-                        <span>Comprador: {c.buyer_name}</span>
-                        <span>Vendedor: {c.seller_name}</span>
-                        <span>Comisión pagada: {fmtMXN(c.commission_cents)}</span>
+                        <span>
+                          {ad.buyer}: {c.buyer_name}
+                        </span>
+                        <span>
+                          {ad.seller}: {c.seller_name}
+                        </span>
+                        <span>
+                          {ad.feePaid}: {formatCurrencyMXN(c.commission_cents, lang)}
+                        </span>
                       </div>
 
                       {c.details && (
@@ -877,32 +895,42 @@ export default function AdminPage() {
                       )}
 
                       {c.admin_note && (
-                        <p className="text-xs text-[#6B7280] italic mb-3">Admin: {c.admin_note}</p>
+                        <p className="text-xs text-[#6B7280] italic mb-3">
+                          {ad.adminNote}: {c.admin_note}
+                        </p>
                       )}
 
                       {(c.status === "open" || c.status === "under_review") && (
                         <div className="flex flex-wrap gap-2 border-t border-[#E5E0D8] pt-3">
                           {c.status === "open" && (
-                            <button onClick={() => updateClaim(c.id, "under_review")}
+                            <button
+                              onClick={() => updateClaim(c.id, "under_review")}
                               disabled={claimSaving === c.id}
-                              className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-40 transition-colors">
-                              {claimSaving === c.id ? "…" : "Review"}
+                              className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-40 transition-colors"
+                            >
+                              {claimSaving === c.id ? "…" : ad.claimReview}
                             </button>
                           )}
-                          <button onClick={() => updateClaim(c.id, "approved")}
+                          <button
+                            onClick={() => updateClaim(c.id, "approved")}
                             disabled={claimSaving === c.id}
-                            className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-40 transition-colors">
-                            {claimSaving === c.id ? "…" : "Approve"}
+                            className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-40 transition-colors"
+                          >
+                            {claimSaving === c.id ? "…" : ad.claimApprove}
                           </button>
-                          <button onClick={() => updateClaim(c.id, "denied")}
+                          <button
+                            onClick={() => updateClaim(c.id, "denied")}
                             disabled={claimSaving === c.id}
-                            className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-40 transition-colors">
-                            {claimSaving === c.id ? "…" : "Deny"}
+                            className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-40 transition-colors"
+                          >
+                            {claimSaving === c.id ? "…" : ad.claimDeny}
                           </button>
-                          <button onClick={() => updateClaim(c.id, "refunded")}
+                          <button
+                            onClick={() => updateClaim(c.id, "refunded")}
                             disabled={claimSaving === c.id}
-                            className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-emerald-100 text-emerald-800 hover:bg-emerald-200 disabled:opacity-40 transition-colors">
-                            {claimSaving === c.id ? "…" : "Refund"}
+                            className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-emerald-100 text-emerald-800 hover:bg-emerald-200 disabled:opacity-40 transition-colors"
+                          >
+                            {claimSaving === c.id ? "…" : ad.claimRefund}
                           </button>
                         </div>
                       )}
@@ -925,7 +953,7 @@ export default function AdminPage() {
                   ? "bg-[#1B4332] text-white"
                   : "bg-white border border-[#E5E0D8] text-[#6B7280] hover:border-[#1B4332]"
               }`}>
-              {f === "pending" ? "⏳ Pending approval" : f === "verified" ? "✅ Verified" : "📋 All"}
+              {f === "pending" ? ad.filterPending : f === "verified" ? ad.filterVerified : ad.filterAll}
             </button>
           ))}
         </div>
@@ -933,10 +961,8 @@ export default function AdminPage() {
         <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50/60 px-4 py-4">
           <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
             <div>
-              <p className="text-sm font-bold text-amber-950">Posibles duplicados (heurística)</p>
-              <p className="text-xs text-amber-900/90">
-                Mismo vendedor + título normalizado + precio, o misma foto + precio. Buscar no modifica datos.
-              </p>
+              <p className="text-sm font-bold text-amber-950">{ad.dupTitle}</p>
+              <p className="text-xs text-amber-900/90">{ad.dupSub}</p>
             </div>
             <button
               type="button"
@@ -944,12 +970,12 @@ export default function AdminPage() {
               disabled={dupLoading || !pin.trim()}
               className="px-4 py-2 rounded-xl text-sm font-semibold bg-amber-800 text-white hover:bg-amber-900 disabled:opacity-40"
             >
-              {dupLoading ? "Analizando…" : "Cargar análisis"}
+              {dupLoading ? ad.dupAnalyze : ad.dupLoad}
             </button>
           </div>
           {dupMeta && (
             <p className="text-xs text-amber-900 mb-2">
-              Escaneados: {dupMeta.scanned} · Grupos: {dupMeta.groupCount}
+              {ad.dupScanned}: {dupMeta.scanned} · {ad.dupGroups}: {dupMeta.groupCount}
             </p>
           )}
           {dupGroups.length > 0 && (
@@ -957,8 +983,8 @@ export default function AdminPage() {
               {dupGroups.map((g, i) => (
                 <div key={`${g.key}-${i}`} className="bg-white rounded-xl border border-amber-200/80 p-3 text-xs">
                   <p className="font-bold text-[#92400E] mb-1">
-                    {g.reason === "title_price" ? "Título + precio" : "Foto + precio"} · {g.listings.length}{" "}
-                    anuncios
+                    {g.reason === "title_price" ? ad.dupReasonTitlePrice : ad.dupReasonPhotoPrice} · {g.listings.length}{" "}
+                    {ad.dupListings}
                   </p>
                   <ul className="space-y-1 text-[#374151]">
                     {g.listings.map((x) => (
@@ -971,8 +997,8 @@ export default function AdminPage() {
                         >
                           {x.id.slice(0, 8)}…
                         </a>
-                        <span>{fmtDate(x.created_at)}</span>
-                        <span className="font-semibold">{fmtMXN(x.price_mxn)}</span>
+                        <span>{formatDateMedium(x.created_at, lang)}</span>
+                        <span className="font-semibold">{formatCurrencyMXN(x.price_mxn, lang)}</span>
                         <span className="truncate max-w-[200px]">{x.title_es}</span>
                       </li>
                     ))}
@@ -982,51 +1008,51 @@ export default function AdminPage() {
             </div>
           )}
           {!dupLoading && dupMeta && dupGroups.length === 0 && (
-            <p className="text-xs text-amber-800 mt-1">Sin grupos bajo esta heurística (o sube el límite en API).</p>
+            <p className="text-xs text-amber-800 mt-1">{ad.dupNoGroups}</p>
           )}
         </div>
 
         {/* Listings */}
         {loading ? (
-          <div className="text-center py-20 text-[#6B7280]">Loading...</div>
+          <div className="text-center py-20 text-[#6B7280]">{ad.loading}</div>
         ) : listings.length === 0 ? (
           <div className="text-center py-20 bg-white rounded-2xl border border-[#E5E0D8]">
             <div className="text-4xl mb-3">🎉</div>
             <p className="text-[#6B7280] text-sm">
-              {filter === "pending" ? "No pending providers — all caught up!" : "No listings found"}
+              {filter === "pending" ? ad.noPendingListings : ad.noListingsFound}
             </p>
           </div>
         ) : (
           <div className="flex flex-col gap-4">
-            {listings.map(l => (
-              <div key={l.id} className={`bg-white rounded-2xl border p-6 shadow-sm ${
-                l.is_verified ? "border-[#A7F3D0]" : "border-[#FDE68A]"
+            {listings.map((listing) => (
+              <div key={listing.id} className={`bg-white rounded-2xl border p-6 shadow-sm ${
+                listing.is_verified ? "border-[#A7F3D0]" : "border-[#FDE68A]"
               }`}>
                 <div className="flex flex-wrap gap-3 items-start justify-between mb-3">
                   <div>
                     <div className="flex items-center gap-2 mb-1">
                       <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                        l.is_verified
+                        listing.is_verified
                           ? "bg-[#ECFDF5] text-[#065F46]"
                           : "bg-[#FFFBEB] text-[#92400E]"
                       }`}>
-                        {l.is_verified ? "✅ Verified" : "⏳ Pending"}
+                        {listing.is_verified ? ad.verified : ad.pending}
                       </span>
-                      <span className="text-xs text-[#6B7280]">{fmtDate(l.created_at)}</span>
+                      <span className="text-xs text-[#6B7280]">{formatDateMedium(listing.created_at, lang)}</span>
                     </div>
-                    <h2 className="font-semibold text-[#1C1917] text-base">{l.title_es}</h2>
+                    <h2 className="font-semibold text-[#1C1917] text-base">{listing.title_es}</h2>
                     <p className="text-sm text-[#6B7280] mt-0.5">
-                      📍 {l.location_city} · 💰 {fmtMXN(l.price_mxn)}
+                      📍 {listing.location_city} · 💰 {formatCurrencyMXN(listing.price_mxn, lang)}
                     </p>
                   </div>
 
                   {/* Provider info */}
                   <div className="bg-[#F4F0EB] rounded-xl px-4 py-3 text-sm">
-                    <p className="font-semibold text-[#1B4332]">{l.users?.display_name ?? "Unknown"}</p>
-                    <p className="text-[#6B7280] text-xs">{l.users?.phone ?? "No phone"}</p>
-                    {l.users?.phone && (
+                    <p className="font-semibold text-[#1B4332]">{listing.users?.display_name ?? ad.unknown}</p>
+                    <p className="text-[#6B7280] text-xs">{listing.users?.phone ?? ad.noPhone}</p>
+                    {listing.users?.phone && (
                       <a
-                        href={`https://wa.me/${(l.users.phone).replace(/\D/g, "")}?text=Hola%20${encodeURIComponent(l.users.display_name ?? "")}%2C%20somos%20Naranjogo%20%E2%80%94%20revisamos%20tu%20solicitud.`}
+                        href={`https://wa.me/${(listing.users.phone).replace(/\D/g, "")}?text=Hola%20${encodeURIComponent(listing.users.display_name ?? "")}%2C%20somos%20Naranjogo%20%E2%80%94%20revisamos%20tu%20solicitud.`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1 text-xs text-[#25D366] font-semibold mt-1 hover:underline">
@@ -1038,76 +1064,65 @@ export default function AdminPage() {
 
                 {/* Description */}
                 <p className="text-sm text-[#374151] bg-[#F4F0EB] rounded-xl px-4 py-3 mb-4 leading-relaxed">
-                  {l.description_es?.slice(0, 200)}{l.description_es?.length > 200 ? "..." : ""}
+                  {listing.description_es?.slice(0, 200)}{listing.description_es?.length > 200 ? "..." : ""}
                 </p>
 
                 {/* Optional package: N sessions for $X total (commission base) */}
                 <div className="mb-4 p-3 rounded-xl bg-amber-50/80 border border-amber-200/80">
-                  <p className="text-xs font-semibold text-amber-950 mb-2">Package (optional) — N sessions, total $ MXN (agreed with provider)</p>
+                  <p className="text-xs font-semibold text-amber-950 mb-2">{ad.packageTitle}</p>
                   <div className="flex flex-wrap gap-3 items-end">
                     <div>
-                      <label className="text-[10px] text-amber-900 block">Sessions (≥2)</label>
+                      <label className="text-[10px] text-amber-900 block">{ad.sessions}</label>
                       <input
                         type="number"
                         min={2}
                         placeholder="—"
-                        value={pkgSess[l.id] ?? ""}
-                        onChange={(e) => setPkgSess((c) => ({ ...c, [l.id]: e.target.value }))}
+                        value={pkgSess[listing.id] ?? ""}
+                        onChange={(e) => setPkgSess((c) => ({ ...c, [listing.id]: e.target.value }))}
                         className="w-20 border border-amber-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-amber-500 bg-white"
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] text-amber-900 block">Total MXN</label>
+                      <label className="text-[10px] text-amber-900 block">{ad.totalMxn}</label>
                       <input
                         type="text"
                         inputMode="decimal"
                         placeholder="e.g. 2400"
-                        value={pkgPesos[l.id] ?? ""}
-                        onChange={(e) => setPkgPesos((c) => ({ ...c, [l.id]: e.target.value }))}
+                        value={pkgPesos[listing.id] ?? ""}
+                        onChange={(e) => setPkgPesos((c) => ({ ...c, [listing.id]: e.target.value }))}
                         className="w-28 border border-amber-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-amber-500 bg-white"
                       />
                     </div>
-                    {l.is_verified && (
+                    {listing.is_verified && (
                       <button
                         type="button"
-                        onClick={() => void savePackage(l.id)}
-                        disabled={saving === l.id}
+                        onClick={() => void savePackage(listing.id)}
+                        disabled={saving === listing.id}
                         className="text-xs px-3 py-2 rounded-lg bg-amber-700 text-white font-semibold hover:bg-amber-800 transition-colors disabled:opacity-40"
                       >
-                        {saving === l.id ? "…" : "Save package"}
+                        {saving === listing.id ? "…" : ad.savePackage}
                       </button>
                     )}
                   </div>
-                  <p className="text-[10px] text-amber-800 mt-2">
-                    Platform fee uses % commission on this total. Leave both fields empty for single-visit list price only.
-                  </p>
+                  <p className="text-[10px] text-amber-800 mt-2">{ad.packageHint}</p>
                 </div>
 
-                {String(l.category_id ?? "").toLowerCase() === "services" && l.is_verified && (
+                {String(listing.category_id ?? "").toLowerCase() === "services" && listing.is_verified && (
                   <div className="mb-4 p-3 rounded-xl bg-sky-50/90 border border-sky-200/80">
                     <label className="flex items-start gap-3 cursor-pointer select-none">
                       <input
                         type="checkbox"
                         className="mt-1 rounded border-sky-300 text-sky-700 focus:ring-sky-500"
-                        checked={Boolean(l.calendar_sync_enabled)}
-                        onChange={(e) => void setCalendarSync(l.id, e.target.checked)}
-                        disabled={saving === l.id}
+                        checked={Boolean(listing.calendar_sync_enabled)}
+                        onChange={(e) => void setCalendarSync(listing.id, e.target.checked)}
+                        disabled={saving === listing.id}
                       />
                       <span>
-                        <span className="text-sm font-semibold text-sky-950">Live calendar sync</span>
-                        <span className="block text-[11px] text-sky-900 mt-0.5 leading-snug">
-                          Shows the blue “live openings” block on the public listing when enabled. Populate{" "}
-                          <code className="text-[10px] bg-white/80 px-1 rounded">listing_live_availability_slots</code> via your
-                          sync job; set <code className="text-[10px] bg-white/80 px-1 rounded">calendar_last_synced_at</code> in
-                          SQL or the job.
-                        </span>
-                        {l.calendar_last_synced_at && (
+                        <span className="text-sm font-semibold text-sky-950">{ad.liveCalendarTitle}</span>
+                        <span className="block text-[11px] text-sky-900 mt-0.5 leading-snug">{ad.liveCalendarBody}</span>
+                        {listing.calendar_last_synced_at && (
                           <span className="block text-[10px] text-sky-800 mt-1">
-                            Last synced:{" "}
-                            {new Date(l.calendar_last_synced_at).toLocaleString("es-MX", {
-                              dateStyle: "short",
-                              timeStyle: "short",
-                            })}
+                            {ad.lastSynced}: {formatDateTimeShort(listing.calendar_last_synced_at, lang)}
                           </span>
                         )}
                       </span>
@@ -1118,36 +1133,36 @@ export default function AdminPage() {
                 {/* Commission + Actions */}
                 <div className="flex flex-wrap gap-3 items-center">
                   <div className="flex items-center gap-2">
-                    <label className="text-xs font-semibold text-[#6B7280]">Commission %</label>
+                    <label className="text-xs font-semibold text-[#6B7280]">{ad.commissionPct}</label>
                     <input
                       type="number"
                       min="0" max="30" step="0.5"
-                      value={commissions[l.id] ?? "5"}
-                      onChange={e => setCommissions(c => ({ ...c, [l.id]: e.target.value }))}
+                      value={commissions[listing.id] ?? "5"}
+                      onChange={e => setCommissions(c => ({ ...c, [listing.id]: e.target.value }))}
                       className="w-16 border border-[#E5E0D8] rounded-lg px-2 py-1.5 text-sm text-center outline-none focus:border-[#1B4332]"
                     />
                     <span className="text-xs text-[#6B7280]">%</span>
-                    {l.is_verified && (
-                      <button onClick={() => updateCommission(l.id)}
-                        disabled={saving === l.id}
+                    {listing.is_verified && (
+                      <button onClick={() => updateCommission(listing.id)}
+                        disabled={saving === listing.id}
                         className="text-xs px-3 py-1.5 rounded-lg bg-[#EFF6FF] text-[#1D4ED8] font-semibold hover:bg-[#DBEAFE] transition-colors disabled:opacity-40">
-                        {saving === l.id ? "..." : "Update %"}
+                        {saving === listing.id ? "..." : ad.updatePct}
                       </button>
                     )}
                   </div>
 
                   <div className="flex gap-2 ml-auto">
-                    {!l.is_verified && (
-                      <button onClick={() => approve(l.id)}
-                        disabled={saving === l.id}
+                    {!listing.is_verified && (
+                      <button onClick={() => approve(listing.id)}
+                        disabled={saving === listing.id}
                         className="px-4 py-2 rounded-xl bg-[#1B4332] text-white text-sm font-semibold hover:bg-[#2D6A4F] transition-colors disabled:opacity-40">
-                        {saving === l.id ? "..." : "✓ Approve"}
+                        {saving === listing.id ? "..." : ad.approve}
                       </button>
                     )}
-                    <button onClick={() => reject(l.id)}
-                      disabled={saving === l.id}
+                    <button onClick={() => reject(listing.id)}
+                      disabled={saving === listing.id}
                       className="px-4 py-2 rounded-xl bg-white border border-red-200 text-red-600 text-sm font-semibold hover:bg-red-50 transition-colors disabled:opacity-40">
-                      {saving === l.id ? "..." : l.is_verified ? "Remove" : "Reject"}
+                      {saving === listing.id ? "..." : listing.is_verified ? ad.remove : ad.reject}
                     </button>
                   </div>
                 </div>

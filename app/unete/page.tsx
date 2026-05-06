@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo, useState, Suspense } from "react";
 import { ALL_COLONIA_KEYS, COLONIAS as COLONIAS_MAP } from "@/lib/colonias";
 import {
   buildAvailabilitySummaryString,
@@ -18,6 +18,7 @@ import {
   SERVICE_LOCATION_OPTIONS,
   providerServiceLabels,
 } from "@/lib/provider-services";
+import { useAppLang, useAppLangActions } from "@/hooks/use-app-lang";
 
 const COLONIAS_LIST = ALL_COLONIA_KEYS.map(key => ({
   value: key,
@@ -162,7 +163,22 @@ const T = {
 };
 
 export default function UnetePage() {
-  const [lang, setLang] = useState<"es"|"en">("es");
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-[#FDF8F1] flex items-center justify-center">
+          <div className="w-8 h-8 border-2 border-[#1B4332] border-t-transparent rounded-full animate-spin" />
+        </main>
+      }
+    >
+      <UnetePageInner />
+    </Suspense>
+  );
+}
+
+function UnetePageInner() {
+  const lang = useAppLang();
+  const { setLang } = useAppLangActions();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);

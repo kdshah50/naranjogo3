@@ -13,6 +13,11 @@ function LangToggle() {
   const params = useSearchParams();
   const lang = params.get("lang") || "es";
   const toggle = (l: string) => {
+    try {
+      localStorage.setItem("naranjo_lang", l);
+    } catch {
+      /* ignore */
+    }
     const p = new URLSearchParams(params.toString());
     p.set("lang", l);
     router.push(`${pathname}?${p.toString()}`);

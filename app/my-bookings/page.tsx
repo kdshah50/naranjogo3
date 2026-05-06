@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import GuaranteeBadge from "@/components/GuaranteeBadge";
 import RoutineHabitsCard from "@/components/RoutineHabitsCard";
+import { useAppLang, useAppLangActions } from "@/hooks/use-app-lang";
 
 type Booking = {
   id: string;
@@ -153,6 +154,20 @@ const REBOOK_OPTIONS = [7, 14, 30, 90, 180] as const;
 const BEFORE_OPTIONS = [1, 6, 24, 48, 72] as const;
 
 export default function MyBookingsPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-[#FDF8F1] flex items-center justify-center">
+          <div className="w-8 h-8 border-2 border-[#1B4332] border-t-transparent rounded-full animate-spin" />
+        </main>
+      }
+    >
+      <MyBookingsPageInner />
+    </Suspense>
+  );
+}
+
+function MyBookingsPageInner() {
   const router = useRouter();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [reminders, setReminders] = useState<ReminderRow[]>([]);
@@ -164,19 +179,11 @@ export default function MyBookingsPage() {
   const [emailVal, setEmailVal] = useState<Record<string, string>>({});
   const [apptLocal, setApptLocal] = useState<Record<string, string>>({});
   const [apptBeforeH, setApptBeforeH] = useState<Record<string, number>>({});
-  const [lang, setLang] = useState<"es" | "en">("es");
+  const lang = useAppLang();
+  const { setLang } = useAppLangActions();
   const [busyCancelId, setBusyCancelId] = useState<string | null>(null);
   const [buyerCancelCode, setBuyerCancelCode] = useState<Record<string, string>>({});
   const [cancelMsg, setCancelMsg] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem("naranjo_lang");
-      if (stored === "en" || stored === "es") setLang(stored);
-    } catch {
-      /* ignore */
-    }
-  }, []);
 
   const loadData = useCallback(() => {
     Promise.all([
@@ -498,11 +505,6 @@ export default function MyBookingsPage() {
                 type="button"
                 onClick={() => {
                   setLang(l);
-                  try {
-                    localStorage.setItem("naranjo_lang", l);
-                  } catch {
-                    /* ignore */
-                  }
                 }}
                 className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${
                   lang === l ? "bg-white text-[#1B4332] shadow-sm" : "text-[#6B7280]"

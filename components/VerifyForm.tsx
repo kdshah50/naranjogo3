@@ -2,8 +2,56 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { canonicalizeAuthPhone, nationalDigitsForDisplay, normalizeAuthPhone } from "@/lib/phone";
+import { useAppLang } from "@/hooks/use-app-lang";
+import type { Lang } from "@/lib/i18n-lang";
+
+const VF: Record<
+  Lang,
+  {
+    codeWrong: string;
+    invalidResponse: string;
+    verifyError: string;
+    title: string;
+    leadBefore: string;
+    leadAfter: string;
+    verifying: string;
+    verifyBtn: string;
+    resendIn: (s: number) => string;
+    resendBtn: string;
+    changeNumber: string;
+  }
+> = {
+  es: {
+    codeWrong: "Código incorrecto",
+    invalidResponse: "Respuesta inválida del servidor",
+    verifyError: "Error al verificar",
+    title: "Código enviado",
+    leadBefore: "Enviamos un código de 6 dígitos por WhatsApp a",
+    leadAfter: "",
+    verifying: "Verificando...",
+    verifyBtn: "Verificar código",
+    resendIn: (s) => `Reenviar en ${s}s`,
+    resendBtn: "Reenviar código por WhatsApp",
+    changeNumber: "← Cambiar número",
+  },
+  en: {
+    codeWrong: "Incorrect code",
+    invalidResponse: "Invalid server response",
+    verifyError: "Verification failed",
+    title: "Code sent",
+    leadBefore: "We sent a 6-digit code via WhatsApp to",
+    leadAfter: "",
+    verifying: "Verifying...",
+    verifyBtn: "Verify code",
+    resendIn: (s) => `Resend in ${s}s`,
+    resendBtn: "Resend code on WhatsApp",
+    changeNumber: "← Change number",
+  },
+};
 
 export default function VerifyForm() {
+  const lang = useAppLang();
+  const vf = VF[lang];
   const [code, setCode] = useState(["", "", "", "", "", ""]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -41,23 +89,23 @@ export default function VerifyForm() {
         const ct = res.headers.get("content-type") ?? "";
         const data = ct.includes("application/json") ? await res.json() : null;
         if (!res.ok) {
-          throw new Error((data as { error?: string } | null)?.error ?? "Código incorrecto");
+          throw new Error((data as { error?: string } | null)?.error ?? vf.codeWrong);
         }
-        if (!(data as { user?: unknown } | null)?.user) throw new Error("Respuesta inválida del servidor");
+        if (!(data as { user?: unknown } | null)?.user) throw new Error(vf.invalidResponse);
         // Session cookie is HttpOnly; set by /api/auth/verify-otp
         const dest = returnTo && returnTo.startsWith("/") ? returnTo : "/profile";
         window.location.href = dest;
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
         console.error("[verify] error", msg);
-        setError(msg || "Error al verificar");
+        setError(msg || vf.verifyError);
         setCode(["", "", "", "", "", ""]);
         inputRefs.current[0]?.focus();
       } finally {
         setLoading(false);
       }
     },
-    [phone, returnTo, referralCode]
+    [phone, returnTo, referralCode, vf.codeWrong, vf.invalidResponse, vf.verifyError],
   );
 
   useEffect(() => {
@@ -97,9 +145,9 @@ export default function VerifyForm() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <div className="text-4xl mb-3">💬</div>
-          <h1 className="font-serif text-2xl font-bold text-[#1C1917] mb-2">Código enviado</h1>
+          <h1 className="font-serif text-2xl font-bold text-[#1C1917] mb-2">{vf.title}</h1>
           <p className="text-sm text-[#6B7280]">
-            Enviamos un código de 6 dígitos por WhatsApp a
+            {vf.leadBefore}
             <br />
             <span className="font-semibold text-[#1C1917]">
               {phonePrefix} {displayNational}
@@ -138,24 +186,24 @@ export default function VerifyForm() {
           >
             {loading ? (
               <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Verificando...
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> {vf.verifying}
               </>
             ) : (
-              "Verificar código"
+              vf.verifyBtn
             )}
           </button>
           <div className="text-center mt-4">
             {resendCountdown > 0 ? (
-              <p className="text-sm text-[#9CA3AF]">Reenviar en {resendCountdown}s</p>
+              <p className="text-sm text-[#9CA3AF]">{vf.resendIn(resendCountdown)}</p>
             ) : (
               <button onClick={handleResend} className="text-sm text-[#1B4332] font-semibold hover:underline">
-                Reenviar código por WhatsApp
+                {vf.resendBtn}
               </button>
             )}
           </div>
         </div>
         <button onClick={() => router.push("/auth/login")} className="w-full text-center text-sm text-[#6B7280] mt-4 hover:text-[#1B4332]">
-          ← Cambiar número
+          {vf.changeNumber}
         </button>
       </div>
     </main>

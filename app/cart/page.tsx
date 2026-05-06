@@ -4,14 +4,9 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCart } from "@/components/cart/CartContext";
-
-function fmtMXN(cents: number) {
-  return new Intl.NumberFormat("es-MX", {
-    style: "currency",
-    currency: "MXN",
-    maximumFractionDigits: 0,
-  }).format(cents / 100);
-}
+import { useAppLang } from "@/hooks/use-app-lang";
+import { formatCurrencyMXN } from "@/lib/locale-format";
+import type { Lang } from "@/lib/i18n-lang";
 
 type Preview = {
   connectRequired?: boolean;
@@ -30,7 +25,68 @@ type Preview = {
   }>;
 };
 
+const CART_UI: Record<
+  Lang,
+  {
+    title: string;
+    lead: string;
+    cancelled: string;
+    empty: string;
+    each: string;
+    remove: string;
+    clear: string;
+    calc: string;
+    subtotal: string;
+    commission: string;
+    total: string;
+    payBusy: string;
+    payBtn: string;
+    shopMore: string;
+    vatLabel: (pct: number) => string;
+  }
+> = {
+  es: {
+    title: "Carrito",
+    lead:
+      "Compra de artículos (no servicios). Comisión e IVA se muestran antes de pagar; la comisión por anuncio la define el admin como en servicios.",
+    cancelled: "Pago cancelado. Puedes intentar de nuevo.",
+    empty: "Tu carrito está vacío.",
+    each: "c/u",
+    remove: "Quitar",
+    clear: "Vaciar carrito",
+    calc: "Calculando totales…",
+    subtotal: "Subtotal",
+    commission: "Comisión Naranjogo",
+    total: "Total",
+    payBusy: "Redirigiendo a Stripe…",
+    payBtn: "Pagar con Stripe",
+    shopMore: "← Seguir comprando",
+    vatLabel: (pct) => `IVA (${pct}%)`,
+  },
+  en: {
+    title: "Cart",
+    lead:
+      "Buying items (not services). Commission and VAT are shown before you pay; per-listing commission is set by admin like services.",
+    cancelled: "Payment cancelled. You can try again.",
+    empty: "Your cart is empty.",
+    each: "ea.",
+    remove: "Remove",
+    clear: "Clear cart",
+    calc: "Calculating totals…",
+    subtotal: "Subtotal",
+    commission: "Naranjogo fee",
+    total: "Total",
+    payBusy: "Redirecting to Stripe…",
+    payBtn: "Pay with Stripe",
+    shopMore: "← Keep shopping",
+    vatLabel: (pct) => `VAT (${pct}%)`,
+  },
+};
+
 function CartPageInner() {
+  const lang = useAppLang();
+  const ct = CART_UI[lang];
+  const fmt = (cents: number) => formatCurrencyMXN(cents, lang);
   const searchParams = useSearchParams();
   const cancelled = searchParams.get("cancelled");
   const { lines, setQty, removeItem, clear } = useCart();
@@ -88,7 +144,7 @@ function CartPageInner() {
         const msg =
           (data as { message?: string; error?: string }).message ||
           (data as { error?: string }).error ||
-          "No se pudo pagar";
+          (lang === "es" ? "No se pudo pagar" : "Could not complete payment");
         throw new Error(msg);
       }
       const url = (data as { url?: string }).url;
@@ -102,32 +158,45 @@ function CartPageInner() {
 
   return (
     <main className="max-w-lg mx-auto px-4 py-8">
-      <h1 className="font-serif text-2xl font-bold text-[#1B4332] mb-2">Carrito</h1>
-      <p className="text-sm text-[#6B7280] mb-4">
-        Compra de artículos (no servicios). Comisión e IVA se muestran antes de pagar; la comisión por anuncio la define el
-        admin como en servicios.
-      </p>
+      <h1 className="font-serif text-2xl font-bold text-[#1B4332] mb-2">{ct.title}</h1>
+      <p className="text-sm text-[#6B7280] mb-4">{ct.lead}</p>
       {preview?.connectRequired === false && (
         <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
-          <strong>Modo carrito sin Connect:</strong> el cobro va a la cuenta Stripe de la plataforma. El reparto al vendedor es
-          manual hasta que actives Stripe Connect y pongas <code className="text-[11px]">MARKETPLACE_CONNECT_REQUIRED=true</code>.
+          {lang === "es" ? (
+            <>
+              <strong>Modo carrito sin Connect:</strong> el cobro va a la cuenta Stripe de la plataforma. El reparto al vendedor es
+              manual hasta que actives Stripe Connect y pongas <code className="text-[11px]">MARKETPLACE_CONNECT_REQUIRED=true</code>.
+            </>
+          ) : (
+            <>
+              <strong>Cart without Connect:</strong> charges go to the platform Stripe account. Payout to sellers is manual until
+              you enable Stripe Connect and set <code className="text-[11px]">MARKETPLACE_CONNECT_REQUIRED=true</code>.
+            </>
+          )}
         </div>
       )}
       {preview?.connectRequired === true && (
         <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
-          El vendedor debe tener <strong>cobros Stripe (Connect)</strong> activos; si no, usa mensajes o la tarifa de contacto
-          en el anuncio.
+          {lang === "es" ? (
+            <>
+              El vendedor debe tener <strong>cobros Stripe (Connect)</strong> activos; si no, usa mensajes o la tarifa de contacto
+              en el anuncio.
+            </>
+          ) : (
+            <>
+              The seller must have <strong>Stripe Connect payouts</strong> enabled; otherwise use messages or the contact fee on the
+              listing.
+            </>
+          )}
         </div>
       )}
 
       {cancelled && (
-        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          Pago cancelado. Puedes intentar de nuevo.
-        </div>
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">{ct.cancelled}</div>
       )}
 
       {lines.length === 0 ? (
-        <p className="text-[#6B7280] mb-4">Tu carrito está vacío.</p>
+        <p className="text-[#6B7280] mb-4">{ct.empty}</p>
       ) : (
         <ul className="space-y-3 mb-6">
           {lines.map((l) => (
@@ -140,7 +209,9 @@ function CartPageInner() {
                   {l.titleEs || l.listingId.slice(0, 8)}
                 </p>
                 {l.priceMxnCents != null && (
-                  <p className="text-xs text-[#6B7280]">{fmtMXN(l.priceMxnCents)} c/u</p>
+                  <p className="text-xs text-[#6B7280]">
+                    {fmt(l.priceMxnCents)} {ct.each}
+                  </p>
                 )}
               </div>
               <input
@@ -156,7 +227,7 @@ function CartPageInner() {
                 onClick={() => removeItem(l.listingId)}
                 className="text-xs text-red-600 font-semibold px-2"
               >
-                Quitar
+                {ct.remove}
               </button>
             </li>
           ))}
@@ -165,34 +236,43 @@ function CartPageInner() {
 
       {lines.length > 0 && (
         <button type="button" onClick={() => clear()} className="text-xs text-[#6B7280] underline mb-4">
-          Vaciar carrito
+          {ct.clear}
         </button>
       )}
 
-      {loading && <p className="text-sm text-[#6B7280]">Calculando totales…</p>}
+      {loading && <p className="text-sm text-[#6B7280]">{ct.calc}</p>}
       {previewErr && <p className="text-sm text-red-600 mb-4">{previewErr}</p>}
 
       {preview && lines.length > 0 && (
         <div className="rounded-xl border border-[#E5E0D8] bg-[#FDF8F1] p-4 space-y-2 text-sm mb-6">
           <div className="flex justify-between">
-            <span className="text-[#6B7280]">Subtotal</span>
-            <span className="font-medium">{fmtMXN(preview.subtotalCents)}</span>
+            <span className="text-[#6B7280]">{ct.subtotal}</span>
+            <span className="font-medium">{fmt(preview.subtotalCents)}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-[#6B7280]">Comisión Naranjogo</span>
-            <span className="font-medium">{fmtMXN(preview.commissionCents)}</span>
+            <span className="text-[#6B7280]">{ct.commission}</span>
+            <span className="font-medium">{fmt(preview.commissionCents)}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-[#6B7280]">IVA ({preview.vatPercent}%)</span>
-            <span className="font-medium">{fmtMXN(preview.vatCents)}</span>
+            <span className="text-[#6B7280]">{ct.vatLabel(preview.vatPercent)}</span>
+            <span className="font-medium">{fmt(preview.vatCents)}</span>
           </div>
           <div className="flex justify-between pt-2 border-t border-[#E5E0D8] text-base font-bold text-[#1B4332]">
-            <span>Total</span>
-            <span>{fmtMXN(preview.totalCents)}</span>
+            <span>{ct.total}</span>
+            <span>{fmt(preview.totalCents)}</span>
           </div>
           <p className="text-xs text-[#6B7280] pt-2">
-            El vendedor recibe el subtotal vía Stripe Connect; Naranjogo retiene comisión + IVA mostrados. Ajusta{" "}
-            <code className="text-[11px]">MARKETPLACE_VAT_PERCENT</code> en el servidor si cambia el IVA.
+            {lang === "es" ? (
+              <>
+                El vendedor recibe el subtotal vía Stripe Connect; Naranjogo retiene comisión + IVA mostrados. Ajusta{" "}
+                <code className="text-[11px]">MARKETPLACE_VAT_PERCENT</code> en el servidor si cambia el IVA.
+              </>
+            ) : (
+              <>
+                The seller receives the subtotal via Stripe Connect; Naranjogo keeps the fee + VAT shown. Adjust{" "}
+                <code className="text-[11px]">MARKETPLACE_VAT_PERCENT</code> on the server if VAT changes.
+              </>
+            )}
           </p>
         </div>
       )}
@@ -204,13 +284,13 @@ function CartPageInner() {
           onClick={() => void pay()}
           className="w-full py-3 rounded-xl bg-[#D4A017] text-white font-semibold disabled:opacity-50"
         >
-          {payBusy ? "Redirigiendo a Stripe…" : "Pagar con Stripe"}
+          {payBusy ? ct.payBusy : ct.payBtn}
         </button>
       )}
 
       <p className="text-center mt-6">
         <Link href="/" className="text-sm text-[#1B4332] font-semibold hover:underline">
-          ← Seguir comprando
+          {ct.shopMore}
         </Link>
       </p>
     </main>
@@ -219,7 +299,7 @@ function CartPageInner() {
 
 export default function CartPage() {
   return (
-    <Suspense fallback={<main className="max-w-lg mx-auto px-4 py-8 text-[#6B7280]">Cargando carrito…</main>}>
+    <Suspense fallback={<main className="max-w-lg mx-auto px-4 py-8 text-[#6B7280]">…</main>}>
       <CartPageInner />
     </Suspense>
   );
