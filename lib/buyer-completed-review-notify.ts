@@ -1,18 +1,30 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { idMatchVariantsForIn } from "@/lib/user-id-variants";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
-import { sendWhatsApp } from "@/lib/twilio";
+import type { BuyerPhaseWhatsAppResult } from "@/lib/buyer-phase-notify";
+import { canonicalizeAuthPhone, normalizeAuthPhone } from "@/lib/phone";
+import { sendWhatsApp, isTwilioWhatsAppConfigured } from "@/lib/twilio";
 import { getPublicAppUrl } from "@/lib/app-url";
 
 const STALE_NOTIFY_CLAIM_MS = 3 * 60 * 1000;
+
+function digitsForWhatsApp(raw: string | null | undefined): string {
+  const s = (raw ?? "").trim();
+  if (!s) return "";
+  const d = canonicalizeAuthPhone(normalizeAuthPhone(s));
+  return d || "";
+}
 
 /**
  * One WhatsApp to the buyer after the seller marks the booking completed — link to leave a review.
  * Claim pattern avoids duplicate sends if PATCH or workers retry.
  */
-export async function notifyBuyerCompletedReviewPrompt(supabase: SupabaseClient, bookingId: string): Promise<void> {
+export async function notifyBuyerCompletedReviewPrompt(
+  supabase: SupabaseClient,
+  bookingId: string
+): Promise<BuyerPhaseWhatsAppResult> {
   const idVars = idMatchVariantsForIn(String(bookingId));
-  if (idVars.length === 0) return;
+  if (idVars.length === 0) return { delivered: false, reason: "no_booking" };
 
   const staleBefore = new Date(Date.now() - STALE_NOTIFY_CLAIM_MS).toISOString();
   const claimedAt = new Date().toISOString();
@@ -31,10 +43,21 @@ export async function notifyBuyerCompletedReviewPrompt(supabase: SupabaseClient,
 
   if (claimErr) {
     console.error("[buyer-completed-review-notify] claim", claimErr);
-    return;
+    return { delivered: false, reason: "send_failed" };
   }
   const row = claimedRows?.[0];
-  if (!row) return;
+  if (!row) {
+    const { data: b } = await supabase
+      .from("service_bookings")
+      .select("buyer_completed_review_notified_at,status,payment_status")
+      .in("id", idVars)
+      .maybeSingle();
+    if (!b) return { delivered: false, reason: "no_booking" };
+    if (b.buyer_completed_review_notified_at) return { delivered: false, reason: "deduped" };
+    if (b.payment_status !== "paid") return { delivered: false, reason: "not_paid" };
+    if (b.status !== "completed") return { delivered: false, reason: "no_booking" };
+    return { delivered: false, reason: "deduped" };
+  }
 
   const releaseClaim = async () => {
     await supabase
@@ -76,16 +99,29 @@ export async function notifyBuyerCompletedReviewPrompt(supabase: SupabaseClient,
     const providerName = sellerRows?.[0]?.display_name?.trim() || "Tu proveedor";
 
     const buyerPool = await expandUserAccountIdPool(supabase, String(row.buyer_id));
-    const { data: buyerRows } = await supabase
-      .from("users")
-      .select("phone")
-      .in("id", buyerPool)
-      .limit(1);
-    const buyerPhone = buyerRows?.[0]?.phone?.trim();
-    if (!buyerPhone) {
-      console.warn("[buyer-completed-review-notify] no buyer phone", { bookingId: row.id });
+    const { data: buyerRows } = await supabase.from("users").select("id,phone").in("id", buyerPool);
+
+    let buyerDigits = "";
+    for (const br of buyerRows ?? []) {
+      const d = digitsForWhatsApp(br?.phone);
+      if (d.length >= 11) {
+        buyerDigits = d;
+        break;
+      }
+    }
+    if (!buyerDigits) {
+      console.warn("[buyer-completed-review-notify] no buyer phone on merged accounts", {
+        bookingId: row.id,
+        poolSize: buyerPool.length,
+      });
       await releaseClaim();
-      return;
+      return { delivered: false, reason: "no_buyer_phone" };
+    }
+
+    if (!isTwilioWhatsAppConfigured()) {
+      console.warn("[buyer-completed-review-notify] Twilio WhatsApp not configured (check TWILIO_* env)");
+      await releaseClaim();
+      return { delivered: false, reason: "twilio_unconfigured" };
     }
 
     const appUrl = getPublicAppUrl();
@@ -106,19 +142,21 @@ export async function notifyBuyerCompletedReviewPrompt(supabase: SupabaseClient,
       `_Inicia sesión en Naranjogo y abre el enlace si no estás dentro de la app._`,
     ].join("\n");
 
-    const ok = await sendWhatsApp(buyerPhone, msg);
+    const ok = await sendWhatsApp(buyerDigits, msg);
     if (!ok) {
       console.error("[buyer-completed-review-notify] WhatsApp send failed", {
         bookingId: row.id,
-        buyerPhonePrefix: buyerPhone.slice(0, 6),
+        buyerPhonePrefix: buyerDigits.slice(0, 6),
       });
       await releaseClaim();
-      return;
+      return { delivered: false, reason: "send_failed" };
     }
 
     await markDelivered();
+    return { delivered: true };
   } catch (e) {
     console.error("[buyer-completed-review-notify]", e);
     await releaseClaim();
+    return { delivered: false, reason: "send_failed" };
   }
 }

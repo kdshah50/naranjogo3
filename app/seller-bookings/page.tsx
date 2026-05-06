@@ -109,7 +109,10 @@ function SellerBookingsInner() {
       es
         ? `⚠️ Estado guardado en la app. WhatsApp al comprador: no enviado (${detail}). Puede ver el avance en «Mis reservas».`
         : `⚠️ Saved in the app. Buyer WhatsApp: not sent (${detail}). They can still see status in My bookings.`,
-    notifyComplete: es ? "✓ Cliente recibirá WhatsApp para reseña." : "✓ Buyer will get WhatsApp for review.",
+    notifyCompleteOk:
+      es
+        ? "✓ Completado guardado y WhatsApp de reseña enviado al comprador."
+        : "✓ Completed saved and review WhatsApp sent to the buyer.",
     updated: es ? "✓ Actualizado" : "✓ Updated",
     cancelOk:
       es
@@ -165,7 +168,18 @@ function SellerBookingsInner() {
 
       let feedback: string;
       if (status === "completed") {
-        feedback = t.notifyComplete;
+        const w = data.buyerPhaseWhatsApp;
+        if (w?.delivered === true) {
+          feedback = t.notifyCompleteOk;
+        } else if (w && w.delivered === false) {
+          if (w.reason === "deduped") {
+            feedback = t.notifyDeduped;
+          } else {
+            feedback = t.notifyWhatsappNotSent(waReasonDetail(w.reason, es));
+          }
+        } else {
+          feedback = t.updated;
+        }
       } else if (status === "scheduled" || status === "in_progress") {
         const w = data.buyerPhaseWhatsApp;
         if (w?.delivered === true) {

@@ -9,7 +9,7 @@ import {
   parseCancelReasonCode,
 } from "@/lib/booking-cancellation";
 import { notifyBuyerCompletedReviewPrompt } from "@/lib/buyer-completed-review-notify";
-import { notifyBuyerLifecyclePhase } from "@/lib/buyer-phase-notify";
+import { notifyBuyerLifecyclePhase, type BuyerPhaseWhatsAppResult } from "@/lib/buyer-phase-notify";
 import { appendBookingEvent, BookingLifecycleStatus, canTransitionLifecycle } from "@/lib/booking-lifecycle";
 import { getPublicAppUrl } from "@/lib/app-url";
 
@@ -282,12 +282,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
 
     if (booking.status === "completed" && nextStatus === "completed") {
+      let buyerPhaseWhatsApp: BuyerPhaseWhatsAppResult | undefined;
       try {
-        await notifyBuyerCompletedReviewPrompt(supabase, bookingId);
+        buyerPhaseWhatsApp = await notifyBuyerCompletedReviewPrompt(supabase, bookingId);
       } catch (e) {
         console.error("[bookings/:id] PATCH re-notify review prompt failed (non-fatal)", e);
+        buyerPhaseWhatsApp = { delivered: false, reason: "send_failed" };
       }
-      return NextResponse.json({ ok: true, alreadyCompleted: true });
+      return NextResponse.json({ ok: true, alreadyCompleted: true, buyerPhaseWhatsApp });
     }
 
     if (booking.status === nextStatus) {
@@ -328,7 +330,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       meta: {},
     });
 
-    let buyerPhaseWhatsApp: Awaited<ReturnType<typeof notifyBuyerLifecyclePhase>> | undefined;
+    let buyerPhaseWhatsApp: BuyerPhaseWhatsAppResult | undefined;
 
     if (nextStatus === "scheduled" || nextStatus === "in_progress") {
       try {
@@ -341,9 +343,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     if (nextStatus === "completed") {
       try {
-        await notifyBuyerCompletedReviewPrompt(supabase, bookingId);
+        buyerPhaseWhatsApp = await notifyBuyerCompletedReviewPrompt(supabase, bookingId);
       } catch (e) {
         console.error("[bookings/:id] PATCH review WhatsApp failed (non-fatal)", e);
+        buyerPhaseWhatsApp = { delivered: false, reason: "send_failed" };
       }
     }
 
