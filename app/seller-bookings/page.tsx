@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState, Suspense } from "react";
+import { useCallback, useEffect, useRef, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { useAppLang } from "@/hooks/use-app-lang";
 import { formatCurrencyMXN } from "@/lib/locale-format";
@@ -64,8 +64,8 @@ function SellerBookingsInner() {
     profile: es ? "← Mi perfil" : "← My profile",
     title: es ? "Reservas de clientes" : "Client bookings",
     lead: es
-      ? "Cada pago genera un ticket NG-… (mismo que en el WhatsApp de confirmación). Aquí ves cliente, servicio y estado; al volver a la página se actualiza la lista."
-      : "Each payment has an NG-… ticket (same as your payment WhatsApp). You’ll see buyer, service, and status here — refresh the page to load new bookings.",
+      ? "Cada pago genera un ticket NG-… (mismo que en el WhatsApp de confirmación). La lista se actualiza sola cada pocos segundos con esta pantalla abierta; también puedes usar «Actualizar lista»."
+      : "Each payment has an NG-… ticket (same as your payment WhatsApp). The list auto-refreshes every few seconds while this screen is open; you can also use ‘Refresh list’.",
     ticketMatchesWa: es
       ? "Mismo código que en WhatsApp («Pago recibido», Naranjogo)."
       : "Same code as in WhatsApp (“Payment received”, Naranjogo).",
@@ -128,6 +128,7 @@ function SellerBookingsInner() {
       es
         ? "✓ Reserva cancelada; cliente notificado por WhatsApp si hay número."
         : "✓ Booking cancelled; buyer notified on WhatsApp when we have a number.",
+    lastSyncPrefix: es ? "Actualizado:" : "Updated:",
   };
 
   const router = useRouter();
@@ -139,6 +140,12 @@ function SellerBookingsInner() {
   const [sellerCancelCode, setSellerCancelCode] = useState<Record<string, string>>({});
 
   const [refreshing, setRefreshing] = useState(false);
+  const [lastSyncLabel, setLastSyncLabel] = useState("");
+  const [newPaidBanner, setNewPaidBanner] = useState<string | null>(null);
+
+  const syncCountRef = useRef(0);
+  const prevIdsRef = useRef<Set<string>>(new Set());
+  const bannerTimerRef = useRef<number | null>(null);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/bookings?seller=1&status=paid", { credentials: "same-origin", cache: "no-store" });
@@ -155,12 +162,52 @@ function SellerBookingsInner() {
       initCodes[row.id] = "mutual_agreement";
     }
     setSellerCancelCode((prev) => ({ ...initCodes, ...prev }));
+
+    syncCountRef.current += 1;
+    const ids = new Set((list as SellerBooking[]).map((b) => b.id));
+    if (syncCountRef.current > 1) {
+      const added = (list as SellerBooking[]).filter((b) => !prevIdsRef.current.has(b.id));
+      if (added.length > 0) {
+        const first = added[0];
+        const tk = first.ticket_code ? ` (${first.ticket_code})` : "";
+        setNewPaidBanner(
+          added.length > 1
+            ? es
+              ? `Nuevas reservas pagadas: ${added.length}`
+              : `New paid bookings: ${added.length}`
+            : es
+              ? `Nueva reserva pagada${tk}`
+              : `New paid booking${tk}`
+        );
+        if (bannerTimerRef.current) window.clearTimeout(bannerTimerRef.current);
+        bannerTimerRef.current = window.setTimeout(() => {
+          setNewPaidBanner(null);
+          bannerTimerRef.current = null;
+        }, 12_000);
+      }
+    }
+    prevIdsRef.current = ids;
+
+    setLastSyncLabel(
+      new Intl.DateTimeFormat(es ? "es-MX" : "en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }).format(new Date())
+    );
+
     setLoading(false);
-  }, [router]);
+  }, [router, es]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    return () => {
+      if (bannerTimerRef.current) window.clearTimeout(bannerTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     const onVis = () => {
@@ -169,7 +216,7 @@ function SellerBookingsInner() {
     document.addEventListener("visibilitychange", onVis);
     const poll = window.setInterval(() => {
       if (document.visibilityState === "visible") void load();
-    }, 25_000);
+    }, 8_000);
     return () => {
       document.removeEventListener("visibilitychange", onVis);
       window.clearInterval(poll);
@@ -283,14 +330,21 @@ function SellerBookingsInner() {
         </Link>
         <div className="flex flex-wrap items-start justify-between gap-3 mb-1">
           <h1 className="font-serif text-2xl font-bold text-[#1C1917]">{t.title}</h1>
-          <button
-            type="button"
-            onClick={() => void manualRefresh()}
-            disabled={refreshing || loading}
-            className="shrink-0 px-3 py-1.5 rounded-xl border border-[#1B4332] text-[#1B4332] text-xs font-semibold hover:bg-[#ECFDF5] disabled:opacity-40"
-          >
-            {refreshing ? "…" : t.refreshList}
-          </button>
+          <div className="flex flex-col items-end gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => void manualRefresh()}
+              disabled={refreshing || loading}
+              className="px-3 py-1.5 rounded-xl border border-[#1B4332] text-[#1B4332] text-xs font-semibold hover:bg-[#ECFDF5] disabled:opacity-40"
+            >
+              {refreshing ? "…" : t.refreshList}
+            </button>
+            {lastSyncLabel && (
+              <span className="text-[10px] text-[#9CA3AF] tabular-nums">
+                {t.lastSyncPrefix} {lastSyncLabel}
+              </span>
+            )}
+          </div>
         </div>
         <p className="text-sm text-[#6B7280] mb-6">{t.lead}</p>
 
@@ -298,6 +352,12 @@ function SellerBookingsInner() {
           <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
             <strong>{t.strikeIntro}</strong> <strong>{sellerStrikeCount}</strong>{" "}
             {sellerStrikeCount === 1 ? t.strikeOne : t.strikeMany} {t.strikeFoot}
+          </div>
+        )}
+
+        {newPaidBanner && (
+          <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-950">
+            {newPaidBanner}
           </div>
         )}
 

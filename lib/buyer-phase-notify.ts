@@ -106,7 +106,7 @@ export async function notifyBuyerLifecyclePhase(
 
   const ok = await sendWhatsApp(buyerDigits, body);
   if (ok) {
-    await recordBuyerPhaseNotify(supabase, bookingId, phase);
+    await recordBuyerPhaseNotify(supabase, String(booking.id), phase);
     return { delivered: true };
   }
   return { delivered: false, reason: "send_failed" };

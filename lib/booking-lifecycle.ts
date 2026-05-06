@@ -96,10 +96,13 @@ export async function hasBuyerPhaseNotify(
   bookingId: string,
   phase: string
 ): Promise<boolean> {
+  const idVars = idMatchVariantsForIn(String(bookingId));
+  if (idVars.length === 0) return false;
+
   const { count, error } = await supabase
     .from("booking_events")
     .select("id", { count: "exact", head: true })
-    .eq("booking_id", bookingId)
+    .in("booking_id", idVars)
     .eq("event_type", "buyer_whatsapp_phase")
     .eq("to_status", phase);
 
