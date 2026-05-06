@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
 
     const { data: booking, error: bErr } = await supabase
       .from("service_bookings")
-      .select("id,buyer_id,seller_id,listing_id,payment_status")
+      .select("id,buyer_id,seller_id,listing_id,payment_status,status")
       .eq("id", bookingId)
       .maybeSingle();
 
@@ -102,6 +102,13 @@ export async function POST(req: NextRequest) {
 
     if (booking.payment_status !== "paid") {
       return NextResponse.json({ error: "El pago debe estar completo" }, { status: 400 });
+    }
+
+    if (booking.status !== "completed") {
+      return NextResponse.json(
+        { error: "Solo puedes reseñar después de que el proveedor marque el servicio como completado." },
+        { status: 400 }
+      );
     }
 
     const { data: existing } = await supabase

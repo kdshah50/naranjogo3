@@ -207,6 +207,17 @@ export default function MyBookingsPage() {
     loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    if (loading || bookings.length === 0) return;
+    const reviewId =
+      typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("review") : null;
+    if (!reviewId) return;
+    const timer = window.setTimeout(() => {
+      document.getElementById(`booking-${reviewId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [loading, bookings]);
+
   const t =
     lang === "es"
       ? {
@@ -239,6 +250,8 @@ export default function MyBookingsPage() {
           pendingAppt: "Pendiente: cita",
           cancelRem: "Cancelar",
           reviewed: "Reseña enviada",
+          reviewPending:
+            "El proveedor debe marcar el servicio como completado antes de valorar. Te enviaremos un WhatsApp con el enlace.",
         }
       : {
           back: "← My profile",
@@ -270,6 +283,8 @@ export default function MyBookingsPage() {
           pendingAppt: "Scheduled: appointment",
           cancelRem: "Cancel",
           reviewed: "Review submitted",
+          reviewPending:
+            "The provider must mark the job completed before you can rate them. We’ll WhatsApp you a link when they do.",
         };
 
   const pendingFor = (bookingId: string) =>
@@ -445,7 +460,7 @@ export default function MyBookingsPage() {
             {bookings.map((b) => {
               const ago = timeAgo(b.paid_at ?? b.created_at, lang);
               return (
-                <div key={b.id} className="bg-white rounded-2xl border border-[#E5E0D8] p-5 shadow-sm">
+                <div key={b.id} id={`booking-${b.id}`} className="bg-white rounded-2xl border border-[#E5E0D8] p-5 shadow-sm">
                   <div className="flex items-start justify-between mb-3">
                     <div>
                       <h3 className="text-sm font-semibold text-[#1C1917]">{b.listing_title}</h3>
@@ -638,7 +653,7 @@ export default function MyBookingsPage() {
 
                   {b.has_review ? (
                     <p className="text-xs text-emerald-600 mt-3">✓ {t.reviewed}</p>
-                  ) : (
+                  ) : b.status === "completed" ? (
                     <ReviewBlock
                       booking={b}
                       lang={lang}
@@ -646,6 +661,8 @@ export default function MyBookingsPage() {
                         setBookings((prev) => prev.map((x) => (x.id === b.id ? { ...x, has_review: true } : x)));
                       }}
                     />
+                  ) : (
+                    <p className="text-xs text-[#6B7280] mt-3 leading-relaxed">{t.reviewPending}</p>
                   )}
                 </div>
               );

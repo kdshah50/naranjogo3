@@ -1,25 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminSupabase, getUserIdFromRequest } from "@/lib/auth-server";
+import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 
 export const dynamic = "force-dynamic";
 
 /**
  * GET /api/bookings?status=paid
- * Returns the authenticated buyer's bookings (enriched with listing + seller info).
+ * GET /api/bookings?seller=1&status=paid — authenticated seller's paid bookings (mark complete UI).
  */
 export async function GET(req: NextRequest) {
   const userId = await getUserIdFromRequest(req);
   if (!userId) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
 
   const statusFilter = req.nextUrl.searchParams.get("status");
+  const sellerMode = req.nextUrl.searchParams.get("seller") === "1" || req.nextUrl.searchParams.get("seller") === "true";
+
   const supabase = createAdminSupabase();
 
   let query = supabase
     .from("service_bookings")
-    .select("id,listing_id,seller_id,commission_amount_cents,payment_status,paid_at,status,created_at,package_session_count")
-    .eq("buyer_id", userId)
+    .select("id,listing_id,seller_id,buyer_id,commission_amount_cents,payment_status,paid_at,status,created_at,package_session_count")
     .order("created_at", { ascending: false })
     .limit(50);
+
+  if (sellerMode) {
+    const pool = await expandUserAccountIdPool(supabase, userId);
+    query = query.in("seller_id", pool);
+  } else {
+    query = query.eq("buyer_id", userId);
+  }
 
   if (statusFilter === "paid") {
     query = query.eq("payment_status", "paid");
@@ -49,17 +58,29 @@ export async function GET(req: NextRequest) {
         .eq("id", b.listing_id)
         .maybeSingle();
 
-      const { data: seller } = await supabase
-        .from("users")
-        .select("display_name")
-        .eq("id", b.seller_id)
-        .maybeSingle();
+      let buyer_name = "Comprador";
+      let seller_name = "Proveedor";
+      if (sellerMode) {
+        const { data: buyer } = await supabase
+          .from("users")
+          .select("display_name")
+          .eq("id", b.buyer_id)
+          .maybeSingle();
+        buyer_name = buyer?.display_name?.trim() || "Comprador";
+      } else {
+        const { data: seller } = await supabase
+          .from("users")
+          .select("display_name")
+          .eq("id", b.seller_id)
+          .maybeSingle();
+        seller_name = seller?.display_name?.trim() || "Proveedor";
+      }
 
       return {
         ...b,
         has_review: reviewedSet.has(String(b.id)),
         listing_title: listing?.title_es ?? "Servicio",
-        seller_name: seller?.display_name ?? "Proveedor",
+        ...(sellerMode ? { buyer_name } : { seller_name }),
       };
     })
   );

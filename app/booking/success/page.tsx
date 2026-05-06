@@ -4,7 +4,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { ReviewForm } from "@/components/SellerReviews";
 import GuaranteeBadge from "@/components/GuaranteeBadge";
 
 type BookingData = {
@@ -250,8 +249,15 @@ function BookingSuccessContent() {
         </div>
 
         {isPaid && (
-          <div className="mt-6">
-            <ReviewForm bookingId={data.id} />
+          <div className="mt-6 px-6">
+            <p className="text-center text-sm text-[#374151] mb-2">
+              Cuando el proveedor marque el servicio como completado, te avisaremos por WhatsApp para que puedas dejar
+              tu reseña en{" "}
+              <Link href="/my-bookings" className="font-semibold text-[#1B4332] hover:underline">
+                Mis reservas
+              </Link>
+              .
+            </p>
           </div>
         )}
 

@@ -477,7 +477,7 @@ export default function ProfilePage() {
           )}
         </div>
 
-        {/* My Bookings link */}
+        {/* My bookings — buyer */}
         <Link href="/my-bookings" className="block mb-3">
           <div className="bg-white rounded-2xl border border-[#E5E0D8] p-4 hover:border-[#1B4332] transition-colors">
             <div className="flex items-center justify-between">
@@ -489,6 +489,27 @@ export default function ProfilePage() {
                   </p>
                   <p className="text-xs text-[#6B7280]">
                     {lang === "es" ? "Historial y volver a reservar" : "History and rebook"}
+                  </p>
+                </div>
+              </div>
+              <span className="text-[#6B7280] text-sm">→</span>
+            </div>
+          </div>
+        </Link>
+
+        <Link href="/seller-bookings" className="block mb-3">
+          <div className="bg-white rounded-2xl border border-[#E5E0D8] p-4 hover:border-[#1B4332] transition-colors">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">✅</span>
+                <div>
+                  <p className="text-sm font-bold text-[#1C1917]">
+                    {lang === "es" ? "Reservas de clientes" : "Client bookings"}
+                  </p>
+                  <p className="text-xs text-[#6B7280]">
+                    {lang === "es"
+                      ? "Marcar servicio completado y reseñas"
+                      : "Mark jobs complete & reviews"}
                   </p>
                 </div>
               </div>

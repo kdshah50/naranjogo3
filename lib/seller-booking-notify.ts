@@ -104,6 +104,7 @@ export async function notifySellerBookingCommissionPaid(supabase: SupabaseClient
     const mxn = Math.round((row.commission_amount_cents ?? 0) / 100);
     const appUrl = getPublicAppUrl();
     const listingUrl = `${appUrl}/listing/${row.listing_id}`;
+    const sellerBookingsUrl = `${appUrl}/seller-bookings`;
 
     const msg = [
       `🎉 *Pago recibido en Naranjogo*`,
@@ -113,9 +114,13 @@ export async function notifySellerBookingCommissionPaid(supabase: SupabaseClient
       ``,
       `Cliente: ${buyerName}`,
       `Tarifa plataforma: ~$${mxn.toLocaleString("es-MX")} MXN`,
+      `ID reserva: ${row.id}`,
       ``,
       `Abre el anuncio para ver mensajes en la app:`,
       listingUrl,
+      ``,
+      `Cuando termines el trabajo, márcalo *completado* aquí (el cliente recibe WhatsApp para reseña):`,
+      sellerBookingsUrl,
     ].join("\n");
 
     const ok = await sendWhatsApp(sellerPhone, msg);
