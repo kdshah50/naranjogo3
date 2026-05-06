@@ -282,12 +282,19 @@ export default function ServiceBookingBlock({
         ? "You've already paid the connection fee. Open WhatsApp below to message the seller."
         : "Ya pagaste la tarifa de conexión. Abre WhatsApp abajo para escribir al vendedor.";
 
-    const whatsAppCta = listingLang === "en" ? "Contact on WhatsApp" : "Contactar por WhatsApp";
+    const whatsAppCta =
+      listingLang === "en"
+        ? isService
+          ? "Contact your service provider"
+          : "Contact on WhatsApp"
+        : isService
+          ? "Contactar al proveedor del servicio"
+          : "Contactar por WhatsApp";
 
     const paidFooterService =
       listingLang === "en"
-        ? "You can open WhatsApp below if you want to reach out sooner. Naranjogo does not hold the provider's calendar — timing is agreed between you and the provider."
-        : "Si lo prefieres, también puedes escribir por WhatsApp abajo. Naranjogo no aparta la agenda del proveedor: la hora la acuerdan ustedes.";
+        ? "You can reach the provider sooner via the green button below. Naranjogo does not hold the provider's calendar — timing is agreed between you and the provider."
+        : "Si quieres adelantar contacto con el proveedor del servicio, usa el botón verde abajo. Naranjogo no aparta la agenda del proveedor: la hora la acuerdan ustedes.";
 
     const paidFooterGoods =
       listingLang === "en"
@@ -377,10 +384,17 @@ export default function ServiceBookingBlock({
               </>
             )
           ) : isService ? (
-            <>
-              El precio del anuncio lo acuerdas con el proveedor. Aquí solo pagas la{" "}
-              <strong>tarifa de la plataforma</strong> (~comisión; mín. $10 MXN por Stripe) para desbloquear su WhatsApp.
-            </>
+            listingLang === "en" ? (
+              <>
+                The price is agreed directly with your provider. You only pay Naranjogo&apos;s{" "}
+                <strong>platform fee</strong> here (~commission; minimum $10 MXN via Stripe) to continue booking.
+              </>
+            ) : (
+              <>
+                El precio del anuncio lo acuerdas con el proveedor. Aquí solo pagas la{" "}
+                <strong>tarifa de la plataforma</strong> (~comisión; mín. $10 MXN por Stripe) para seguir con la reserva.
+              </>
+            )
           ) : (
             <>
               El precio del artículo lo acuerdas con el vendedor (o pagas fuera de la app). Aquí solo pagas la{" "}
@@ -397,7 +411,11 @@ export default function ServiceBookingBlock({
             {contacted ? "✓" : "1"}
           </span>
           <span className={contacted ? "text-emerald-700 font-medium" : ""}>
-            Envía un mensaje al {partyLabel} en la app
+            {listingLang === "en"
+              ? isService
+                ? "Send your provider an in-app message"
+                : "Send the seller an in-app message"
+              : `Envía un mensaje al ${partyLabel} en la app`}
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -406,8 +424,14 @@ export default function ServiceBookingBlock({
           </span>
           <span>
             {booking.hasPackage
-              ? `Paga una tarifa para todo el plan (${formatMXN(booking.commissionAmountCents)})`
-              : `Paga la tarifa ${isService ? "de servicio" : "de conexión"} (${formatMXN(booking.commissionAmountCents)})`}
+              ? listingLang === "en"
+                ? `Pay one platform fee for the full plan (${formatMXN(booking.commissionAmountCents)})`
+                : `Paga una tarifa para todo el plan (${formatMXN(booking.commissionAmountCents)})`
+              : listingLang === "en"
+                ? isService
+                  ? `Pay the service fee (${formatMXN(booking.commissionAmountCents)})`
+                  : `Pay the connection fee (${formatMXN(booking.commissionAmountCents)})`
+                : `Paga la tarifa ${isService ? "de servicio" : "de conexión"} (${formatMXN(booking.commissionAmountCents)})`}
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -415,9 +439,17 @@ export default function ServiceBookingBlock({
             {hasPaid ? "✓" : "3"}
           </span>
           <span>
-            {booking.hasPackage && booking.packageSessionCount
-              ? `WhatsApp del proveedor para las ${booking.packageSessionCount} visitas`
-              : "Abre WhatsApp del vendedor (enlace en la app)"}
+            {isService
+              ? booking.hasPackage && booking.packageSessionCount
+                ? listingLang === "en"
+                  ? `Open the service provider's WhatsApp (${booking.packageSessionCount}-visit plan)`
+                  : `Abre el WhatsApp del proveedor del servicio (${booking.packageSessionCount} visitas)`
+                : listingLang === "en"
+                  ? "Open the service provider's WhatsApp"
+                  : "Abre el WhatsApp del proveedor del servicio"
+              : booking.hasPackage && booking.packageSessionCount
+                ? `WhatsApp del proveedor para las ${booking.packageSessionCount} visitas`
+                : "Abre WhatsApp del vendedor (enlace en la app)"}
           </span>
         </div>
       </div>
@@ -427,12 +459,35 @@ export default function ServiceBookingBlock({
         <div className="px-4 pb-4 space-y-3">
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
             <p className="text-xs text-blue-800 leading-relaxed">
-              <strong>Paso 1:</strong> En <strong>Mensajes en la app</strong> (recuadro de arriba), escribe al{" "}
-              {partyLabel} y envía el mensaje. <strong>Después de enviarlo</strong>, aparece el botón{" "}
-              <strong>Pagar … y desbloquear WhatsApp</strong>
-              {isService
-                ? " (no pagas el precio del anuncio en Stripe — solo la tarifa del paso 2)."
-                : " (el pago en Stripe es solo la tarifa de conexión, no el precio del artículo)."}
+              {listingLang === "en" ? (
+                isService ? (
+                  <>
+                    <strong>Step 1:</strong> In <strong>Messages</strong> (above), message your provider and send it.{" "}
+                    <strong>After that</strong>, the <strong>step 2 pay button</strong> appears
+                    {" "}(Stripe only collects the platform fee — not the service price.)
+                  </>
+                ) : (
+                  <>
+                    <strong>Step 1:</strong> Use <strong>Messages</strong> above and contact the seller.{" "}
+                    <strong>After sending,</strong> you&apos;ll see <strong>Pay … and unlock WhatsApp</strong>
+                    {" "}(Stripe is only Naranjogo&apos;s connection fee, not the item price.)
+                  </>
+                )
+              ) : isService ? (
+                <>
+                  <strong>Paso 1:</strong> En <strong>Mensajes en la app</strong> (recuadro de arriba), escribe al{" "}
+                  {partyLabel} y envía el mensaje. <strong>Después de enviarlo</strong>, aparece el botón{" "}
+                  <strong>para pagar la tarifa del paso 2</strong>
+                  {" "} (solo la tarifa de plataforma en Stripe — no el precio del anuncio).
+                </>
+              ) : (
+                <>
+                  <strong>Paso 1:</strong> En <strong>Mensajes en la app</strong> (recuadro de arriba), escribe al{" "}
+                  {partyLabel} y envía el mensaje. <strong>Después de enviarlo</strong>, aparece el botón{" "}
+                  <strong>Pagar … y desbloquear WhatsApp</strong>
+                  {" "}(el pago en Stripe es solo la tarifa de conexión, no el precio del artículo).
+                </>
+              )}
             </p>
           </div>
           <button
@@ -451,10 +506,14 @@ export default function ServiceBookingBlock({
         <div className="px-4 pb-4 space-y-3">
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
             <p className="text-xs text-amber-800">
-              <strong>Paso 2:</strong>{" "}
+              <strong>{listingLang === "en" ? "Step 2:" : "Paso 2:"}</strong>{" "}
               {isService
-                ? "Paga la tarifa de servicio para abrir el WhatsApp del proveedor."
-                : "Paga la tarifa de conexión para recibir el WhatsApp del vendedor."}
+                ? listingLang === "en"
+                  ? "Pay the service fee below to continue."
+                  : "Paga la tarifa de servicio abajo para continuar."
+                : listingLang === "en"
+                  ? "Pay the connection fee to open the seller’s WhatsApp."
+                  : "Paga la tarifa de conexión para recibir el WhatsApp del vendedor."}
             </p>
           </div>
 
@@ -536,16 +595,26 @@ export default function ServiceBookingBlock({
             className="w-full py-3 rounded-xl bg-[#1B4332] text-white text-sm font-semibold disabled:opacity-40 flex items-center justify-center gap-2"
           >
             {busy
-              ? "Procesando…"
-              : listingLang === "en"
-                ? `Pay ${formatMXN(booking.commissionAmountCents)} and open WhatsApp`
-                : `Pagar ${formatMXN(booking.commissionAmountCents)} y abrir WhatsApp`}
+              ? listingLang === "en"
+                ? "Processing…"
+                : "Procesando…"
+              : isService
+                ? listingLang === "en"
+                  ? `Pay ${formatMXN(booking.commissionAmountCents)}`
+                  : `Pagar ${formatMXN(booking.commissionAmountCents)}`
+                : listingLang === "en"
+                  ? `Pay ${formatMXN(booking.commissionAmountCents)} and open WhatsApp`
+                  : `Pagar ${formatMXN(booking.commissionAmountCents)} y abrir WhatsApp`}
           </button>
 
           <p className="text-center text-xs text-[#6B7280]">
-            {listingLang === "en"
-              ? "Secure payment with Stripe. After paying you can open the seller’s WhatsApp from here."
-              : `Pago seguro con Stripe. Al pagar podrás abrir el WhatsApp del ${partyLabel} desde aquí.`}
+            {isService
+              ? listingLang === "en"
+                ? "Secure checkout with Stripe."
+                : "Pago seguro con Stripe."
+              : listingLang === "en"
+                ? "Secure payment with Stripe. After paying you can open the seller’s WhatsApp from here."
+                : `Pago seguro con Stripe. Al pagar podrás abrir el WhatsApp del ${partyLabel} desde aquí.`}
           </p>
 
           {loyaltyHint && loyaltyHint.discountPct > 0 && booking.commissionBeforeLoyaltyCents == null && (

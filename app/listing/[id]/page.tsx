@@ -246,7 +246,7 @@ export default async function ListingPage({
         )}
         {/* WhatsApp CTA — hero button (contact gate + commission same as services) */}
         <div className="mb-6">
-          <WhatsAppCTA listingId={params.id} lang={listingLang} />
+          <WhatsAppCTA listingId={params.id} lang={listingLang} serviceListing={isServiceListing} />
           <p className="text-center text-xs text-[#6B7280] mt-2">
             {listingLang === "en"
               ? isServiceListing

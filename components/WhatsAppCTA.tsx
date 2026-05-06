@@ -19,10 +19,13 @@ type BookingInfo = {
 export default function WhatsAppCTA({
   listingId,
   lang = "es",
+  serviceListing = false,
 }: {
   listingId: string;
   /** From listing `?lang=` — affects hero CTA labels only. */
   lang?: Lang;
+  /** Services: hero button copy avoids saying “WhatsApp”; link still opens the provider chat. */
+  serviceListing?: boolean;
 }) {
   const [state, setState] = useState<"loading" | "locked" | "unlocked">("loading");
   const [waUrl, setWaUrl] = useState<string | null>(null);
@@ -31,12 +34,12 @@ export default function WhatsAppCTA({
     lang === "en"
       ? {
           loading: "Loading…",
-          contactWa: "Contact on WhatsApp",
+          contactWa: serviceListing ? "Contact your service provider" : "Contact on WhatsApp",
           scheduleCta: "Send a message to schedule",
         }
       : {
           loading: "Cargando…",
-          contactWa: "Contactar por WhatsApp",
+          contactWa: serviceListing ? "Contactar al proveedor del servicio" : "Contactar por WhatsApp",
           scheduleCta: "Enviar mensaje para agendar",
         };
 
