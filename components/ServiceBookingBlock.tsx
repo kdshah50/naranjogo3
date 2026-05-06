@@ -269,19 +269,46 @@ export default function ServiceBookingBlock({
       "+$1 $2 $3 $4"
     );
 
+    const paidTitle =
+      listingLang === "en"
+        ? isService
+          ? "Service reserved"
+          : "Contact unlocked"
+        : isService
+          ? "Servicio reservado"
+          : "Contacto desbloqueado";
+
+    const paidLeadService =
+      listingLang === "en"
+        ? "You've already paid the service fee. The service provider will contact you shortly to confirm your scheduled booking time."
+        : "Ya pagaste la tarifa de servicio. El proveedor te contactará en breve para confirmar la fecha y hora de tu reserva.";
+
+    const paidLeadGoods =
+      listingLang === "en"
+        ? "You've already paid the connection fee. Here's the seller's contact:"
+        : "Ya pagaste la tarifa de conexión. Aquí está el contacto del vendedor:";
+
+    const whatsAppCta = listingLang === "en" ? "Contact on WhatsApp" : "Contactar por WhatsApp";
+
+    const paidFooterService =
+      listingLang === "en"
+        ? "You can open WhatsApp below if you want to reach out sooner. Naranjogo does not hold the provider's calendar — timing is agreed between you and the provider."
+        : "Si lo prefieres, también puedes escribir por WhatsApp abajo. Naranjogo no aparta la agenda del proveedor: la hora la acuerdan ustedes.";
+
+    const paidFooterGoods =
+      listingLang === "en"
+        ? "Confirm date and time with the seller on WhatsApp. Naranjogo does not reserve their calendar — agreement is between you and the seller."
+        : "Confirma fecha y hora exactas con el vendedor por WhatsApp. Naranjogo no aparta la agenda del vendedor: el acuerdo es entre ustedes.";
+
     return (
       <div className="rounded-xl border border-emerald-200 bg-emerald-50 overflow-hidden">
         <div className="px-4 py-3 border-b border-emerald-200 bg-emerald-100">
           <h3 className="text-sm font-bold text-emerald-900 flex items-center gap-2">
-            <span className="text-lg">✓</span> {isService ? "Servicio reservado" : "Contacto desbloqueado"}
+            <span className="text-lg">✓</span> {paidTitle}
           </h3>
         </div>
         <div className="px-4 py-4 space-y-3">
-          <p className="text-sm text-emerald-800">
-            {isService
-              ? "Ya pagaste la tarifa de servicio. Aquí está el contacto del proveedor:"
-              : "Ya pagaste la tarifa de conexión. Aquí está el contacto del vendedor:"}
-          </p>
+          <p className="text-sm text-emerald-800">{isService ? paidLeadService : paidLeadGoods}</p>
           {booking.hasPackage && booking.packageSessionCount != null && booking.packageSessionCount >= 2 && (
             <p className="text-xs text-emerald-900 font-medium bg-white/60 rounded-lg px-2 py-1.5 border border-emerald-200/80">
               {listingLang === "en"
@@ -289,10 +316,12 @@ export default function ServiceBookingBlock({
                 : `Este pago cubre tu plan de ${booking.packageSessionCount} visitas. Agenda cada cita por WhatsApp; tu próxima reserva en Naranjogo puede sumar descuentos por lealtad.`}
             </p>
           )}
-          <div className="bg-white rounded-xl p-3 border border-emerald-200">
-            <p className="text-xs text-[#6B7280] mb-1">Teléfono / WhatsApp</p>
-            <p className="text-lg font-bold text-[#1C1917] tracking-wide">{displayPhone}</p>
-          </div>
+          {!isService && (
+            <div className="bg-white rounded-xl p-3 border border-emerald-200">
+              <p className="text-xs text-[#6B7280] mb-1">Teléfono / WhatsApp</p>
+              <p className="text-lg font-bold text-[#1C1917] tracking-wide">{displayPhone}</p>
+            </div>
+          )}
           {booking.revealedWhatsappUrl && (
             <a
               href={booking.revealedWhatsappUrl}
@@ -301,19 +330,19 @@ export default function ServiceBookingBlock({
               className="w-full py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-colors"
               style={{ background: "#25D366", color: "white" }}
             >
-              Contactar por WhatsApp
+              {whatsAppCta}
             </a>
           )}
-          <a
-            href={`tel:+${digits}`}
-            className="w-full py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 border border-[#1B4332] text-[#1B4332] hover:bg-[#ECFDF5]"
-          >
-            Llamar
-          </a>
+          {!isService && (
+            <a
+              href={`tel:+${digits}`}
+              className="w-full py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 border border-[#1B4332] text-[#1B4332] hover:bg-[#ECFDF5]"
+            >
+              {listingLang === "en" ? "Call" : "Llamar"}
+            </a>
+          )}
           <p className="text-xs text-emerald-900/90 leading-relaxed border-t border-emerald-200/60 pt-3">
-            {listingLang === "en"
-              ? "Confirm date and time with the provider on WhatsApp. Naranjogo does not reserve the calendar for them — agreement is between you and the provider."
-              : "Confirma fecha y hora exactas con el proveedor por WhatsApp. Naranjogo no aparta la agenda del proveedor: el acuerdo es entre ustedes."}
+            {isService ? paidFooterService : paidFooterGoods}
           </p>
         </div>
       </div>

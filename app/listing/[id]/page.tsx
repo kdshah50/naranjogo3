@@ -251,13 +251,13 @@ export default async function ListingPage({
             {listingLang === "en"
               ? isServiceListing
                 ? packagePromoActive
-                  ? "Multi-visit plan: message in the app first, pay one platform fee, then you get WhatsApp for the full plan."
-                  : "First message in the app to schedule, pay the platform fee, then you’ll get the provider’s WhatsApp."
+                  ? "Multi-visit plan: first send a message in the app to schedule, pay one platform fee, and you will be contacted by the provider for the full plan."
+                  : "First, send a message in the app to schedule, pay the platform fee, and you will be contacted by the provider."
                 : "Message in the app, pay the connection fee, then you’ll get the seller’s WhatsApp."
               : isServiceListing
                 ? packagePromoActive
-                  ? "Plan de varias visitas: primero escribe en la app, paga una sola tarifa de plataforma y obtén el WhatsApp para todo el plan."
-                  : "Primero envía un mensaje en la app para agendar, paga la tarifa de plataforma y recibirás el WhatsApp del proveedor."
+                  ? "Plan de varias visitas: primero escribe en la app para agendar, paga una sola tarifa de plataforma y el proveedor te contactará para todo el plan."
+                  : "Primero envía un mensaje en la app para agendar, paga la tarifa de plataforma y el proveedor te contactará."
                 : "Escribe por la app, paga la tarifa de conexión y recibirás el WhatsApp del vendedor."}
           </p>
         </div>
