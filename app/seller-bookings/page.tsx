@@ -39,6 +39,23 @@ function phaseLabel(status: string, lang: Lang): { label: string; cls: string } 
   }
 }
 
+function waReasonDetail(reason: string | undefined, es: boolean): string {
+  switch (reason) {
+    case "no_buyer_phone":
+      return es ? "sin teléfono en la cuenta del comprador" : "no phone on buyer account";
+    case "twilio_unconfigured":
+      return es ? "WhatsApp no configurado (TWILIO_* en servidor)" : "WhatsApp not configured (TWILIO_* on server)";
+    case "send_failed":
+      return es ? "error de envío (Twilio / red)" : "send error (Twilio / network)";
+    case "not_paid":
+      return es ? "reserva no pagada" : "booking not paid";
+    case "no_booking":
+      return es ? "reserva no encontrada" : "booking not found";
+    default:
+      return es ? "motivo desconocido" : "unknown reason";
+  }
+}
+
 function SellerBookingsInner() {
   const lang = useAppLang();
   const es = lang === "es";
@@ -46,8 +63,8 @@ function SellerBookingsInner() {
     profile: es ? "← Mi perfil" : "← My profile",
     title: es ? "Reservas de clientes" : "Client bookings",
     lead: es
-      ? "Avanza el estado en la app: Agendado → En curso → Completado. El cliente recibe WhatsApp en cada paso; al completar, el enlace para reseña. WhatsApp sigue siendo respaldo — aquí queda la auditoría."
-      : "Advance status in the app: Scheduled → In progress → Completed. The buyer gets WhatsApp at each step; when completed, the review link. WhatsApp is still backup — this is the audit trail.",
+      ? "Avanza el estado en la app: Agendado → En curso → Completado. Si hay número del comprador y WhatsApp está configurado, también recibe un aviso por WhatsApp en cada paso; si no, el estado queda en «Mis reservas». Al completar, el enlace para reseña."
+      : "Advance status in the app: Scheduled → In progress → Completed. If we have the buyer’s number and WhatsApp is configured, they also get a WhatsApp nudge at each step; otherwise they still see status in My bookings. When completed, the review link.",
     strikeIntro: es ? "Ranking / garantía:" : "Ranking / guarantee:",
     strikeOne: es
       ? "marca por no-show verificada (reclamo aprobado)."
@@ -78,8 +95,20 @@ function SellerBookingsInner() {
     optOther: es ? "Otro" : "Other",
     confirmCancel: es ? "Confirmar cancelación" : "Confirm cancellation",
     reviewed: es ? "★ Cliente ya envió reseña" : "★ Buyer submitted a review",
-    notifyScheduled: es ? "✓ Cliente notificado (agendado)." : "✓ Buyer notified (scheduled).",
-    notifyProgress: es ? "✓ Cliente notificado (servicio en curso)." : "✓ Buyer notified (in progress).",
+    notifyScheduled:
+      es ? "✓ Estado agendado guardado y WhatsApp enviado al cliente." : "✓ Scheduled saved and WhatsApp sent to the buyer.",
+    notifyProgress:
+      es
+        ? "✓ Servicio en curso guardado y WhatsApp enviado al comprador."
+        : "✓ In progress saved and WhatsApp sent to the buyer.",
+    notifyDeduped:
+      es
+        ? "✓ Estado guardado. WhatsApp para este paso ya se había enviado antes (sin duplicar)."
+        : "✓ Status saved. WhatsApp for this step was already sent (not duplicated).",
+    notifyWhatsappNotSent: (detail: string) =>
+      es
+        ? `⚠️ Estado guardado en la app. WhatsApp al comprador: no enviado (${detail}). Puede ver el avance en «Mis reservas».`
+        : `⚠️ Saved in the app. Buyer WhatsApp: not sent (${detail}). They can still see status in My bookings.`,
     notifyComplete: es ? "✓ Cliente recibirá WhatsApp para reseña." : "✓ Buyer will get WhatsApp for review.",
     updated: es ? "✓ Actualizado" : "✓ Updated",
     cancelOk:
@@ -128,14 +157,33 @@ function SellerBookingsInner() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error((data as { error?: string }).error ?? "Error");
-      const texts: Record<string, string> = {
-        scheduled: t.notifyScheduled,
-        in_progress: t.notifyProgress,
-        completed: t.notifyComplete,
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        buyerPhaseWhatsApp?: { delivered: boolean; reason?: string };
       };
-      setMsg((m) => ({ ...m, [id]: texts[status] ?? t.updated }));
+      if (!res.ok) throw new Error(data.error ?? "Error");
+
+      let feedback: string;
+      if (status === "completed") {
+        feedback = t.notifyComplete;
+      } else if (status === "scheduled" || status === "in_progress") {
+        const w = data.buyerPhaseWhatsApp;
+        if (w?.delivered === true) {
+          feedback = status === "scheduled" ? t.notifyScheduled : t.notifyProgress;
+        } else if (w && w.delivered === false) {
+          if (w.reason === "deduped") {
+            feedback = t.notifyDeduped;
+          } else {
+            feedback = t.notifyWhatsappNotSent(waReasonDetail(w.reason, es));
+          }
+        } else {
+          feedback = t.updated;
+        }
+      } else {
+        feedback = t.updated;
+      }
+
+      setMsg((m) => ({ ...m, [id]: feedback }));
       setBookings((prev) =>
         prev.map((b) => (b.id === id ? { ...b, status: status === "completed" ? "completed" : status } : b))
       );
@@ -292,7 +340,13 @@ function SellerBookingsInner() {
 
                   {msg[b.id] && (
                     <p
-                      className={`text-xs mt-2 ${msg[b.id].startsWith("✓") ? "text-emerald-600" : "text-red-600"}`}
+                      className={`text-xs mt-2 ${
+                        msg[b.id].startsWith("⚠️")
+                          ? "text-amber-800"
+                          : msg[b.id].startsWith("✓")
+                            ? "text-emerald-600"
+                            : "text-red-600"
+                      }`}
                     >
                       {msg[b.id]}
                     </p>

@@ -328,11 +328,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       meta: {},
     });
 
+    let buyerPhaseWhatsApp: Awaited<ReturnType<typeof notifyBuyerLifecyclePhase>> | undefined;
+
     if (nextStatus === "scheduled" || nextStatus === "in_progress") {
       try {
-        await notifyBuyerLifecyclePhase(supabase, bookingId, nextStatus);
+        buyerPhaseWhatsApp = await notifyBuyerLifecyclePhase(supabase, bookingId, nextStatus);
       } catch (e) {
         console.error("[bookings/:id] PATCH phase WhatsApp failed (non-fatal)", e);
+        buyerPhaseWhatsApp = { delivered: false, reason: "send_failed" };
       }
     }
 
@@ -344,7 +347,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       }
     }
 
-    return NextResponse.json({ ok: true, status: nextStatus });
+    return NextResponse.json({ ok: true, status: nextStatus, buyerPhaseWhatsApp });
   } catch (e) {
     console.error("[bookings/:id] PATCH", e);
     return NextResponse.json({ error: "Error del servidor" }, { status: 500 });

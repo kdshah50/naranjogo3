@@ -2,6 +2,11 @@ const TWILIO_SID = () => process.env.TWILIO_ACCOUNT_SID ?? "";
 const TWILIO_TOKEN = () => process.env.TWILIO_AUTH_TOKEN ?? "";
 const TWILIO_FROM = () => process.env.TWILIO_WHATSAPP_FROM ?? "";
 
+/** True when WhatsApp outbound is configured (before validating recipient). */
+export function isTwilioWhatsAppConfigured(): boolean {
+  return Boolean(TWILIO_SID() && TWILIO_TOKEN() && TWILIO_FROM());
+}
+
 function asWhatsappAddress(value: string) {
   const v = value.trim();
   if (!v) return v;
