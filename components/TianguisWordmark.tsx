@@ -56,8 +56,11 @@ export default function TianguisWordmark({
         sizes={variant === "header" ? "34px" : variant === "auth" ? "48px" : "20px"}
         priority={variant === "header"}
       />
-      <span className={typography.t1}>T</span>
-      <span className={typography.t2}>ianguis</span>
+      {/* Single word unit — no flex gap between T and ianguis */}
+      <span className="inline-flex items-baseline gap-0 whitespace-nowrap leading-none">
+        <span className={typography.t1}>T</span>
+        <span className={typography.t2}>ianguis</span>
+      </span>
       <span className={typography.star}>✦</span>
     </>
   );
