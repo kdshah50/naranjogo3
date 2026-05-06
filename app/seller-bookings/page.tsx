@@ -16,6 +16,7 @@ type SellerBooking = {
   status: string;
   paid_at: string | null;
   ticket_code: string | null;
+  package_session_count?: number | null;
   listing_title: string;
   buyer_name: string;
   has_review?: boolean;
@@ -63,8 +64,17 @@ function SellerBookingsInner() {
     profile: es ? "← Mi perfil" : "← My profile",
     title: es ? "Reservas de clientes" : "Client bookings",
     lead: es
-      ? "Avanza el estado en la app: Agendado → En curso → Completado. Si hay número del comprador y WhatsApp está configurado, también recibe un aviso por WhatsApp en cada paso; si no, el estado queda en «Mis reservas». Al completar, el enlace para reseña."
-      : "Advance status in the app: Scheduled → In progress → Completed. If we have the buyer’s number and WhatsApp is configured, they also get a WhatsApp nudge at each step; otherwise they still see status in My bookings. When completed, the review link.",
+      ? "Cada pago genera un ticket NG-… (mismo que en el WhatsApp de confirmación). Aquí ves cliente, servicio y estado; al volver a la página se actualiza la lista."
+      : "Each payment has an NG-… ticket (same as your payment WhatsApp). You’ll see buyer, service, and status here — refresh the page to load new bookings.",
+    ticketMatchesWa: es
+      ? "Mismo código que en WhatsApp («Pago recibido», Naranjogo)."
+      : "Same code as in WhatsApp (“Payment received”, Naranjogo).",
+    ticketPending: es
+      ? "Si acaba de pagar, el ticket puede tardar unos segundos. Pulsa «Actualizar lista» arriba."
+      : "If they just paid, the ticket may take a few seconds. Use ‘Refresh list’ above.",
+    refreshList: es ? "Actualizar lista" : "Refresh list",
+    viewListing: es ? "Abrir anuncio" : "Open listing",
+    planVisits: (n: number) => (es ? `Plan: ${n} visitas` : `${n}-visit plan`),
     strikeIntro: es ? "Ranking / garantía:" : "Ranking / guarantee:",
     strikeOne: es
       ? "marca por no-show verificada (reclamo aprobado)."
@@ -128,8 +138,10 @@ function SellerBookingsInner() {
   const [sellerStrikeCount, setSellerStrikeCount] = useState<number | null>(null);
   const [sellerCancelCode, setSellerCancelCode] = useState<Record<string, string>>({});
 
+  const [refreshing, setRefreshing] = useState(false);
+
   const load = useCallback(async () => {
-    const res = await fetch("/api/bookings?seller=1&status=paid", { credentials: "same-origin" });
+    const res = await fetch("/api/bookings?seller=1&status=paid", { credentials: "same-origin", cache: "no-store" });
     if (res.status === 401) {
       router.push("/auth/login?returnTo=/seller-bookings");
       return;
@@ -149,6 +161,25 @@ function SellerBookingsInner() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    const poll = window.setInterval(() => {
+      if (document.visibilityState === "visible") void load();
+    }, 25_000);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.clearInterval(poll);
+    };
+  }, [load]);
+
+  const manualRefresh = () => {
+    setRefreshing(true);
+    void load().finally(() => setRefreshing(false));
+  };
 
   const patchStatus = async (id: string, status: "scheduled" | "in_progress" | "completed") => {
     setBusyId(id);
@@ -250,7 +281,17 @@ function SellerBookingsInner() {
         <Link href="/profile" className="text-sm text-[#6B7280] hover:text-[#1B4332] mb-4 inline-block">
           {t.profile}
         </Link>
-        <h1 className="font-serif text-2xl font-bold text-[#1C1917] mb-1">{t.title}</h1>
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-1">
+          <h1 className="font-serif text-2xl font-bold text-[#1C1917]">{t.title}</h1>
+          <button
+            type="button"
+            onClick={() => void manualRefresh()}
+            disabled={refreshing || loading}
+            className="shrink-0 px-3 py-1.5 rounded-xl border border-[#1B4332] text-[#1B4332] text-xs font-semibold hover:bg-[#ECFDF5] disabled:opacity-40"
+          >
+            {refreshing ? "…" : t.refreshList}
+          </button>
+        </div>
         <p className="text-sm text-[#6B7280] mb-6">{t.lead}</p>
 
         {sellerStrikeCount !== null && sellerStrikeCount > 0 && (
@@ -270,18 +311,35 @@ function SellerBookingsInner() {
               return (
                 <li key={b.id} className="bg-white rounded-2xl border border-[#E5E0D8] p-4 shadow-sm">
                   <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold text-[#1C1917]">{b.listing_title}</p>
                       <p className="text-xs text-[#6B7280] mt-0.5">
                         {t.buyer}: {b.buyer_name}
                       </p>
-                      {b.ticket_code ? (
-                        <p className="text-xs font-mono font-bold text-[#1B4332] mt-1">🎫 {b.ticket_code}</p>
-                      ) : (
-                        <p className="text-[10px] text-[#9CA3AF] mt-1 font-mono">
-                          {t.ref} {b.id.slice(0, 8)}…
-                        </p>
+                      {b.package_session_count != null && b.package_session_count >= 2 && (
+                        <p className="text-[11px] text-[#57534E] font-medium mt-0.5">{t.planVisits(b.package_session_count)}</p>
                       )}
+                      <div className="mt-2 rounded-lg border border-[#E5E0D8] bg-[#FAFAF9] px-2.5 py-2">
+                        {b.ticket_code ? (
+                          <>
+                            <p className="text-sm font-mono font-bold text-[#1B4332] tracking-tight">🎫 {b.ticket_code}</p>
+                            <p className="text-[10px] text-[#6B7280] mt-1 leading-snug">{t.ticketMatchesWa}</p>
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-[10px] font-mono text-[#9CA3AF]">
+                              {t.ref} {b.id.slice(0, 8)}…
+                            </p>
+                            <p className="text-[10px] text-amber-900 mt-1 leading-snug">{t.ticketPending}</p>
+                          </>
+                        )}
+                      </div>
+                      <Link
+                        href={`/listing/${b.listing_id}`}
+                        className="inline-block mt-2 text-xs font-semibold text-[#1B4332] hover:underline"
+                      >
+                        {t.viewListing} →
+                      </Link>
                     </div>
                     <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-full shrink-0 ${ph.cls}`}>
                       {ph.label}
