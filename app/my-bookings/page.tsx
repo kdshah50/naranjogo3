@@ -14,6 +14,7 @@ type Booking = {
   payment_status: string;
   paid_at: string | null;
   status: string;
+  ticket_code?: string | null;
   created_at: string;
   has_review?: boolean;
   package_session_count?: number | null;
@@ -252,6 +253,11 @@ export default function MyBookingsPage() {
           reviewed: "Reseña enviada",
           reviewPending:
             "El proveedor debe marcar el servicio como completado antes de valorar. Te enviaremos un WhatsApp con el enlace.",
+          phaseConfirmed: "Pagado",
+          phaseScheduled: "Agendado",
+          phaseInProgress: "En curso",
+          phaseCompleted: "Completado",
+          guaranteeLink: "Garantía / no-show",
         }
       : {
           back: "← My profile",
@@ -285,6 +291,11 @@ export default function MyBookingsPage() {
           reviewed: "Review submitted",
           reviewPending:
             "The provider must mark the job completed before you can rate them. We’ll WhatsApp you a link when they do.",
+          phaseConfirmed: "Paid",
+          phaseScheduled: "Scheduled",
+          phaseInProgress: "In progress",
+          phaseCompleted: "Completed",
+          guaranteeLink: "Guarantee / no-show",
         };
 
   const pendingFor = (bookingId: string) =>
@@ -473,6 +484,28 @@ export default function MyBookingsPage() {
                       <p className="text-xs text-[#6B7280] mt-0.5">
                         {lang === "es" ? "Proveedor" : "Provider"}: {b.seller_name}
                       </p>
+                      <div className="flex flex-wrap gap-2 mt-2 items-center">
+                        {b.ticket_code && (
+                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-[#ECFDF5] text-[#065F46]">
+                            🎫 {b.ticket_code}
+                          </span>
+                        )}
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#F4F0EB] text-[#374151]">
+                          {b.status === "scheduled"
+                            ? t.phaseScheduled
+                            : b.status === "in_progress"
+                              ? t.phaseInProgress
+                              : b.status === "completed"
+                                ? t.phaseCompleted
+                                : t.phaseConfirmed}
+                        </span>
+                        <Link
+                          href={`/claims?booking=${encodeURIComponent(b.id)}`}
+                          className="text-[10px] font-semibold text-[#B45309] hover:underline"
+                        >
+                          {t.guaranteeLink}
+                        </Link>
+                      </div>
                     </div>
                     <div className="text-right flex-shrink-0">
                       <p className="text-sm font-bold text-[#1B4332]">{formatMXN(b.commission_amount_cents, lang)}</p>

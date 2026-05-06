@@ -12,6 +12,7 @@ type SellerBooking = {
   payment_status: string;
   status: string;
   paid_at: string | null;
+  ticket_code: string | null;
   listing_title: string;
   buyer_name: string;
   has_review?: boolean;
@@ -23,6 +24,21 @@ function formatMXN(cents: number) {
     currency: "MXN",
     maximumFractionDigits: 0,
   }).format(cents / 100);
+}
+
+function phaseLabel(status: string): { label: string; cls: string } {
+  switch (status) {
+    case "confirmed":
+      return { label: "Pagado — pendiente agendar", cls: "bg-blue-50 text-blue-800" };
+    case "scheduled":
+      return { label: "Agendado", cls: "bg-indigo-50 text-indigo-800" };
+    case "in_progress":
+      return { label: "En curso", cls: "bg-amber-50 text-amber-900" };
+    case "completed":
+      return { label: "Completado", cls: "bg-emerald-100 text-emerald-800" };
+    default:
+      return { label: status, cls: "bg-[#F4F0EB] text-[#6B7280]" };
+  }
 }
 
 export default function SellerBookingsPage() {
@@ -47,7 +63,7 @@ export default function SellerBookingsPage() {
     void load();
   }, [load]);
 
-  const markComplete = async (id: string) => {
+  const patchStatus = async (id: string, status: "scheduled" | "in_progress" | "completed") => {
     setBusyId(id);
     setMsg((m) => ({ ...m, [id]: "" }));
     try {
@@ -55,15 +71,19 @@ export default function SellerBookingsPage() {
         method: "PATCH",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "completed" }),
+        body: JSON.stringify({ status }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error((data as { error?: string }).error ?? "Error");
-      setMsg((m) => ({
-        ...m,
-        [id]: "✓ El cliente recibirá un WhatsApp para valorarte.",
-      }));
-      setBookings((prev) => prev.map((b) => (b.id === id ? { ...b, status: "completed" } : b)));
+      const texts: Record<string, string> = {
+        scheduled: "✓ Cliente notificado (agendado).",
+        in_progress: "✓ Cliente notificado (servicio en curso).",
+        completed: "✓ Cliente recibirá WhatsApp para reseña.",
+      };
+      setMsg((m) => ({ ...m, [id]: texts[status] ?? "✓ Actualizado" }));
+      setBookings((prev) =>
+        prev.map((b) => (b.id === id ? { ...b, status: status === "completed" ? "completed" : status } : b))
+      );
     } catch (e) {
       setMsg((m) => ({
         ...m,
@@ -90,8 +110,9 @@ export default function SellerBookingsPage() {
         </Link>
         <h1 className="font-serif text-2xl font-bold text-[#1C1917] mb-1">Reservas de clientes</h1>
         <p className="text-sm text-[#6B7280] mb-6">
-          Cuando termines el servicio, marca &quot;Completado&quot;. El cliente recibe un enlace por WhatsApp para dejar
-          reseña.
+          Avanza el estado en la app: <strong>Agendado</strong> → <strong>En curso</strong> →{" "}
+          <strong>Completado</strong>. El cliente recibe WhatsApp en cada paso; al completar, el enlace para reseña.
+          WhatsApp sigue siendo respaldo — aquí queda la auditoría.
         </p>
 
         {bookings.length === 0 ? (
@@ -99,52 +120,77 @@ export default function SellerBookingsPage() {
             Aún no hay reservas pagadas.
           </div>
         ) : (
-          <ul className="space-y-3">
-            {bookings.map((b) => (
-              <li key={b.id} className="bg-white rounded-2xl border border-[#E5E0D8] p-4 shadow-sm">
-                <p className="text-sm font-semibold text-[#1C1917]">{b.listing_title}</p>
-                <p className="text-xs text-[#6B7280] mt-1">Cliente: {b.buyer_name}</p>
-                <p className="text-xs text-[#1B4332] font-semibold mt-1">{formatMXN(b.commission_amount_cents)} tarifa</p>
-                <p className="text-[10px] text-[#9CA3AF] mt-0.5 font-mono">{b.id.slice(0, 8)}…</p>
-                <div className="flex flex-wrap items-center gap-2 mt-3">
-                  <span
-                    className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
-                      b.status === "completed"
-                        ? "bg-emerald-100 text-emerald-800"
-                        : b.status === "confirmed"
-                          ? "bg-blue-50 text-blue-700"
-                          : "bg-[#F4F0EB] text-[#6B7280]"
-                    }`}
-                  >
-                    {b.status === "completed"
-                      ? "Completado"
-                      : b.status === "confirmed"
-                        ? "Confirmado"
-                        : b.status}
-                  </span>
-                  {b.has_review && (
-                    <span className="text-[10px] font-semibold text-amber-700">★ Reseña recibida</span>
+          <ul className="space-y-4">
+            {bookings.map((b) => {
+              const ph = phaseLabel(b.status);
+              const disabled = busyId === b.id;
+              return (
+                <li key={b.id} className="bg-white rounded-2xl border border-[#E5E0D8] p-4 shadow-sm">
+                  <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
+                    <div>
+                      <p className="text-sm font-semibold text-[#1C1917]">{b.listing_title}</p>
+                      <p className="text-xs text-[#6B7280] mt-0.5">Cliente: {b.buyer_name}</p>
+                      {b.ticket_code ? (
+                        <p className="text-xs font-mono font-bold text-[#1B4332] mt-1">🎫 {b.ticket_code}</p>
+                      ) : (
+                        <p className="text-[10px] text-[#9CA3AF] mt-1 font-mono">ref {b.id.slice(0, 8)}…</p>
+                      )}
+                    </div>
+                    <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-full shrink-0 ${ph.cls}`}>
+                      {ph.label}
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#6B7280] mb-3">Tarifa plataforma: {formatMXN(b.commission_amount_cents)}</p>
+
+                  {b.status !== "completed" && (
+                    <div className="flex flex-col gap-2">
+                      {(b.status === "confirmed" || b.status === "pending") && (
+                        <button
+                          type="button"
+                          disabled={disabled}
+                          onClick={() => void patchStatus(b.id, "scheduled")}
+                          className="w-full py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold disabled:opacity-50"
+                        >
+                          1 · Marcar como agendado
+                        </button>
+                      )}
+                      {(b.status === "confirmed" || b.status === "scheduled") && (
+                        <button
+                          type="button"
+                          disabled={disabled}
+                          onClick={() => void patchStatus(b.id, "in_progress")}
+                          className="w-full py-2.5 rounded-xl bg-amber-600 text-white text-sm font-semibold disabled:opacity-50"
+                        >
+                          {b.status === "confirmed" ? "Saltar a · Servicio en curso" : "2 · Servicio en curso"}
+                        </button>
+                      )}
+                      {(b.status === "confirmed" || b.status === "scheduled" || b.status === "in_progress") && (
+                        <button
+                          type="button"
+                          disabled={disabled}
+                          onClick={() => void patchStatus(b.id, "completed")}
+                          className="w-full py-2.5 rounded-xl bg-[#1B4332] text-white text-sm font-semibold disabled:opacity-50"
+                        >
+                          Marcar como completado
+                        </button>
+                      )}
+                    </div>
                   )}
-                </div>
-                {b.status === "confirmed" && (
-                  <button
-                    type="button"
-                    disabled={busyId === b.id}
-                    onClick={() => void markComplete(b.id)}
-                    className="mt-3 w-full py-2.5 rounded-xl bg-[#1B4332] text-white text-sm font-semibold disabled:opacity-50"
-                  >
-                    {busyId === b.id ? "…" : "Marcar servicio como completado"}
-                  </button>
-                )}
-                {msg[b.id] && (
-                  <p
-                    className={`text-xs mt-2 ${msg[b.id].startsWith("✓") ? "text-emerald-600" : "text-red-600"}`}
-                  >
-                    {msg[b.id]}
-                  </p>
-                )}
-              </li>
-            ))}
+
+                  {b.status === "completed" && b.has_review && (
+                    <p className="text-xs text-amber-700 font-semibold mt-2">★ Cliente ya envió reseña</p>
+                  )}
+
+                  {msg[b.id] && (
+                    <p
+                      className={`text-xs mt-2 ${msg[b.id].startsWith("✓") ? "text-emerald-600" : "text-red-600"}`}
+                    >
+                      {msg[b.id]}
+                    </p>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>

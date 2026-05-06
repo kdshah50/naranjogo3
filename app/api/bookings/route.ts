@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
 
   let query = supabase
     .from("service_bookings")
-    .select("id,listing_id,seller_id,buyer_id,commission_amount_cents,payment_status,paid_at,status,created_at,package_session_count")
+    .select("id,listing_id,seller_id,buyer_id,commission_amount_cents,payment_status,paid_at,status,created_at,package_session_count,ticket_code")
     .order("created_at", { ascending: false })
     .limit(50);
 

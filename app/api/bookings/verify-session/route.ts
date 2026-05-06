@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminSupabase, idMatchVariantsForIn } from "@/lib/auth-server";
 import { getStripe, stripePaymentIntentId } from "@/lib/stripe";
+import { getPublicAppUrl } from "@/lib/app-url";
 import { notifyBuyerBookingCommissionPaid } from "@/lib/buyer-booking-notify";
 import { notifySellerBookingCommissionPaid } from "@/lib/seller-booking-notify";
+import { appendBookingEvent, ensureTicketCodeForPaidBooking } from "@/lib/booking-lifecycle";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -82,11 +84,34 @@ export async function GET(req: NextRequest) {
       }
 
       try {
+        await ensureTicketCodeForPaidBooking(supabase, bookingRowId);
+      } catch (tcErr) {
+        console.error("[verify-session] ticket_code (non-fatal)", tcErr);
+      }
+      try {
+        await appendBookingEvent(supabase, {
+          bookingId: bookingRowId,
+          actorId: null,
+          eventType: "payment_confirmed",
+          fromStatus: "pending",
+          toStatus: "confirmed",
+          meta: { source: "verify_session" },
+        });
+      } catch (evErr) {
+        console.error("[verify-session] booking_events (non-fatal)", evErr);
+      }
+
+      try {
         await notifySellerBookingCommissionPaid(supabase, bookingRowId);
       } catch (notifyErr) {
         console.error("[verify-session] seller booking notify failed (non-fatal)", notifyErr);
       }
     } else {
+      try {
+        await ensureTicketCodeForPaidBooking(supabase, bookingRowId);
+      } catch (tcErr) {
+        console.error("[verify-session] ticket_code existing paid (non-fatal)", tcErr);
+      }
       try {
         await notifySellerBookingCommissionPaid(supabase, bookingRowId);
       } catch (notifyErr) {
@@ -134,10 +159,13 @@ export async function GET(req: NextRequest) {
           )}`
         : null;
 
+    const appUrl = getPublicAppUrl();
+
     return NextResponse.json(
       {
         id: fresh.id,
         listingId: fresh.listing_id,
+        ticketCode: fresh.ticket_code ?? null,
         paymentStatus: fresh.payment_status,
         status: fresh.status,
         commissionAmountCents: fresh.commission_amount_cents,
@@ -145,6 +173,12 @@ export async function GET(req: NextRequest) {
         paidAt: fresh.paid_at,
         createdAt: fresh.created_at,
         isBuyer: true,
+        tracking: {
+          buyerBookingsUrl: `${appUrl}/my-bookings`,
+          sellerBookingsUrl: `${appUrl}/seller-bookings`,
+          listingUrl: `${appUrl}/listing/${fresh.listing_id}`,
+          claimsUrl: `${appUrl}/claims?booking=${encodeURIComponent(fresh.id)}`,
+        },
         listing: listing
           ? {
               title: listing.title_es,

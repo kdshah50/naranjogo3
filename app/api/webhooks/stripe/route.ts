@@ -5,6 +5,7 @@ import { awardPoints } from "@/lib/loyalty";
 import { maybeAwardReferralBonus } from "@/lib/referral";
 import { notifyBuyerBookingCommissionPaid } from "@/lib/buyer-booking-notify";
 import { notifySellerBookingCommissionPaid } from "@/lib/seller-booking-notify";
+import { appendBookingEvent, ensureTicketCodeForPaidBooking } from "@/lib/booking-lifecycle";
 
 export const dynamic = "force-dynamic";
 
@@ -85,6 +86,25 @@ export async function POST(req: NextRequest) {
     if (upErr) {
       console.error("[stripe-webhook] booking update failed", upErr);
       return NextResponse.json({ error: "Persist failed" }, { status: 500 });
+    }
+
+    try {
+      await ensureTicketCodeForPaidBooking(supabase, bookingIdMeta);
+    } catch (tcErr) {
+      console.error("[stripe-webhook] ticket_code (non-fatal)", tcErr);
+    }
+
+    try {
+      await appendBookingEvent(supabase, {
+        bookingId: bookingIdMeta,
+        actorId: null,
+        eventType: "payment_confirmed",
+        fromStatus: "pending",
+        toStatus: "confirmed",
+        meta: { source: "stripe_webhook" },
+      });
+    } catch (evErr) {
+      console.error("[stripe-webhook] booking_events (non-fatal)", evErr);
     }
 
     try {

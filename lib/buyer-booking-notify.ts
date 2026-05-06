@@ -44,7 +44,7 @@ export async function notifyBuyerBookingCommissionPaid(supabase: SupabaseClient,
     .is("buyer_booking_paid_notified_at", null)
     .or(`buyer_booking_paid_notify_claimed_at.is.null,buyer_booking_paid_notify_claimed_at.lt.${staleBefore}`)
     .select(
-      "id,buyer_id,seller_id,listing_id,note,paid_at,package_session_count,commission_amount_cents"
+      "id,buyer_id,seller_id,listing_id,note,paid_at,package_session_count,commission_amount_cents,ticket_code"
     );
 
   if (claimErr) {
@@ -115,12 +115,18 @@ export async function notifyBuyerBookingCommissionPaid(supabase: SupabaseClient,
     const noteLine = row.note ? `Tu mensaje al proveedor: «${truncate(String(row.note), 220)}»` : "";
     const confirmedLine = `Confirmada: ${formatConfirmedEs(row.paid_at)}`;
     const appUrl = getPublicAppUrl();
+    const feeMx = Math.round((row.commission_amount_cents ?? 0) / 100);
     const supportUrl = `${appUrl}/claims`;
     const bookingUrl = `${appUrl}/booking/success?id=${row.id}`;
-    const feeMx = Math.round((row.commission_amount_cents ?? 0) / 100);
+    const myBookingsUrl = `${appUrl}/my-bookings`;
+    const ticketLine = row.ticket_code
+      ? `🎫 Ticket: *${row.ticket_code}*`
+      : `Referencia: ${row.id.slice(0, 8)}…`;
 
     const msg = [
       `✅ *Reserva confirmada — Naranjogo*`,
+      ``,
+      ticketLine,
       ``,
       `*${listingTitle}*`,
       packageLine,
@@ -133,6 +139,8 @@ export async function notifyBuyerBookingCommissionPaid(supabase: SupabaseClient,
       `Confirma fecha y hora exactas por WhatsApp con tu proveedor.`,
       ``,
       `*Garantía:* aplicación y posibles reembolsos solo si reservaste y pagaste *en Naranjogo*: ${supportUrl}`,
+      ``,
+      `Seguimiento (ticket + estado): ${myBookingsUrl}`,
       ``,
       `¿Dudas? Abre tu reserva: ${bookingUrl}`,
     ].join("\n");

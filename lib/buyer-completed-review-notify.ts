@@ -27,7 +27,7 @@ export async function notifyBuyerCompletedReviewPrompt(supabase: SupabaseClient,
     .or(
       `buyer_completed_review_notify_claimed_at.is.null,buyer_completed_review_notify_claimed_at.lt.${staleBefore}`
     )
-    .select("id,buyer_id,seller_id,listing_id");
+    .select("id,buyer_id,seller_id,listing_id,ticket_code");
 
   if (claimErr) {
     console.error("[buyer-completed-review-notify] claim", claimErr);
@@ -91,9 +91,12 @@ export async function notifyBuyerCompletedReviewPrompt(supabase: SupabaseClient,
     const appUrl = getPublicAppUrl();
     const reviewUrl = `${appUrl}/my-bookings?review=${encodeURIComponent(row.id)}`;
 
+    const ticketLine = row.ticket_code ? `Ticket: *${row.ticket_code}*` : "";
+
     const msg = [
       `⭐ *Servicio marcado como completado — Naranjogo*`,
       ``,
+      ...(ticketLine ? [ticketLine, ``] : []),
       `*${listingTitle}*`,
       `Proveedor: *${providerName}*`,
       ``,

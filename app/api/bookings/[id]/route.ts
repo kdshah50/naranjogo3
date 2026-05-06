@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminSupabase, getUserIdFromRequest } from "@/lib/auth-server";
 import { expandUserAccountIdPool, poolsOverlap } from "@/lib/user-account-pool";
 import { notifyBuyerCompletedReviewPrompt } from "@/lib/buyer-completed-review-notify";
+import { notifyBuyerLifecyclePhase } from "@/lib/buyer-phase-notify";
+import { appendBookingEvent, BookingLifecycleStatus, canTransitionLifecycle } from "@/lib/booking-lifecycle";
+import { getPublicAppUrl } from "@/lib/app-url";
 
 export const dynamic = "force-dynamic";
 
@@ -50,9 +53,12 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       ? `https://wa.me/${waDigits}?text=${encodeURIComponent(`Hola! Ya reservé tu servicio "${listing?.title_es ?? ""}" en Naranjogo.`)}`
       : null;
 
+    const appUrl = getPublicAppUrl();
+
     return NextResponse.json({
       id: booking.id,
       listingId: booking.listing_id,
+      ticketCode: booking.ticket_code ?? null,
       paymentStatus: booking.payment_status,
       status: booking.status,
       commissionAmountCents: booking.commission_amount_cents,
@@ -60,6 +66,12 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       paidAt: booking.paid_at,
       createdAt: booking.created_at,
       isBuyer: booking.buyer_id === userId,
+      tracking: {
+        buyerBookingsUrl: `${appUrl}/my-bookings`,
+        sellerBookingsUrl: `${appUrl}/seller-bookings`,
+        listingUrl: `${appUrl}/listing/${booking.listing_id}`,
+        claimsUrl: `${appUrl}/claims?booking=${encodeURIComponent(booking.id)}`,
+      },
       listing: listing ? {
         title: listing.title_es,
         photo: listing.photo_urls?.[0] ?? null,
@@ -78,7 +90,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 }
 
 /**
- * PATCH { status: "completed" } — seller marks a paid booking completed; buyer gets WhatsApp review link (once).
+ * PATCH { status: "scheduled" | "in_progress" | "completed" } — seller advances lifecycle (audit log + buyer WhatsApp on transitions).
  */
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -88,9 +100,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
 
     const body = await req.json().catch(() => ({}));
-    if (String(body?.status ?? "").toLowerCase() !== "completed") {
-      return NextResponse.json({ error: "Solo se admite status: completed" }, { status: 400 });
+    const nextRaw = String(body?.status ?? "").toLowerCase();
+    const allowed: BookingLifecycleStatus[] = ["scheduled", "in_progress", "completed"];
+    if (!allowed.includes(nextRaw as BookingLifecycleStatus)) {
+      return NextResponse.json(
+        { error: "status debe ser: scheduled, in_progress o completed" },
+        { status: 400 }
+      );
     }
+    const nextStatus = nextRaw as BookingLifecycleStatus;
 
     const bookingId = params.id?.trim();
     if (!bookingId) {
@@ -100,7 +118,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const supabase = createAdminSupabase();
     const { data: booking, error: fetchErr } = await supabase
       .from("service_bookings")
-      .select("id,buyer_id,seller_id,payment_status,status")
+      .select("id,buyer_id,seller_id,payment_status,status,ticket_code")
       .eq("id", bookingId)
       .maybeSingle();
 
@@ -111,14 +129,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const myPool = await expandUserAccountIdPool(supabase, userId);
     const sellerPoolBooking = await expandUserAccountIdPool(supabase, String(booking.seller_id));
     if (!poolsOverlap(myPool, sellerPoolBooking)) {
-      return NextResponse.json({ error: "Solo el proveedor puede marcar completado" }, { status: 403 });
+      return NextResponse.json({ error: "Solo el proveedor puede actualizar el estado" }, { status: 403 });
     }
 
     if (booking.payment_status !== "paid") {
       return NextResponse.json({ error: "La reserva no está pagada" }, { status: 400 });
     }
 
-    if (booking.status === "completed") {
+    if (booking.status === "completed" && nextStatus === "completed") {
       try {
         await notifyBuyerCompletedReviewPrompt(supabase, bookingId);
       } catch (e) {
@@ -127,34 +145,61 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       return NextResponse.json({ ok: true, alreadyCompleted: true });
     }
 
-    if (booking.status !== "confirmed") {
+    if (booking.status === nextStatus) {
+      return NextResponse.json({ ok: true, unchanged: true });
+    }
+
+    if (!canTransitionLifecycle(booking.status, nextStatus)) {
       return NextResponse.json(
-        { error: "Solo se puede completar una reserva confirmada (pagada)" },
+        { error: `No se puede pasar de "${booking.status}" a "${nextStatus}"` },
         { status: 400 }
       );
     }
 
+    const fromStatus = String(booking.status);
     const now = new Date().toISOString();
     const { data: updated, error: upErr } = await supabase
       .from("service_bookings")
-      .update({ status: "completed", updated_at: now })
+      .update({ status: nextStatus, updated_at: now })
       .eq("id", bookingId)
       .eq("payment_status", "paid")
-      .eq("status", "confirmed")
-      .select("id")
+      .eq("status", fromStatus)
+      .select("id,status")
       .maybeSingle();
 
     if (upErr || !updated) {
-      return NextResponse.json({ error: "No se pudo actualizar la reserva" }, { status: 500 });
+      return NextResponse.json(
+        { error: "No se pudo actualizar (¿otro dispositivo cambió el estado?). Refresca e intenta de nuevo." },
+        { status: 409 }
+      );
     }
 
-    try {
-      await notifyBuyerCompletedReviewPrompt(supabase, bookingId);
-    } catch (e) {
-      console.error("[bookings/:id] PATCH review WhatsApp failed (non-fatal)", e);
+    await appendBookingEvent(supabase, {
+      bookingId,
+      actorId: userId,
+      eventType: "lifecycle_transition",
+      fromStatus,
+      toStatus: nextStatus,
+      meta: {},
+    });
+
+    if (nextStatus === "scheduled" || nextStatus === "in_progress") {
+      try {
+        await notifyBuyerLifecyclePhase(supabase, bookingId, nextStatus);
+      } catch (e) {
+        console.error("[bookings/:id] PATCH phase WhatsApp failed (non-fatal)", e);
+      }
     }
 
-    return NextResponse.json({ ok: true });
+    if (nextStatus === "completed") {
+      try {
+        await notifyBuyerCompletedReviewPrompt(supabase, bookingId);
+      } catch (e) {
+        console.error("[bookings/:id] PATCH review WhatsApp failed (non-fatal)", e);
+      }
+    }
+
+    return NextResponse.json({ ok: true, status: nextStatus });
   } catch (e) {
     console.error("[bookings/:id] PATCH", e);
     return NextResponse.json({ error: "Error del servidor" }, { status: 500 });

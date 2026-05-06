@@ -27,7 +27,7 @@ export async function notifySellerBookingCommissionPaid(supabase: SupabaseClient
     .eq("payment_status", "paid")
     .is("seller_booking_paid_notified_at", null)
     .or(`seller_booking_paid_notify_claimed_at.is.null,seller_booking_paid_notify_claimed_at.lt.${staleBefore}`)
-    .select("id,buyer_id,seller_id,listing_id,commission_amount_cents,seller_phone_snapshot");
+    .select("id,buyer_id,seller_id,listing_id,commission_amount_cents,seller_phone_snapshot,ticket_code");
 
   if (claimErr) {
     console.error("[seller-booking-notify] claim", claimErr);
@@ -114,12 +114,12 @@ export async function notifySellerBookingCommissionPaid(supabase: SupabaseClient
       ``,
       `Cliente: ${buyerName}`,
       `Tarifa plataforma: ~$${mxn.toLocaleString("es-MX")} MXN`,
-      `ID reserva: ${row.id}`,
+      row.ticket_code ? `Ticket cliente: *${row.ticket_code}*` : `ID interno: ${row.id}`,
       ``,
       `Abre el anuncio para ver mensajes en la app:`,
       listingUrl,
       ``,
-      `Cuando termines el trabajo, márcalo *completado* aquí (el cliente recibe WhatsApp para reseña):`,
+      `Cuando termines el trabajo, avanza el estado en la app (agendado → en curso → completado). Cliente recibe WhatsApp en cada paso y al final el enlace para reseña:`,
       sellerBookingsUrl,
     ].join("\n");
 

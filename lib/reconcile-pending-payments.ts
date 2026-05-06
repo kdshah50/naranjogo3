@@ -6,6 +6,7 @@ import { awardPoints } from "@/lib/loyalty";
 import { maybeAwardReferralBonus } from "@/lib/referral";
 import { notifyBuyerBookingCommissionPaid } from "@/lib/buyer-booking-notify";
 import { notifySellerBookingCommissionPaid } from "@/lib/seller-booking-notify";
+import { appendBookingEvent, ensureTicketCodeForPaidBooking } from "@/lib/booking-lifecycle";
 
 export type ReconcileResult = "synced" | "skipped" | "error";
 
@@ -80,6 +81,24 @@ export async function reconcileOneCheckoutSession(
   }
   if (!updatedRows?.length) {
     return "skipped";
+  }
+
+  try {
+    await ensureTicketCodeForPaidBooking(supabase, String(booking.id));
+  } catch (e) {
+    console.error("[reconcile] ticket_code (non-fatal)", e);
+  }
+  try {
+    await appendBookingEvent(supabase, {
+      bookingId: String(booking.id),
+      actorId: null,
+      eventType: "payment_confirmed",
+      fromStatus: "pending",
+      toStatus: "confirmed",
+      meta: { source: "reconcile_cron" },
+    });
+  } catch (e) {
+    console.error("[reconcile] booking_events (non-fatal)", e);
   }
 
   const buyerId = (session.metadata?.buyer_id?.trim() || booking.buyer_id).trim();

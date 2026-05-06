@@ -57,6 +57,15 @@ export default function ClaimsPage() {
   const [msgError, setMsgError] = useState(false);
 
   useEffect(() => {
+    const bid =
+      typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("booking") : null;
+    if (bid) {
+      setSelectedBooking(bid);
+      setReason("no_show");
+    }
+  }, []);
+
+  useEffect(() => {
     Promise.all([
       fetch("/api/bookings?status=paid", { credentials: "same-origin" }),
       fetch("/api/claims", { credentials: "same-origin" }),
