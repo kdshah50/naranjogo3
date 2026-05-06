@@ -12,7 +12,7 @@ function WhatsAppIcon({ size = 20 }: { size?: number }) {
 }
 
 type BookingInfo = {
-  hasPaidBooking: boolean;
+  checkoutBlocked: boolean;
   revealedWhatsappUrl: string | null;
 };
 
@@ -50,7 +50,7 @@ export default function WhatsAppCTA({
         return;
       }
       const data: BookingInfo = await res.json();
-      if (data.hasPaidBooking && data.revealedWhatsappUrl) {
+      if (data.revealedWhatsappUrl) {
         setState("unlocked");
         setWaUrl(data.revealedWhatsappUrl);
       } else {

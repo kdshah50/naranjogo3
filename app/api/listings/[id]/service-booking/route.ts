@@ -9,6 +9,7 @@ import {
   listingHasActivePackage,
   packageVsListSavings,
 } from "@/lib/package-pricing";
+import { checkoutBlockedByExistingPaidRows } from "@/lib/booking-checkout-guard";
 import { expandUserAccountIdPool, userIsListingSellerAccount } from "@/lib/user-account-pool";
 
 export const dynamic = "force-dynamic";
@@ -87,16 +88,28 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
     const hasContacted = contactedInApp;
 
-    const { data: paidBookings } = await supabase
+    const { data: listingPricing } = await supabase
+      .from("listings")
+      .select("price_mxn,commission_pct,package_session_count,package_total_price_mxn")
+      .eq("id", listingId)
+      .maybeSingle();
+
+    const hasPackage = listingHasActivePackage({
+      package_session_count: listingPricing?.package_session_count,
+      package_total_price_mxn: listingPricing?.package_total_price_mxn,
+    });
+
+    const { data: paidRows } = await supabase
       .from("service_bookings")
-      .select("id,payment_status,seller_phone_snapshot,paid_at")
+      .select("id,payment_status,seller_phone_snapshot,paid_at,status,package_session_count")
       .eq("listing_id", listingId)
       .in("buyer_id", myPool)
       .eq("payment_status", "paid")
       .order("paid_at", { ascending: false })
-      .limit(1);
+      .limit(50);
 
-    const latestPaid = paidBookings?.[0] ?? null;
+    const latestPaid = paidRows?.[0] ?? null;
+    const checkoutBlocked = checkoutBlockedByExistingPaidRows(paidRows ?? [], hasPackage);
 
     let revealedPhone: string | null = null;
     let revealedWhatsappUrl: string | null = null;
@@ -132,12 +145,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
     const pendingBooking = pendingBookings?.[0] ?? null;
 
-    const { data: listingPricing } = await supabase
-      .from("listings")
-      .select("price_mxn,commission_pct,package_session_count,package_total_price_mxn")
-      .eq("id", listingId)
-      .maybeSingle();
-
     const commPct = Number(listingPricing?.commission_pct ?? 10);
     const base = effectiveListingPriceMxnCents({
       price_mxn: Number(listingPricing?.price_mxn) || 0,
@@ -164,11 +171,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       console.error("[service-booking] loyalty preview failed (non-fatal)", loyaltyErr);
     }
 
-    const hasPackage = listingHasActivePackage({
-      package_session_count: listingPricing?.package_session_count,
-      package_total_price_mxn: listingPricing?.package_total_price_mxn,
-    });
-
     const pkgSavings =
       hasPackage && listingPricing
         ? packageVsListSavings({
@@ -183,7 +185,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       flowActive: true,
       canBook: hasContacted,
       contactedInApp,
-      hasPaidBooking: !!latestPaid,
+      checkoutBlocked,
       paidBookingId: latestPaid?.id ?? null,
       revealedWhatsappUrl,
       hasPendingBooking: !!pendingBooking,

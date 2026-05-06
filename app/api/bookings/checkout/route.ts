@@ -6,6 +6,7 @@ import { isServicesListing } from "@/lib/listing-category";
 import { effectiveListingPriceMxnCents, listingHasActivePackage } from "@/lib/package-pricing";
 import { buyerHasSentInAppMessage, ensureContactGateFromMessages, unlockContactGateIfRepeatBuyerWithSeller } from "@/lib/contact-gate";
 import { getPublicAppUrl } from "@/lib/app-url";
+import { checkoutBlockedByExistingPaidRows } from "@/lib/booking-checkout-guard";
 import { expandUserAccountIdPool, userIsListingSellerAccount } from "@/lib/user-account-pool";
 
 export const dynamic = "force-dynamic";
@@ -85,6 +86,29 @@ export async function POST(req: NextRequest) {
     if (!contactOk) {
       return NextResponse.json(
         { error: "Primero contacta al proveedor por mensajes en la app." },
+        { status: 400 }
+      );
+    }
+
+    const hasPackageListing = listingHasActivePackage(
+      listing as { package_session_count?: number | null; package_total_price_mxn?: number | null }
+    );
+
+    const { data: existingPaidRows } = await supabase
+      .from("service_bookings")
+      .select("status")
+      .eq("listing_id", listingId)
+      .in("buyer_id", myPool)
+      .eq("payment_status", "paid")
+      .limit(50);
+
+    if (checkoutBlockedByExistingPaidRows(existingPaidRows ?? [], hasPackageListing)) {
+      return NextResponse.json(
+        {
+          error: hasPackageListing
+            ? "Ya tienes una reserva pagada para este plan en este anuncio."
+            : "Ya tienes una reserva activa para este anuncio. Cuando termine o se cancele, podrás pagar de nuevo.",
+        },
         { status: 400 }
       );
     }

@@ -12,7 +12,8 @@ type BookingState = {
   isSeller?: boolean;
   canBook: boolean;
   contactedInApp: boolean;
-  hasPaidBooking: boolean;
+  /** True while a new Stripe checkout for this listing is not allowed (active paid row, or package already paid). */
+  checkoutBlocked: boolean;
   paidBookingId: string | null;
   revealedWhatsappUrl: string | null;
   hasPendingBooking: boolean;
@@ -228,7 +229,7 @@ export default function ServiceBookingBlock({
 
   const contacted = booking.contactedInApp;
   const partyLabel = isService ? "proveedor" : "vendedor";
-  const hasPaid = booking.hasPaidBooking;
+  const hasPaid = booking.checkoutBlocked;
 
   const liveHintEn =
     liveAvailability?.syncEnabled && (liveAvailability.upcomingSlotCount ?? 0) > 0
