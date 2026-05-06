@@ -7,6 +7,7 @@ import { maybeAwardReferralBonus } from "@/lib/referral";
 import { notifyBuyerBookingCommissionPaid } from "@/lib/buyer-booking-notify";
 import { notifySellerBookingCommissionPaid } from "@/lib/seller-booking-notify";
 import { appendBookingEvent, ensureTicketCodeForPaidBooking } from "@/lib/booking-lifecycle";
+import { appendListingChatPaymentNotice } from "@/lib/payment-confirmed-chat";
 
 export type ReconcileResult = "synced" | "skipped" | "error";
 
@@ -127,6 +128,17 @@ export async function reconcileOneCheckoutSession(
     await notifyBuyerBookingCommissionPaid(supabase, String(booking.id));
   } catch (e) {
     console.error("[reconcile] buyer booking notify", e);
+  }
+
+  try {
+    const { data: bRow } = await supabase
+      .from("service_bookings")
+      .select("id,listing_id,buyer_id,ticket_code")
+      .in("id", idVars)
+      .maybeSingle();
+    if (bRow) await appendListingChatPaymentNotice(supabase, bRow);
+  } catch (e) {
+    console.error("[reconcile] payment-confirmed-chat (non-fatal)", e);
   }
 
   return "synced";

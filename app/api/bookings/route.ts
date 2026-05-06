@@ -29,7 +29,8 @@ export async function GET(req: NextRequest) {
     const pool = await expandUserAccountIdPool(supabase, userId);
     query = query.in("seller_id", pool);
   } else {
-    query = query.eq("buyer_id", userId);
+    const buyerPool = await expandUserAccountIdPool(supabase, userId);
+    query = query.in("buyer_id", buyerPool);
   }
 
   if (statusFilter === "paid") {

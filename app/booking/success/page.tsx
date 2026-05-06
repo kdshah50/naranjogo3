@@ -199,6 +199,15 @@ function BookingSuccessContent() {
     };
   }, [stripeSessionId, bookingId, pollAttempt, retryBump]);
 
+  const paidNotifyRef = useRef(false);
+  useEffect(() => {
+    if (!data?.listingId || data.paymentStatus !== "paid" || paidNotifyRef.current) return;
+    paidNotifyRef.current = true;
+    window.dispatchEvent(
+      new CustomEvent("tianguis:booking-paid", { detail: { listingId: data.listingId } }),
+    );
+  }, [data]);
+
   const retryConfirmation = () => {
     setError("");
     setData(null);

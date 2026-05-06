@@ -226,6 +226,20 @@ function MyBookingsPageInner() {
   }, [loadData]);
 
   useEffect(() => {
+    const onPaid = () => loadData();
+    window.addEventListener("tianguis:booking-paid", onPaid);
+    return () => window.removeEventListener("tianguis:booking-paid", onPaid);
+  }, [loadData]);
+
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === "visible") loadData();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [loadData]);
+
+  useEffect(() => {
     if (loading || bookings.length === 0) return;
     const reviewId =
       typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("review") : null;

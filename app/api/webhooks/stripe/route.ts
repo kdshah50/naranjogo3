@@ -6,6 +6,7 @@ import { maybeAwardReferralBonus } from "@/lib/referral";
 import { notifyBuyerBookingCommissionPaid } from "@/lib/buyer-booking-notify";
 import { notifySellerBookingCommissionPaid } from "@/lib/seller-booking-notify";
 import { appendBookingEvent, ensureTicketCodeForPaidBooking } from "@/lib/booking-lifecycle";
+import { appendListingChatPaymentNotice } from "@/lib/payment-confirmed-chat";
 
 export const dynamic = "force-dynamic";
 
@@ -123,6 +124,17 @@ export async function POST(req: NextRequest) {
       await notifyBuyerBookingCommissionPaid(supabase, bookingIdMeta);
     } catch (notifyErr) {
       console.error("[stripe-webhook] buyer booking notify failed (non-fatal)", notifyErr);
+    }
+
+    try {
+      const { data: bRow } = await supabase
+        .from("service_bookings")
+        .select("id,listing_id,buyer_id,ticket_code")
+        .in("id", bookingIdVars)
+        .maybeSingle();
+      if (bRow) await appendListingChatPaymentNotice(supabase, bRow);
+    } catch (chatErr) {
+      console.error("[stripe-webhook] payment-confirmed-chat (non-fatal)", chatErr);
     }
 
     const buyerId = session.metadata?.buyer_id;

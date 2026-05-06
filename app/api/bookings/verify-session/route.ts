@@ -5,6 +5,7 @@ import { getPublicAppUrl } from "@/lib/app-url";
 import { notifyBuyerBookingCommissionPaid } from "@/lib/buyer-booking-notify";
 import { notifySellerBookingCommissionPaid } from "@/lib/seller-booking-notify";
 import { appendBookingEvent, ensureTicketCodeForPaidBooking } from "@/lib/booking-lifecycle";
+import { appendListingChatPaymentNotice } from "@/lib/payment-confirmed-chat";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -134,6 +135,19 @@ export async function GET(req: NextRequest) {
 
     if (!fresh) {
       return NextResponse.json({ error: "Reserva no encontrada" }, { status: 404 });
+    }
+
+    if (fresh.payment_status === "paid") {
+      try {
+        await appendListingChatPaymentNotice(supabase, {
+          id: String(fresh.id),
+          listing_id: String(fresh.listing_id),
+          buyer_id: String(fresh.buyer_id),
+          ticket_code: (fresh.ticket_code as string | null) ?? null,
+        });
+      } catch (chatErr) {
+        console.error("[verify-session] payment-confirmed-chat (non-fatal)", chatErr);
+      }
     }
 
     const listingIdVars = idMatchVariantsForIn(String(fresh.listing_id));

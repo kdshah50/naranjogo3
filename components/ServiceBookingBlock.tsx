@@ -121,8 +121,13 @@ export default function ServiceBookingBlock({
 
   useEffect(() => {
     const onContact = () => void load();
+    const onPaid = () => void load();
     window.addEventListener("tianguis:listing-contact", onContact);
-    return () => window.removeEventListener("tianguis:listing-contact", onContact);
+    window.addEventListener("tianguis:booking-paid", onPaid);
+    return () => {
+      window.removeEventListener("tianguis:listing-contact", onContact);
+      window.removeEventListener("tianguis:booking-paid", onPaid);
+    };
   }, [load]);
 
   useEffect(() => {

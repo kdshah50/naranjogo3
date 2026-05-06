@@ -131,6 +131,18 @@ export default function ListingChat({
   }, [listingId, loadListingScope]);
 
   useEffect(() => {
+    const onBookingPaid = (ev: Event) => {
+      const d = (ev as CustomEvent<{ listingId?: string }>).detail;
+      if (!d?.listingId || d.listingId === listingId) {
+        void loadListingScope();
+        if (selectedId) void loadConversation(selectedId);
+      }
+    };
+    window.addEventListener("tianguis:booking-paid", onBookingPaid);
+    return () => window.removeEventListener("tianguis:booking-paid", onBookingPaid);
+  }, [listingId, loadListingScope, loadConversation, selectedId]);
+
+  useEffect(() => {
     if (!initialConversationId) return;
     void loadConversation(initialConversationId);
   }, [initialConversationId, loadConversation]);
