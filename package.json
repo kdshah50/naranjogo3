@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "test:messaging": "npx --yes tsx scripts/test-messaging.ts",
-    "test:messaging:smoke": "npx --yes tsx scripts/test-messaging.ts --smoke"
+    "test:messaging:smoke": "npx --yes tsx scripts/test-messaging.ts --smoke",
+    "check:booking-notify": "npx --yes tsx scripts/check-booking-buyer-notify.ts"
   },
   "dependencies": {
     "@sentry/nextjs": "^8.55.1",
