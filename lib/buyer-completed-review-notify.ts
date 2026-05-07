@@ -3,7 +3,7 @@ import { idMatchVariantsForIn } from "@/lib/user-id-variants";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 import type { BuyerPhaseWhatsAppResult } from "@/lib/buyer-phase-notify";
 import { canonicalizeAuthPhone, normalizeAuthPhone } from "@/lib/phone";
-import { sendWhatsApp, isTwilioWhatsAppConfigured } from "@/lib/twilio";
+import { sendWhatsAppToE164Digits, isTwilioWhatsAppConfigured } from "@/lib/twilio";
 import { getPublicAppUrl } from "@/lib/app-url";
 
 const STALE_NOTIFY_CLAIM_MS = 3 * 60 * 1000;
@@ -142,7 +142,7 @@ export async function notifyBuyerCompletedReviewPrompt(
       `_Inicia sesión en Naranjogo y abre el enlace si no estás dentro de la app._`,
     ].join("\n");
 
-    const ok = await sendWhatsApp(buyerDigits, msg);
+    const ok = await sendWhatsAppToE164Digits(buyerDigits, msg);
     if (!ok) {
       console.error("[buyer-completed-review-notify] WhatsApp send failed", {
         bookingId: row.id,

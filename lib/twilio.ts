@@ -1,3 +1,5 @@
+import { canonicalizeAuthPhone, normalizeAuthPhone } from "@/lib/phone";
+
 const TWILIO_SID = () => process.env.TWILIO_ACCOUNT_SID ?? "";
 const TWILIO_TOKEN = () => process.env.TWILIO_AUTH_TOKEN ?? "";
 const TWILIO_FROM = () => process.env.TWILIO_WHATSAPP_FROM ?? "";
@@ -13,6 +15,24 @@ function asWhatsappAddress(value: string) {
   if (v.startsWith("whatsapp:")) return v;
   const cleaned = v.replace(/^whatsapp:/, "");
   return `whatsapp:${cleaned.startsWith("+") ? cleaned : `+${cleaned}`}`;
+}
+
+/**
+ * Send using E.164 digits only (no +). For MX mobile (+52), also tries legacy +521 WhatsApp routing
+ * (same pattern as OTP); one variant often fails with Twilio 63015 while the other delivers.
+ */
+export async function sendWhatsAppToE164Digits(toDigitsRaw: string, message: string): Promise<boolean> {
+  const digits = canonicalizeAuthPhone(normalizeAuthPhone(String(toDigitsRaw ?? "")));
+  if (!digits) {
+    console.error("[twilio] empty E.164 digits for WhatsApp");
+    return false;
+  }
+  const variants = [digits];
+  if (/^52\d{10}$/.test(digits)) {
+    variants.push(`521${digits.slice(2)}`);
+  }
+  const results = await Promise.all(variants.map((d) => sendWhatsApp(d, message)));
+  return results.some(Boolean);
 }
 
 export async function sendWhatsApp(to: string, message: string): Promise<boolean> {

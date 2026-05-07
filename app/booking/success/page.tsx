@@ -15,6 +15,7 @@ type BookingData = {
   listingId: string;
   paymentStatus: string;
   status: string;
+  ticketCode?: string | null;
   commissionAmountCents: number;
   paidAt: string | null;
   isBuyer: boolean;
@@ -51,6 +52,15 @@ const BS: Record<
     refund: string;
     contactFooter: string;
     guaranteeCta: string;
+    bookingLifecycleHeading: string;
+    bookingLifecycleHint: string;
+    bookingTicketLine: string;
+    bookingPhaseConfirmed: string;
+    bookingPhaseScheduled: string;
+    bookingPhaseInProgress: string;
+    bookingPhaseCompleted: string;
+    bookingPhaseCancelled: string;
+    bookingPhaseOther: string;
   }
 > = {
   es: {
@@ -82,6 +92,16 @@ const BS: Record<
     contactFooter:
       "Este contacto también está disponible en la página del servicio mientras tu reserva esté activa.",
     guaranteeCta: "Centro de garantía y ayuda",
+    bookingLifecycleHeading: "Estado del servicio",
+    bookingLifecycleHint:
+      "Se actualiza automáticamente cada 30 segundos mientras la reserva esté activa. También lo ves en «Mis reservas».",
+    bookingTicketLine: "Ticket:",
+    bookingPhaseConfirmed: "Pagado — confirmación enviada al proveedor",
+    bookingPhaseScheduled: "Visita marcada como agendada por el proveedor",
+    bookingPhaseInProgress: "El proveedor indicó que el trabajo está en curso",
+    bookingPhaseCompleted: "El proveedor marcó el servicio como completado",
+    bookingPhaseCancelled: "Reserva cancelada",
+    bookingPhaseOther: "Estado",
   },
   en: {
     loadFallback: "Loading…",
@@ -111,8 +131,35 @@ const BS: Record<
     refund: "Request a refund",
     contactFooter: "This contact is also on the service page while your booking is active.",
     guaranteeCta: "Guarantee & support hub",
+    bookingLifecycleHeading: "Booking status",
+    bookingLifecycleHint:
+      "Updates every 30 seconds while this booking stays active—same info as under My bookings.",
+    bookingTicketLine: "Ticket:",
+    bookingPhaseConfirmed: "Paid — confirmation sent to the provider",
+    bookingPhaseScheduled: "Provider marked your visit as scheduled",
+    bookingPhaseInProgress: "Provider marked this job as in progress",
+    bookingPhaseCompleted: "Provider marked this service as completed",
+    bookingPhaseCancelled: "Booking cancelled",
+    bookingPhaseOther: "Status",
   },
 };
+
+function bookingLifecycleTitle(status: string, t: (typeof BS)["es"]): string {
+  switch (String(status ?? "")) {
+    case "confirmed":
+      return t.bookingPhaseConfirmed;
+    case "scheduled":
+      return t.bookingPhaseScheduled;
+    case "in_progress":
+      return t.bookingPhaseInProgress;
+    case "completed":
+      return t.bookingPhaseCompleted;
+    case "cancelled":
+      return t.bookingPhaseCancelled;
+    default:
+      return `${t.bookingPhaseOther}: ${status}`;
+  }
+}
 
 export default function BookingSuccessPage() {
   return (
@@ -133,6 +180,7 @@ export default function BookingSuccessPage() {
 
 const POLL_INTERVAL_MS = 2000;
 const MAX_POLL_ATTEMPTS = 25;
+const LIFECYCLE_POLL_MS = 30_000;
 
 function isTerminalPaymentStatus(ps: string | undefined) {
   return ps === "paid" || ps === "failed" || ps === "refunded";
@@ -207,6 +255,31 @@ function BookingSuccessContent() {
       new CustomEvent("tianguis:booking-paid", { detail: { listingId: data.listingId } }),
     );
   }, [data]);
+
+  useEffect(() => {
+    const id = bookingId ?? data?.id ?? null;
+    if (!id || !data || data.paymentStatus !== "paid") return;
+    if (data.status === "completed" || data.status === "cancelled") return;
+
+    const pollLifecycle = async () => {
+      const res = await fetch(`/api/bookings/${id}`, { credentials: "same-origin", cache: "no-store" });
+      if (!res.ok) return;
+      const json = (await res.json()) as BookingData;
+      setData((prev) => {
+        if (!prev) return json;
+        return {
+          ...prev,
+          ...json,
+          listing: json.listing ?? prev.listing,
+          seller: json.seller ?? prev.seller,
+          contact: json.contact ?? prev.contact,
+        };
+      });
+    };
+
+    const interval = window.setInterval(pollLifecycle, LIFECYCLE_POLL_MS);
+    return () => clearInterval(interval);
+  }, [bookingId, data?.id, data?.paymentStatus, data?.status]);
 
   const retryConfirmation = () => {
     setError("");
@@ -299,6 +372,24 @@ function BookingSuccessContent() {
                   </p>
                 </div>
               </div>
+            </div>
+          )}
+
+          {isPaid && (
+            <div className="px-6 py-4 border-b border-[#E5E0D8] bg-[#F9FAFB]">
+              <p className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wide mb-1">
+                {t.bookingLifecycleHeading}
+              </p>
+              <p className="text-sm font-semibold text-[#1C1917]">{bookingLifecycleTitle(data.status, t)}</p>
+              {data.ticketCode ? (
+                <p className="text-xs text-[#4B5563] mt-1">
+                  {t.bookingTicketLine}{" "}
+                  <span className="font-mono font-semibold">{data.ticketCode}</span>
+                </p>
+              ) : null}
+              {data.status !== "completed" && data.status !== "cancelled" ? (
+                <p className="text-[11px] text-[#6B7280] mt-2 leading-snug">{t.bookingLifecycleHint}</p>
+              ) : null}
             </div>
           )}
 

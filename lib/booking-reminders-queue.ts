@@ -5,7 +5,8 @@ import {
   buildAppointmentReminderMessageEs,
   buildRebookReminderMessageEs,
 } from "@/lib/retention-copy";
-import { sendWhatsApp } from "@/lib/twilio";
+import { canonicalizeAuthPhone, normalizeAuthPhone } from "@/lib/phone";
+import { sendWhatsAppToE164Digits } from "@/lib/twilio";
 
 const MAX_ATTEMPTS = 5;
 
@@ -112,8 +113,11 @@ export async function processDueBookingReminders(limit = 35): Promise<{
     let anyOk = false;
 
     if (notifyWa && buyer?.phone) {
-      const ok = await sendWhatsApp(buyer.phone, msgEs);
-      if (ok) anyOk = true;
+      const digits = canonicalizeAuthPhone(normalizeAuthPhone(String(buyer.phone)));
+      if (digits.length >= 11) {
+        const ok = await sendWhatsAppToE164Digits(digits, msgEs);
+        if (ok) anyOk = true;
+      }
     }
 
     if (notifyEm && row.delivery_email?.includes("@")) {

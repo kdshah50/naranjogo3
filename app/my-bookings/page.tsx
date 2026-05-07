@@ -239,6 +239,14 @@ function MyBookingsPageInner() {
     return () => document.removeEventListener("visibilitychange", onVis);
   }, [loadData]);
 
+  /** Provider lifecycle updates booking server-side — poll so buyers see status without manual refresh. */
+  useEffect(() => {
+    const hasLifecycleActive = bookings.some((b) => !["completed", "cancelled"].includes(String(b.status ?? "")));
+    if (loading || !hasLifecycleActive) return;
+    const interval = window.setInterval(() => loadData(), 30_000);
+    return () => clearInterval(interval);
+  }, [loading, bookings, loadData]);
+
   useEffect(() => {
     if (loading || bookings.length === 0) return;
     const reviewId =

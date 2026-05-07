@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { idMatchVariantsForIn } from "@/lib/user-id-variants";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 import { canonicalizeAuthPhone, normalizeAuthPhone } from "@/lib/phone";
-import { sendWhatsApp, isTwilioWhatsAppConfigured } from "@/lib/twilio";
+import { sendWhatsAppToE164Digits, isTwilioWhatsAppConfigured } from "@/lib/twilio";
 import { getPublicAppUrl } from "@/lib/app-url";
 import { hasBuyerPhaseNotify, recordBuyerPhaseNotify } from "@/lib/booking-lifecycle";
 
@@ -80,6 +80,7 @@ export async function notifyBuyerLifecyclePhase(
   const appUrl = getPublicAppUrl();
   const ticket = booking.ticket_code ? `Ticket: *${booking.ticket_code}*` : `Reserva: \`${booking.id.slice(0, 8)}…\``;
   const bookingsUrl = `${appUrl}/my-bookings`;
+  const bookingDetailUrl = `${appUrl}/booking/success?id=${encodeURIComponent(String(booking.id))}`;
 
   const body =
     phase === "scheduled"
@@ -90,7 +91,10 @@ export async function notifyBuyerLifecyclePhase(
           `*${title}*`,
           ticket,
           ``,
-          `Seguimiento y garantía en la app:`,
+          `Abre tu reserva:`,
+          bookingDetailUrl,
+          ``,
+          `Todas tus reservas:`,
           bookingsUrl,
         ].join("\n")
       : [
@@ -100,11 +104,14 @@ export async function notifyBuyerLifecyclePhase(
           `*${title}*`,
           ticket,
           ``,
-          `Detalles en:`,
+          `Abre tu reserva:`,
+          bookingDetailUrl,
+          ``,
+          `Mis reservas:`,
           bookingsUrl,
         ].join("\n");
 
-  const ok = await sendWhatsApp(buyerDigits, body);
+  const ok = await sendWhatsAppToE164Digits(buyerDigits, body);
   if (ok) {
     await recordBuyerPhaseNotify(supabase, String(booking.id), phase);
     return { delivered: true };

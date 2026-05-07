@@ -1,7 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { idMatchVariantsForIn } from "@/lib/user-id-variants";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
-import { sendWhatsApp } from "@/lib/twilio";
+import { canonicalizeAuthPhone, normalizeAuthPhone } from "@/lib/phone";
+import { sendWhatsAppToE164Digits } from "@/lib/twilio";
 import { getPublicAppUrl } from "@/lib/app-url";
 
 const STALE_NOTIFY_CLAIM_MS = 3 * 60 * 1000;
@@ -99,8 +100,9 @@ export async function notifyBuyerBookingCommissionPaid(supabase: SupabaseClient,
       .select("phone")
       .in("id", buyerPool)
       .limit(1);
-    const buyerPhone = buyerRows?.[0]?.phone?.trim();
-    if (!buyerPhone) {
+    const buyerPhoneRaw = buyerRows?.[0]?.phone?.trim();
+    const buyerDigits = canonicalizeAuthPhone(normalizeAuthPhone(String(buyerPhoneRaw ?? "")));
+    if (!buyerDigits || buyerDigits.length < 11) {
       console.warn("[buyer-booking-notify] no buyer phone", { bookingId: row.id });
       await releaseClaim();
       return;
@@ -145,11 +147,11 @@ export async function notifyBuyerBookingCommissionPaid(supabase: SupabaseClient,
       `¿Dudas? Abre tu reserva: ${bookingUrl}`,
     ].join("\n");
 
-    const ok = await sendWhatsApp(buyerPhone, msg);
+    const ok = await sendWhatsAppToE164Digits(buyerDigits, msg);
     if (!ok) {
       console.error("[buyer-booking-notify] WhatsApp send failed", {
         bookingId: row.id,
-        buyerPhonePrefix: buyerPhone.slice(0, 6),
+        buyerPhonePrefix: buyerDigits.slice(0, 6),
       });
       await releaseClaim();
       return;
