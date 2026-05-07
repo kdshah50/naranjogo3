@@ -124,6 +124,9 @@ export async function notifyBuyerCompletedReviewPrompt(
       return { delivered: false, reason: "twilio_unconfigured" };
     }
 
+    /** Space this send from scheduled / in_progress bursts (same buyer, same minute → Twilio throttling). */
+    await new Promise((r) => setTimeout(r, 900));
+
     const appUrl = getPublicAppUrl();
     const reviewUrl = `${appUrl}/my-bookings?review=${encodeURIComponent(row.id)}`;
 

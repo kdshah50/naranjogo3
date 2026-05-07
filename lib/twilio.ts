@@ -17,9 +17,15 @@ function asWhatsappAddress(value: string) {
   return `whatsapp:${cleaned.startsWith("+") ? cleaned : `+${cleaned}`}`;
 }
 
+/** Gap between MX +52 / +521 attempts — avoids hammering Twilio when the first variant is wrong. */
+const MX_VARIANT_GAP_MS = 450;
+/** Second pass after bursts (e.g. scheduled + in progress + completed in a few minutes). */
+const WHATSAPP_RETRY_AFTER_MS = 2200;
+
 /**
  * Send using E.164 digits only (no +). For MX mobile (+52), also tries legacy +521 WhatsApp routing
- * (same pattern as OTP); one variant often fails with Twilio 63015 while the other delivers.
+ * (same pattern as OTP). Variants are tried **sequentially** so we only deliver once and reduce
+ * duplicate parallel posts (helps with Twilio 429 / throttling after several lifecycle messages).
  */
 export async function sendWhatsAppToE164Digits(toDigitsRaw: string, message: string): Promise<boolean> {
   const digits = canonicalizeAuthPhone(normalizeAuthPhone(String(toDigitsRaw ?? "")));
@@ -31,8 +37,21 @@ export async function sendWhatsAppToE164Digits(toDigitsRaw: string, message: str
   if (/^52\d{10}$/.test(digits)) {
     variants.push(`521${digits.slice(2)}`);
   }
-  const results = await Promise.all(variants.map((d) => sendWhatsApp(d, message)));
-  return results.some(Boolean);
+
+  const tryVariants = async (): Promise<boolean> => {
+    for (let i = 0; i < variants.length; i++) {
+      const d = variants[i]!;
+      if (await sendWhatsApp(d, message)) return true;
+      if (i < variants.length - 1) {
+        await new Promise((r) => setTimeout(r, MX_VARIANT_GAP_MS));
+      }
+    }
+    return false;
+  };
+
+  if (await tryVariants()) return true;
+  await new Promise((r) => setTimeout(r, WHATSAPP_RETRY_AFTER_MS));
+  return tryVariants();
 }
 
 export async function sendWhatsApp(to: string, message: string): Promise<boolean> {
