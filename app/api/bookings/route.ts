@@ -7,6 +7,16 @@ export const dynamic = "force-dynamic";
 
 type BookingRow = Record<string, unknown>;
 
+/** Paid bookings must sort by settlement time — row `created_at` is checkout start and can be much older than `paid_at`. */
+const PAID_BOOKING_LIST_LIMIT = 100;
+
+function cmpRecentBookingActivity(a: BookingRow, b: BookingRow): number {
+  const pa = a.paid_at ? new Date(String(a.paid_at)).getTime() : 0;
+  const pb = b.paid_at ? new Date(String(b.paid_at)).getTime() : 0;
+  if (pb !== pa) return pb - pa;
+  return new Date(String(b.created_at)).getTime() - new Date(String(a.created_at)).getTime();
+}
+
 /**
  * GET /api/bookings?status=paid
  * GET /api/bookings?seller=1&status=paid — authenticated seller's paid bookings (mark complete UI).
@@ -37,13 +47,16 @@ export async function GET(req: NextRequest) {
       .maybeSingle();
     sellerStrikeCount = strikeRow?.provider_strike_count ?? 0;
 
-    let qBySeller = supabase
-      .from("service_bookings")
-      .select(SERVICE_BOOKING_LIST_COLUMNS)
-      .in("seller_id", pool)
-      .order("created_at", { ascending: false })
-      .limit(50);
-    if (statusFilter === "paid") qBySeller = qBySeller.eq("payment_status", "paid");
+    let qBySeller = supabase.from("service_bookings").select(SERVICE_BOOKING_LIST_COLUMNS).in("seller_id", pool);
+    if (statusFilter === "paid") {
+      qBySeller = qBySeller
+        .eq("payment_status", "paid")
+        .order("paid_at", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false });
+    } else {
+      qBySeller = qBySeller.order("created_at", { ascending: false });
+    }
+    qBySeller = qBySeller.limit(PAID_BOOKING_LIST_LIMIT);
     const { data: bySellerId, error: err1 } = await qBySeller;
     if (err1) return NextResponse.json({ error: err1.message }, { status: 500 });
 
@@ -52,13 +65,16 @@ export async function GET(req: NextRequest) {
 
     let byListing: NonNullable<typeof bySellerId> = [];
     if (listingIds.length > 0) {
-      let qByList = supabase
-        .from("service_bookings")
-        .select(SERVICE_BOOKING_LIST_COLUMNS)
-        .in("listing_id", listingIds)
-        .order("created_at", { ascending: false })
-        .limit(50);
-      if (statusFilter === "paid") qByList = qByList.eq("payment_status", "paid");
+      let qByList = supabase.from("service_bookings").select(SERVICE_BOOKING_LIST_COLUMNS).in("listing_id", listingIds);
+      if (statusFilter === "paid") {
+        qByList = qByList
+          .eq("payment_status", "paid")
+          .order("paid_at", { ascending: false, nullsFirst: false })
+          .order("created_at", { ascending: false });
+      } else {
+        qByList = qByList.order("created_at", { ascending: false });
+      }
+      qByList = qByList.limit(PAID_BOOKING_LIST_LIMIT);
       const { data: bl, error: err2 } = await qByList;
       if (err2) return NextResponse.json({ error: err2.message }, { status: 500 });
       byListing = bl ?? [];
@@ -68,21 +84,25 @@ export async function GET(req: NextRequest) {
     for (const row of [...(bySellerId ?? []), ...byListing]) {
       merged.set(String(row.id), row as BookingRow);
     }
-    bookingRows = [...merged.values()].sort(
-      (a, b) => new Date(String(b.created_at)).getTime() - new Date(String(a.created_at)).getTime(),
+    bookingRows = [...merged.values()].sort((a, b) =>
+      statusFilter === "paid" ? cmpRecentBookingActivity(a, b) : new Date(String(b.created_at)).getTime() - new Date(String(a.created_at)).getTime(),
     );
-    if (bookingRows.length > 50) bookingRows = bookingRows.slice(0, 50);
+    if (bookingRows.length > PAID_BOOKING_LIST_LIMIT) {
+      bookingRows = bookingRows.slice(0, PAID_BOOKING_LIST_LIMIT);
+    }
   } else {
-    let query = supabase
-      .from("service_bookings")
-      .select(SERVICE_BOOKING_LIST_COLUMNS)
-      .order("created_at", { ascending: false })
-      .limit(50);
+    let query = supabase.from("service_bookings").select(SERVICE_BOOKING_LIST_COLUMNS);
     const buyerPool = await expandUserAccountIdPool(supabase, userId);
     query = query.in("buyer_id", buyerPool);
     if (statusFilter === "paid") {
-      query = query.eq("payment_status", "paid");
+      query = query
+        .eq("payment_status", "paid")
+        .order("paid_at", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false });
+    } else {
+      query = query.order("created_at", { ascending: false });
     }
+    query = query.limit(PAID_BOOKING_LIST_LIMIT);
     const { data: bookings, error } = await query;
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     bookingRows = (bookings ?? []) as BookingRow[];
