@@ -59,21 +59,37 @@ function MessagesInboxInner() {
   const [unauth, setUnauth] = useState(false);
 
   useEffect(() => {
-    void (async () => {
+    let cancelled = false;
+    const load = async () => {
       const res = await fetch("/api/conversations/inbox", { credentials: "same-origin" });
       if (res.status === 401) {
-        setUnauth(true);
-        setLoading(false);
+        if (!cancelled) {
+          setUnauth(true);
+          setLoading(false);
+        }
         return;
       }
       if (!res.ok) {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
         return;
       }
       const data = await res.json();
-      setThreads(data.threads ?? []);
-      setLoading(false);
-    })();
+      if (!cancelled) {
+        setThreads(data.threads ?? []);
+        setLoading(false);
+      }
+    };
+    void load();
+    const t = window.setInterval(() => void load(), 25_000);
+    const onVis = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      cancelled = true;
+      window.clearInterval(t);
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, []);
 
   if (loading) {

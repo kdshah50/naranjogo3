@@ -45,11 +45,11 @@ export async function GET(req: NextRequest) {
     console.log("[conversations] GET userId:", userId, "sellerId:", sellerId, "listingId:", listingId, "isListingSeller:", isListingSeller);
 
     if (isListingSeller) {
+      const listingRowIdVariants = idMatchVariantsForIn(listing.id);
       const { data: convsRaw, error: convErr } = await supabase
         .from("listing_conversations")
-        .select("id,buyer_id,updated_at,created_at")
-        .eq("listing_id", listing.id)
-        .in("seller_id", listingSellerPool)
+        .select("id,buyer_id,seller_id,updated_at,created_at")
+        .in("listing_id", listingRowIdVariants)
         .order("updated_at", { ascending: false });
 
       if (convErr) {
@@ -58,13 +58,20 @@ export async function GET(req: NextRequest) {
       }
 
       const buyerPoolCache = new Map<string, string[]>();
+      const sellerPoolCache = new Map<string, string[]>();
       const buyerPoolFor = async (bid: string) => {
         if (!buyerPoolCache.has(bid)) buyerPoolCache.set(bid, await expandUserAccountIdPool(supabase, bid));
         return buyerPoolCache.get(bid)!;
       };
+      const convSellerPoolFor = async (sid: string) => {
+        if (!sellerPoolCache.has(sid)) sellerPoolCache.set(sid, await expandUserAccountIdPool(supabase, sid));
+        return sellerPoolCache.get(sid)!;
+      };
 
       const convs: NonNullable<typeof convsRaw> = [];
       for (const c of convsRaw ?? []) {
+        const convSellerPool = await convSellerPoolFor(c.seller_id);
+        if (!poolsOverlap(convSellerPool, listingSellerPool)) continue;
         if (poolsOverlap(await buyerPoolFor(c.buyer_id), listingSellerPool)) continue;
         convs.push(c);
       }
@@ -108,10 +115,11 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    const listingRowIdVariants = idMatchVariantsForIn(listing.id);
     const { data: conv, error: convErr } = await supabase
       .from("listing_conversations")
       .select("id")
-      .eq("listing_id", listing.id)
+      .in("listing_id", listingRowIdVariants)
       .in("buyer_id", myPool)
       .maybeSingle();
 
@@ -188,10 +196,11 @@ export async function POST(req: NextRequest) {
 
     const myPool = await expandUserAccountIdPool(supabase, userId);
 
+    const listingRowIdVariantsPost = idMatchVariantsForIn(listing.id);
     const { data: existing } = await supabase
       .from("listing_conversations")
       .select("id")
-      .eq("listing_id", listing.id)
+      .in("listing_id", listingRowIdVariantsPost)
       .in("buyer_id", myPool)
       .maybeSingle();
 
@@ -214,7 +223,7 @@ export async function POST(req: NextRequest) {
         const { data: row } = await supabase
           .from("listing_conversations")
           .select("id")
-          .eq("listing_id", listing.id)
+          .in("listing_id", listingRowIdVariantsPost)
           .in("buyer_id", myPool)
           .maybeSingle();
         if (row) return NextResponse.json({ conversationId: row.id });

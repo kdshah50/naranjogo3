@@ -156,7 +156,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
           ``,
           `"${preview}"`,
           ``,
-          `→ ${appUrl}/listing/${conv.listing_id}?chat=${conversationId}`,
+          `→ ${appUrl}/listing/${conv.listing_id}?chat=${convRowId}`,
         ].join("\n");
 
         console.log("[notify] sending WhatsApp to:", recipient.phone);
