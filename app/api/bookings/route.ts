@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminSupabase, getUserIdFromRequest, idMatchVariantsForIn } from "@/lib/auth-server";
+import { mergeBookingListRowsPreferTruth } from "@/lib/booking-list-merge";
 import { SERVICE_BOOKING_LIST_COLUMNS } from "@/lib/booking-list-select";
 import { expandUserAccountIdPool, poolsOverlap } from "@/lib/user-account-pool";
 
@@ -89,7 +90,10 @@ export async function GET(req: NextRequest) {
 
     const merged = new Map<string, BookingRow>();
     for (const row of [...(bySellerId ?? []), ...byListing]) {
-      merged.set(String(row.id), row as BookingRow);
+      const key = String(row.id);
+      const prev = merged.get(key);
+      if (!prev) merged.set(key, row as BookingRow);
+      else merged.set(key, mergeBookingListRowsPreferTruth(prev, row as BookingRow) as BookingRow);
     }
     bookingRows = [...merged.values()].sort((a, b) =>
       statusFilter === "paid" ? cmpRecentBookingActivity(a, b) : new Date(String(b.created_at)).getTime() - new Date(String(a.created_at)).getTime(),
@@ -151,9 +155,12 @@ export async function GET(req: NextRequest) {
       };
 
       for (const row of byListingRows ?? []) {
-        if (mergedBuy.has(String(row.id))) continue;
+        const key = String(row.id);
         const rowBuyerPool = await poolForBookingBuyer(String(row.buyer_id));
-        if (poolsOverlap(rowBuyerPool, buyerPool)) mergedBuy.set(String(row.id), row as BookingRow);
+        if (!poolsOverlap(rowBuyerPool, buyerPool)) continue;
+        const prev = mergedBuy.get(key);
+        if (!prev) mergedBuy.set(key, row as BookingRow);
+        else mergedBuy.set(key, mergeBookingListRowsPreferTruth(prev, row as BookingRow) as BookingRow);
       }
     }
 

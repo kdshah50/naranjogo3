@@ -305,6 +305,7 @@ function SellerBookingsInner() {
           new CustomEvent("tianguis:booking-lifecycle", { detail: { listingId: listingIdForEvent } })
         );
       }
+      void load();
     } catch (e) {
       setMsg((m) => ({
         ...m,
