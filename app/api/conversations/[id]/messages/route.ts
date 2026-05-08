@@ -5,19 +5,12 @@ import {
   poolsOverlap,
   userParticipatesInConversation,
 } from "@/lib/user-account-pool";
-import { canonicalizeAuthPhone, normalizeAuthPhone } from "@/lib/phone";
+import { e164DigitsForWhatsAppRecipient } from "@/lib/phone";
 import { sendWhatsAppToE164Digits } from "@/lib/twilio";
 import { getPublicAppUrl } from "@/lib/app-url";
 import { buyerPaidContactFeeForListing } from "@/lib/contact-gate";
 
 export const dynamic = "force-dynamic";
-
-function digitsForWhatsApp(raw: string | null | undefined): string {
-  const s = (raw ?? "").trim();
-  if (!s) return "";
-  const d = canonicalizeAuthPhone(normalizeAuthPhone(s));
-  return d || "";
-}
 
 /** Pasted wa.me links, WhatsApp URL handlers, tel:, or Google-style share text — blocked for sellers until buyer pays. */
 function bodyLeaksExternalWhatsAppInvite(raw: string): boolean {
@@ -136,8 +129,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
       let recipientDigits = "";
       for (const row of recipientRows ?? []) {
-        const d = digitsForWhatsApp(row?.phone);
-        if (d.length >= 11) {
+        const d = e164DigitsForWhatsAppRecipient(row?.phone);
+        if (d) {
           recipientDigits = d;
           break;
         }

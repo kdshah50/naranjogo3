@@ -8,6 +8,20 @@ export function isValidAuthPhone(phone: string): boolean {
   return /^52\d{10}$/.test(phone) || /^521\d{10}$/.test(phone) || /^1\d{10}$/.test(phone);
 }
 
+/**
+ * Normalize `users.phone` for Twilio WhatsApp: E.164 digits without `+`.
+ * If exactly 10 digits remain after strip/canonicalize, prepends Mexico `52` (primary market).
+ * US/Canada must already be stored as `1` + 10 digits per app contract.
+ */
+export function e164DigitsForWhatsAppRecipient(raw: string | null | undefined): string {
+  const s = (raw ?? "").trim();
+  if (!s) return "";
+  let d = canonicalizeAuthPhone(normalizeAuthPhone(s));
+  if (/^\d{10}$/.test(d)) d = `52${d}`;
+  d = canonicalizeAuthPhone(d);
+  return isValidAuthPhone(d) ? d : "";
+}
+
 /** Normalize phone to digits-only E.164 without plus sign. */
 export function normalizeAuthPhone(input: string): string {
   return input.replace(/[^0-9]/g, "").replace(/^00/, "");

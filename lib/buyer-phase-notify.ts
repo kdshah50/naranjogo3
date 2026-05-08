@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { idMatchVariantsForIn } from "@/lib/user-id-variants";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
-import { canonicalizeAuthPhone, normalizeAuthPhone } from "@/lib/phone";
+import { e164DigitsForWhatsAppRecipient } from "@/lib/phone";
 import { sendWhatsAppToE164Digits, isTwilioWhatsAppConfigured } from "@/lib/twilio";
 import { getPublicAppUrl } from "@/lib/app-url";
 import { hasBuyerPhaseNotify, recordBuyerPhaseNotify } from "@/lib/booking-lifecycle";
@@ -12,13 +12,6 @@ import { hasBuyerPhaseNotify, recordBuyerPhaseNotify } from "@/lib/booking-lifec
 export type BuyerPhaseWhatsAppResult =
   | { delivered: true }
   | { delivered: false; reason: "deduped" | "not_paid" | "no_booking" | "no_buyer_phone" | "twilio_unconfigured" | "send_failed" };
-
-function digitsForWhatsApp(raw: string | null | undefined): string {
-  const s = (raw ?? "").trim();
-  if (!s) return "";
-  const d = canonicalizeAuthPhone(normalizeAuthPhone(s));
-  return d || "";
-}
 
 export async function notifyBuyerLifecyclePhase(
   supabase: SupabaseClient,
@@ -51,8 +44,8 @@ export async function notifyBuyerLifecyclePhase(
 
   let buyerDigits = "";
   for (const row of buyerRows ?? []) {
-    const d = digitsForWhatsApp(row?.phone);
-    if (d.length >= 11) {
+    const d = e164DigitsForWhatsAppRecipient(row?.phone);
+    if (d) {
       buyerDigits = d;
       break;
     }

@@ -10,7 +10,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-import { canonicalizeAuthPhone, normalizeAuthPhone } from "../lib/phone";
+import { e164DigitsForWhatsAppRecipient } from "../lib/phone";
 import { expandUserAccountIdPool } from "../lib/user-account-pool";
 
 function loadDotenv() {
@@ -55,9 +55,9 @@ function resolveBuyerDigits(phones: (string | null | undefined)[]): { chosen: st
   const pool: string[] = [];
   let chosen = "";
   for (const raw of phones) {
-    const d = canonicalizeAuthPhone(normalizeAuthPhone(String(raw ?? "")));
-    if (d.length >= 11) pool.push(d);
-    if (!chosen && d.length >= 11) chosen = d;
+    const d = e164DigitsForWhatsAppRecipient(raw);
+    if (d) pool.push(d);
+    if (!chosen && d) chosen = d;
   }
   return { chosen, pool };
 }
@@ -109,9 +109,9 @@ async function main() {
   console.log("merged account pool size:", buyerPool.length);
   if ((buyerRows ?? []).length) {
     for (const r of buyerRows ?? []) {
-      const d = canonicalizeAuthPhone(normalizeAuthPhone(String(r.phone ?? "")));
+      const d = e164DigitsForWhatsAppRecipient(r.phone);
       console.log(
-        `  user ${r.id.slice(0, 8)}… display="${(r.display_name ?? "").slice(0, 40)}" phone→digits=${d || "(empty/short)"}`
+        `  user ${r.id.slice(0, 8)}… display="${(r.display_name ?? "").slice(0, 40)}" phone→digits=${d || "(empty / not E.164)"}`
       );
     }
   }

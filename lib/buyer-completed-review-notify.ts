@@ -2,18 +2,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { idMatchVariantsForIn } from "@/lib/user-id-variants";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 import type { BuyerPhaseWhatsAppResult } from "@/lib/buyer-phase-notify";
-import { canonicalizeAuthPhone, normalizeAuthPhone } from "@/lib/phone";
+import { e164DigitsForWhatsAppRecipient } from "@/lib/phone";
 import { sendWhatsAppToE164Digits, isTwilioWhatsAppConfigured } from "@/lib/twilio";
 import { getPublicAppUrl } from "@/lib/app-url";
 
 const STALE_NOTIFY_CLAIM_MS = 3 * 60 * 1000;
-
-function digitsForWhatsApp(raw: string | null | undefined): string {
-  const s = (raw ?? "").trim();
-  if (!s) return "";
-  const d = canonicalizeAuthPhone(normalizeAuthPhone(s));
-  return d || "";
-}
 
 /**
  * One WhatsApp to the buyer after the seller marks the booking completed — link to leave a review.
@@ -103,8 +96,8 @@ export async function notifyBuyerCompletedReviewPrompt(
 
     let buyerDigits = "";
     for (const br of buyerRows ?? []) {
-      const d = digitsForWhatsApp(br?.phone);
-      if (d.length >= 11) {
+      const d = e164DigitsForWhatsAppRecipient(br?.phone);
+      if (d) {
         buyerDigits = d;
         break;
       }

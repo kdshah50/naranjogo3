@@ -2,7 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 import { idMatchVariantsForIn } from "@/lib/user-id-variants";
-import { sendWhatsApp } from "@/lib/twilio";
+import { sendWhatsAppToE164Digits } from "@/lib/twilio";
+import { e164DigitsForWhatsAppRecipient } from "@/lib/phone";
 import { getPublicAppUrl } from "@/lib/app-url";
 
 /**
@@ -36,19 +37,31 @@ export async function notifyBookingCancelledParty(
   const ticket = booking.ticket_code ? `Ticket: *${booking.ticket_code}*` : "";
   const listingsUrl = cancelledByRole === "seller" ? `${appUrl}/my-bookings` : `${appUrl}/seller-bookings`;
 
-  let phone: string | null = null;
+  let recipientDigits = "";
 
   if (cancelledByRole === "buyer") {
     const sellerPool = await expandUserAccountIdPool(supabase, String(booking.seller_id));
-    const { data: rows } = await supabase.from("users").select("phone").in("id", sellerPool).limit(1);
-    phone = rows?.[0]?.phone?.trim() ?? null;
+    const { data: rows } = await supabase.from("users").select("phone").in("id", sellerPool);
+    for (const r of rows ?? []) {
+      const d = e164DigitsForWhatsAppRecipient(r?.phone);
+      if (d) {
+        recipientDigits = d;
+        break;
+      }
+    }
   } else {
     const buyerPool = await expandUserAccountIdPool(supabase, String(booking.buyer_id));
-    const { data: rows } = await supabase.from("users").select("phone").in("id", buyerPool).limit(1);
-    phone = rows?.[0]?.phone?.trim() ?? null;
+    const { data: rows } = await supabase.from("users").select("phone").in("id", buyerPool);
+    for (const r of rows ?? []) {
+      const d = e164DigitsForWhatsAppRecipient(r?.phone);
+      if (d) {
+        recipientDigits = d;
+        break;
+      }
+    }
   }
 
-  if (!phone) return;
+  if (!recipientDigits) return;
 
   const who = cancelledByRole === "buyer" ? "El cliente" : "El proveedor";
   const body = [
@@ -65,5 +78,5 @@ export async function notifyBookingCancelledParty(
     .filter(Boolean)
     .join("\n");
 
-  await sendWhatsApp(phone, body);
+  await sendWhatsAppToE164Digits(recipientDigits, body);
 }
