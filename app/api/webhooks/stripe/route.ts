@@ -71,6 +71,8 @@ export async function POST(req: NextRequest) {
         ? await supabase.from("users").select("phone").in("id", sellerIdVars).maybeSingle()
         : { data: null as { phone: string | null } | null };
 
+    // Only transition unpaid rows. Stripe retries checkout.session.completed; without this,
+    // a replay would overwrite seller lifecycle (scheduled / in_progress / completed) back to confirmed.
     const { data: bookingPaySynced, error: upErr } = await supabase
       .from("service_bookings")
       .update({
@@ -83,6 +85,7 @@ export async function POST(req: NextRequest) {
         updated_at: now,
       })
       .in("id", bookingIdVars)
+      .eq("payment_status", "pending")
       .neq("status", "cancelled")
       .select("id");
 

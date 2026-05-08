@@ -73,6 +73,7 @@ export async function GET(req: NextRequest) {
           updated_at: now,
         })
         .in("id", idVars)
+        .eq("payment_status", "pending")
         .neq("status", "cancelled")
         .select("id");
 
@@ -80,33 +81,51 @@ export async function GET(req: NextRequest) {
         console.error("[verify-session] booking update", upErr);
         return NextResponse.json({ error: "No se pudo confirmar la reserva" }, { status: 500 });
       }
-      if (!updatedRows?.length) {
-        console.error("[verify-session] update matched 0 rows for booking", bookingRowId);
-        return NextResponse.json({ error: "No se pudo confirmar la reserva" }, { status: 500 });
-      }
 
-      try {
-        await ensureTicketCodeForPaidBooking(supabase, bookingRowId);
-      } catch (tcErr) {
-        console.error("[verify-session] ticket_code (non-fatal)", tcErr);
-      }
-      try {
-        await appendBookingEvent(supabase, {
-          bookingId: bookingRowId,
-          actorId: null,
-          eventType: "payment_confirmed",
-          fromStatus: "pending",
-          toStatus: "confirmed",
-          meta: { source: "verify_session" },
-        });
-      } catch (evErr) {
-        console.error("[verify-session] booking_events (non-fatal)", evErr);
-      }
+      if (updatedRows?.length) {
+        try {
+          await ensureTicketCodeForPaidBooking(supabase, bookingRowId);
+        } catch (tcErr) {
+          console.error("[verify-session] ticket_code (non-fatal)", tcErr);
+        }
+        try {
+          await appendBookingEvent(supabase, {
+            bookingId: bookingRowId,
+            actorId: null,
+            eventType: "payment_confirmed",
+            fromStatus: "pending",
+            toStatus: "confirmed",
+            meta: { source: "verify_session" },
+          });
+        } catch (evErr) {
+          console.error("[verify-session] booking_events (non-fatal)", evErr);
+        }
 
-      try {
-        await notifySellerBookingCommissionPaid(supabase, bookingRowId);
-      } catch (notifyErr) {
-        console.error("[verify-session] seller booking notify failed (non-fatal)", notifyErr);
+        try {
+          await notifySellerBookingCommissionPaid(supabase, bookingRowId);
+        } catch (notifyErr) {
+          console.error("[verify-session] seller booking notify failed (non-fatal)", notifyErr);
+        }
+      } else {
+        const { data: racedPaid } = await supabase
+          .from("service_bookings")
+          .select("payment_status")
+          .in("id", idVars)
+          .maybeSingle();
+        if (racedPaid?.payment_status !== "paid") {
+          console.error("[verify-session] update matched 0 rows for booking", bookingRowId);
+          return NextResponse.json({ error: "No se pudo confirmar la reserva" }, { status: 500 });
+        }
+        try {
+          await ensureTicketCodeForPaidBooking(supabase, bookingRowId);
+        } catch (tcErr) {
+          console.error("[verify-session] ticket_code race (non-fatal)", tcErr);
+        }
+        try {
+          await notifySellerBookingCommissionPaid(supabase, bookingRowId);
+        } catch (notifyErr) {
+          console.error("[verify-session] seller booking notify race (non-fatal)", notifyErr);
+        }
       }
     } else {
       try {
