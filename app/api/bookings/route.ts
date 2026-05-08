@@ -8,9 +8,35 @@ export const dynamic = "force-dynamic";
 
 type BookingRow = Record<string, unknown>;
 
-/** PostgREST `.in()` is literal — `service_bookings.seller_id` / `buyer_id` are TEXT; match all UUID casing variants */
+/** Seller paid list can cross many listings; 100/branch drops newer rows before merge. */
+const SELLER_PAID_FETCH_CAP = 350;
+const SELLER_PAID_RESPONSE_CAP = 220;
+
+/** PostgREST `.in()` on `listings.seller_id` can fail when column is uuid and pool is text — `or(eq…)` is reliable. */
+async function listingIdsOwnedBySellerPool(
+  supabase: ReturnType<typeof createAdminSupabase>,
+  poolVariants: string[]
+): Promise<string[]> {
+  if (poolVariants.length === 0) return [];
+  const orFilter = poolVariants.map((id) => `seller_id.eq.${id}`).join(",");
+  const { data: lr, error } = await supabase.from("listings").select("id").or(orFilter);
+  if (error) {
+    const { data: lr2 } = await supabase.from("listings").select("id").in("seller_id", poolVariants);
+    return [...new Set((lr2 ?? []).map((r) => String(r.id)))];
+  }
+  return [...new Set((lr ?? []).map((r) => String(r.id)))];
+}
 function uuidPoolForIn(ids: string[]): string[] {
   return [...new Set(ids.flatMap((id) => idMatchVariantsForIn(id)))];
+}
+
+/** Accept `NG-4019DC39` or `4019dc39` from WhatsApp / URL bar. */
+function normalizeTicketQueryParam(raw: string | null | undefined): string | null {
+  const t = raw?.trim();
+  if (!t) return null;
+  if (/^NG-[\da-f]{8}$/i.test(t)) return t.replace(/^ng-/i, "NG-").toUpperCase();
+  if (/^[\da-f]{8}$/i.test(t)) return `NG-${t.toUpperCase()}`;
+  return null;
 }
 
 async function sellerCanSeePaidBookingRow(
@@ -24,8 +50,10 @@ async function sellerCanSeePaidBookingRow(
 
   const listVars = idMatchVariantsForIn(String(row.listing_id ?? ""));
   if (listVars.length === 0) return false;
-  const { data: own } = await supabase.from("listings").select("id").in("id", listVars).in("seller_id", sellerPoolVariants).limit(1).maybeSingle();
-  return Boolean(own);
+  const { data: listingRows } = await supabase.from("listings").select("seller_id").in("id", listVars).limit(1);
+  const ls = listingRows?.[0]?.seller_id != null ? String(listingRows[0].seller_id) : "";
+  if (!ls) return false;
+  return idMatchVariantsForIn(ls).some((v) => sellerPoolVariants.includes(v));
 }
 
 /** Paid bookings must sort by settlement time — row `created_at` is checkout start and can be much older than `paid_at`. */
@@ -81,12 +109,11 @@ export async function GET(req: NextRequest) {
     } else {
       qBySeller = qBySeller.order("created_at", { ascending: false });
     }
-    qBySeller = qBySeller.limit(PAID_BOOKING_LIST_LIMIT);
+    qBySeller = qBySeller.limit(SELLER_PAID_FETCH_CAP);
     const { data: bySellerId, error: err1 } = await qBySeller;
     if (err1) return NextResponse.json({ error: err1.message }, { status: 500 });
 
-    const { data: listingRows } = await supabase.from("listings").select("id").in("seller_id", poolVariants);
-    const listingIds = [...new Set((listingRows ?? []).map((r) => String(r.id)))];
+    const listingIds = await listingIdsOwnedBySellerPool(supabase, poolVariants);
     const listingIdVariantsForBookings = [...new Set(listingIds.flatMap((id) => idMatchVariantsForIn(id)))];
 
     let byListing: NonNullable<typeof bySellerId> = [];
@@ -103,7 +130,7 @@ export async function GET(req: NextRequest) {
       } else {
         qByList = qByList.order("created_at", { ascending: false });
       }
-      qByList = qByList.limit(PAID_BOOKING_LIST_LIMIT);
+      qByList = qByList.limit(SELLER_PAID_FETCH_CAP);
       const { data: bl, error: err2 } = await qByList;
       if (err2) return NextResponse.json({ error: err2.message }, { status: 500 });
       byListing = bl ?? [];
@@ -119,16 +146,14 @@ export async function GET(req: NextRequest) {
     bookingRows = [...merged.values()].sort((a, b) =>
       statusFilter === "paid" ? cmpRecentBookingActivity(a, b) : new Date(String(b.created_at)).getTime() - new Date(String(a.created_at)).getTime(),
     );
-    if (bookingRows.length > PAID_BOOKING_LIST_LIMIT) {
-      bookingRows = bookingRows.slice(0, PAID_BOOKING_LIST_LIMIT);
+    if (bookingRows.length > SELLER_PAID_RESPONSE_CAP) {
+      bookingRows = bookingRows.slice(0, SELLER_PAID_RESPONSE_CAP);
     }
 
     /** If seller_id drifted vs listing.owner or UUID casing mismatched joins, WhatsApp still fires — stitch row by NG-ticket lookup */
-    const ticketHint = req.nextUrl.searchParams.get("ticket")?.trim();
-    const ticketNorm =
-      ticketHint && /^NG-[\da-f]{8}$/i.test(ticketHint) ? ticketHint.replace(/^ng-/i, "NG-").toUpperCase() : null;
+    const ticketNorm = normalizeTicketQueryParam(req.nextUrl.searchParams.get("ticket"));
     if (ticketNorm) {
-      let qTk = supabase.from("service_bookings").select(SERVICE_BOOKING_LIST_COLUMNS).eq("ticket_code", ticketNorm);
+      let qTk = supabase.from("service_bookings").select(SERVICE_BOOKING_LIST_COLUMNS).ilike("ticket_code", ticketNorm);
       if (statusFilter === "paid") qTk = qTk.eq("payment_status", "paid");
       const { data: byTicketRow } = await qTk.maybeSingle();
       const tr = byTicketRow as BookingRow | null;
@@ -140,8 +165,8 @@ export async function GET(req: NextRequest) {
         bookingRows = [...merged.values()].sort((a, b) =>
           statusFilter === "paid" ? cmpRecentBookingActivity(a, b) : new Date(String(b.created_at)).getTime() - new Date(String(a.created_at)).getTime(),
         );
-        if (bookingRows.length > PAID_BOOKING_LIST_LIMIT) {
-          bookingRows = bookingRows.slice(0, PAID_BOOKING_LIST_LIMIT);
+        if (bookingRows.length > SELLER_PAID_RESPONSE_CAP) {
+          bookingRows = bookingRows.slice(0, SELLER_PAID_RESPONSE_CAP);
         }
       }
     }

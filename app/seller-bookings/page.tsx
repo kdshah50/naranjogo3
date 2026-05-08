@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, Suspense } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAppLang } from "@/hooks/use-app-lang";
 import { formatCurrencyMXN } from "@/lib/locale-format";
 import type { Lang } from "@/lib/i18n-lang";
@@ -38,6 +38,15 @@ function phaseLabel(status: string, lang: Lang): { label: string; cls: string } 
     default:
       return { label: status, cls: "bg-[#F4F0EB] text-[#6B7280]" };
   }
+}
+
+/** Must match server `normalizeTicketQueryParam` — append to `/api/bookings` so stitch finds the row. */
+function ticketParamForBookingsApi(raw: string | null): string | undefined {
+  const t = raw?.trim();
+  if (!t) return undefined;
+  if (/^NG-[\da-f]{8}$/i.test(t)) return t.replace(/^ng-/i, "NG-").toUpperCase();
+  if (/^[\da-f]{8}$/i.test(t)) return `NG-${t.toUpperCase()}`;
+  return undefined;
 }
 
 function waReasonDetail(reason: string | undefined, es: boolean): string {
@@ -141,6 +150,8 @@ function SellerBookingsInner() {
   };
 
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const ticketHint = searchParams.get("ticket");
   const [bookings, setBookings] = useState<SellerBooking[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -158,7 +169,10 @@ function SellerBookingsInner() {
   const bannerTimerRef = useRef<number | null>(null);
 
   const load = useCallback(async () => {
-    const res = await fetch("/api/bookings?seller=1&status=paid", { credentials: "same-origin", cache: "no-store" });
+    const q = new URLSearchParams({ seller: "1", status: "paid" });
+    const tk = ticketParamForBookingsApi(ticketHint);
+    if (tk) q.set("ticket", tk);
+    const res = await fetch(`/api/bookings?${q}`, { credentials: "same-origin", cache: "no-store" });
     if (res.status === 401) {
       router.push("/auth/login?returnTo=/seller-bookings");
       return;
@@ -239,7 +253,7 @@ function SellerBookingsInner() {
     );
 
     setLoading(false);
-  }, [router, es]);
+  }, [router, es, ticketHint]);
 
   useEffect(() => {
     void load();
