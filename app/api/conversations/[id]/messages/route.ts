@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminSupabase, getUserIdFromRequest, idMatchVariantsForIn } from "@/lib/auth-server";
+import { sortRowsWithPreferredUserId } from "@/lib/user-id-variants";
 import {
   expandUserAccountIdPool,
   poolsOverlap,
@@ -122,13 +123,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     }
 
     try {
-      const { data: recipientRows } = await supabase
+      const { data: recipientRowsRaw } = await supabase
         .from("users")
-        .select("phone,display_name")
+        .select("id,phone,display_name")
         .in("id", recipientPool);
+      const recipientRows = sortRowsWithPreferredUserId(recipientRowsRaw ?? [], String(recipientRootId));
 
       let recipientDigits = "";
-      for (const row of recipientRows ?? []) {
+      for (const row of recipientRows) {
         const d = e164DigitsForWhatsAppRecipient(row?.phone);
         if (d) {
           recipientDigits = d;

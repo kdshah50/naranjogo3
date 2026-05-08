@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { idMatchVariantsForIn } from "@/lib/user-id-variants";
+import { idMatchVariantsForIn, sortRowsWithPreferredUserId } from "@/lib/user-id-variants";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 import type { BuyerPhaseWhatsAppResult } from "@/lib/buyer-phase-notify";
 import { e164DigitsForWhatsAppRecipient } from "@/lib/phone";
@@ -92,7 +92,8 @@ export async function notifyBuyerCompletedReviewPrompt(
     const providerName = sellerRows?.[0]?.display_name?.trim() || "Tu proveedor";
 
     const buyerPool = await expandUserAccountIdPool(supabase, String(row.buyer_id));
-    const { data: buyerRows } = await supabase.from("users").select("id,phone").in("id", buyerPool);
+    const { data: buyerRowsRaw } = await supabase.from("users").select("id,phone").in("id", buyerPool);
+    const buyerRows = sortRowsWithPreferredUserId(buyerRowsRaw ?? [], String(row.buyer_id));
 
     let buyerDigits = "";
     for (const br of buyerRows ?? []) {

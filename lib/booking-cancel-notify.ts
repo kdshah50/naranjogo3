@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
-import { idMatchVariantsForIn } from "@/lib/user-id-variants";
+import { idMatchVariantsForIn, sortRowsWithPreferredUserId } from "@/lib/user-id-variants";
 import { sendWhatsAppToE164Digits } from "@/lib/twilio";
 import { e164DigitsForWhatsAppRecipient } from "@/lib/phone";
 import { getPublicAppUrl } from "@/lib/app-url";
@@ -41,8 +41,9 @@ export async function notifyBookingCancelledParty(
 
   if (cancelledByRole === "buyer") {
     const sellerPool = await expandUserAccountIdPool(supabase, String(booking.seller_id));
-    const { data: rows } = await supabase.from("users").select("phone").in("id", sellerPool);
-    for (const r of rows ?? []) {
+    const { data: rowsRaw } = await supabase.from("users").select("id,phone").in("id", sellerPool);
+    const rows = sortRowsWithPreferredUserId(rowsRaw ?? [], String(booking.seller_id));
+    for (const r of rows) {
       const d = e164DigitsForWhatsAppRecipient(r?.phone);
       if (d) {
         recipientDigits = d;
@@ -51,8 +52,9 @@ export async function notifyBookingCancelledParty(
     }
   } else {
     const buyerPool = await expandUserAccountIdPool(supabase, String(booking.buyer_id));
-    const { data: rows } = await supabase.from("users").select("phone").in("id", buyerPool);
-    for (const r of rows ?? []) {
+    const { data: rowsRaw } = await supabase.from("users").select("id,phone").in("id", buyerPool);
+    const rows = sortRowsWithPreferredUserId(rowsRaw ?? [], String(booking.buyer_id));
+    for (const r of rows) {
       const d = e164DigitsForWhatsAppRecipient(r?.phone);
       if (d) {
         recipientDigits = d;

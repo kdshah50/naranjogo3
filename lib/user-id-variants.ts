@@ -8,6 +8,16 @@ export function idMatchVariantsForIn(id: string): string[] {
   return Array.from(new Set([t, t.toLowerCase(), t.toUpperCase()]));
 }
 
+/** When `.in("id", pool)` returns merged accounts, prefer the row matching the booking’s canonical user id. */
+export function sortRowsWithPreferredUserId<T extends { id: string }>(rows: T[], preferredUserId: string): T[] {
+  const pref = new Set(idMatchVariantsForIn(String(preferredUserId)));
+  return [...rows].sort((a, b) => {
+    const ap = pref.has(String(a.id)) ? 0 : 1;
+    const bp = pref.has(String(b.id)) ? 0 : 1;
+    return ap - bp;
+  });
+}
+
 /** PostgREST filter: col=in.(a,b,c) */
 export function postgrestInFilter(values: string[]): string {
   const v = [...new Set(values.filter(Boolean))];

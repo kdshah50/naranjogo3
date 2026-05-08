@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { idMatchVariantsForIn } from "@/lib/user-id-variants";
+import { idMatchVariantsForIn, sortRowsWithPreferredUserId } from "@/lib/user-id-variants";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 import { e164DigitsForWhatsAppRecipient } from "@/lib/phone";
 import { sendWhatsAppToE164Digits, isTwilioWhatsAppConfigured } from "@/lib/twilio";
@@ -40,7 +40,8 @@ export async function notifyBuyerLifecyclePhase(
     return { delivered: false, reason: "no_buyer_phone" };
   }
 
-  const { data: buyerRows } = await supabase.from("users").select("id,phone").in("id", buyerPool);
+  const { data: buyerRowsRaw } = await supabase.from("users").select("id,phone").in("id", buyerPool);
+  const buyerRows = sortRowsWithPreferredUserId(buyerRowsRaw ?? [], String(booking.buyer_id));
 
   let buyerDigits = "";
   for (const row of buyerRows ?? []) {
