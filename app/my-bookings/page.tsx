@@ -13,6 +13,7 @@ type Booking = {
   listing_id: string;
   seller_id: string;
   commission_amount_cents: number;
+  commission_pct?: number | null;
   payment_status: string;
   paid_at: string | null;
   status: string;
@@ -186,6 +187,9 @@ function MyBookingsPageInner() {
   const [buyerCancelCode, setBuyerCancelCode] = useState<Record<string, string>>({});
   const [cancelMsg, setCancelMsg] = useState<Record<string, string>>({});
   const [bookingsLoadError, setBookingsLoadError] = useState<string | null>(null);
+  const [buyerRfc, setBuyerRfc] = useState<string | null>(null);
+  const [stripeReceiptBusyId, setStripeReceiptBusyId] = useState<string | null>(null);
+  const [stripeReceiptErr, setStripeReceiptErr] = useState<Record<string, string>>({});
 
   const loadData = useCallback(() => {
     Promise.all([
@@ -248,6 +252,16 @@ function MyBookingsPageInner() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    fetch("/api/auth/me", { credentials: "same-origin" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        const rfc = d?.user?.rfc;
+        setBuyerRfc(typeof rfc === "string" && rfc.trim() ? rfc.trim() : null);
+      })
+      .catch(() => setBuyerRfc(null));
+  }, []);
 
   useEffect(() => {
     const onLifecycle = () => void loadData();
@@ -339,6 +353,19 @@ function MyBookingsPageInner() {
           cancelReasonOther: "Otro",
           cancelledBlurb:
             "Reserva cancelada. Si hubo incumplimiento del proveedor, abre un reclamo en garantía (conserva tus mensajes como evidencia).",
+          paymentRecordSummary: "Comprobante de pago (tu registro)",
+          paymentConcept: "Concepto",
+          paymentPlatformFee: "Tarifa de plataforma (servicio pagado vía Stripe)",
+          paymentPaidOn: "Fecha de pago",
+          paymentRFC: "Tu RFC (si está en tu perfil)",
+          paymentRFCMissing:
+            "Si necesitas constancia con RFC para contabilidad, guarda tu RFC en Mi perfil cuando el formulario lo permita o pide factura formal a soporte.",
+          paymentStripeReceipt: "Abrir comprobante oficial Stripe (PDF/enlace)",
+          paymentStripeReceiptBusy: "Obteniendo enlace…",
+          paymentStripeNone:
+            "No hay enlace de recibo disponible (pago antiguo o sesión no encontrada). Conserva el ticket y el correo de Stripe si lo recibiste.",
+          paymentTaxNote:
+            "Esto es comprobante de cobro por la plataforma, no una factura fiscal mexicana (CFDI). Para deducciones específicas consulta a tu contador.",
         }
       : {
           back: "← My profile",
@@ -389,7 +416,49 @@ function MyBookingsPageInner() {
           cancelReasonOther: "Other",
           cancelledBlurb:
             "This booking was cancelled. If the provider failed to show up or broke commitments, file a guarantee claim (keep WhatsApp messages as evidence).",
+          paymentRecordSummary: "Payment receipt (your records)",
+          paymentConcept: "Description",
+          paymentPlatformFee: "Platform fee (paid via Stripe)",
+          paymentPaidOn: "Paid on",
+          paymentRFC: "Your RFC (from profile, if saved)",
+          paymentRFCMissing:
+            "If you need tax-ID on file for accounting, save your RFC on your profile when available, or contact support for formal invoicing.",
+          paymentStripeReceipt: "Open official Stripe receipt (PDF/link)",
+          paymentStripeReceiptBusy: "Fetching link…",
+          paymentStripeNone:
+            "No Stripe receipt link available (older payment or session missing). Keep your ticket code and any Stripe email you received.",
+          paymentTaxNote:
+            "This is a payment record for the platform fee, not a Mexican CFDI tax invoice. Ask your accountant for deductible documentation.",
         };
+
+  const openStripeReceipt = async (bookingId: string) => {
+    setStripeReceiptErr((prev) => {
+      const n = { ...prev };
+      delete n[bookingId];
+      return n;
+    });
+    setStripeReceiptBusyId(bookingId);
+    try {
+      const res = await fetch(`/api/bookings/${encodeURIComponent(bookingId)}/stripe-receipt`, {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      const data = (await res.json().catch(() => ({}))) as { receiptUrl?: string | null; error?: string };
+      if (!res.ok) {
+        setStripeReceiptErr((prev) => ({
+          ...prev,
+          [bookingId]: data.error ?? `Error ${res.status}`,
+        }));
+        return;
+      }
+      if (data.receiptUrl) window.open(data.receiptUrl, "_blank", "noopener,noreferrer");
+      else setStripeReceiptErr((prev) => ({ ...prev, [bookingId]: "none" }));
+    } catch {
+      setStripeReceiptErr((prev) => ({ ...prev, [bookingId]: "network" }));
+    } finally {
+      setStripeReceiptBusyId(null);
+    }
+  };
 
   const pendingFor = (bookingId: string) =>
     reminders.filter((r) => r.booking_id === bookingId && r.status === "pending");
@@ -646,6 +715,71 @@ function MyBookingsPageInner() {
                       <p className="text-[10px] text-[#9CA3AF]">{ago}</p>
                     </div>
                   </div>
+
+                  {b.payment_status === "paid" && (
+                    <details className="mt-3 rounded-xl border border-[#E5E0D8] bg-[#FAFAF9] px-3 py-2">
+                      <summary className="text-xs font-semibold text-[#1C1917] cursor-pointer list-none flex items-center gap-1">
+                        <span className="text-[#6B7280] select-none">▸</span>
+                        {t.paymentRecordSummary}
+                      </summary>
+                      <div className="mt-2 space-y-1.5 text-[11px] text-[#374151] pl-1">
+                        <p>
+                          <span className="text-[#6B7280]">{t.paymentConcept}:</span>{" "}
+                          {b.listing_title}
+                          {typeof b.commission_pct === "number" && Number.isFinite(Number(b.commission_pct)) ? (
+                            <span className="text-[#6B7280]"> ({Number(b.commission_pct)}%)</span>
+                          ) : null}
+                        </p>
+                        <p>
+                          <span className="text-[#6B7280]">{t.paymentPlatformFee}:</span>{" "}
+                          <span className="font-semibold">{formatMXN(b.commission_amount_cents, lang)}</span>
+                        </p>
+                        <p>
+                          <span className="text-[#6B7280]">{t.paymentPaidOn}:</span>{" "}
+                          {b.paid_at
+                            ? new Date(b.paid_at).toLocaleString(lang === "es" ? "es-MX" : "en-MX", {
+                                dateStyle: "medium",
+                                timeStyle: "short",
+                              })
+                            : "—"}
+                        </p>
+                        {b.ticket_code ? (
+                          <p className="font-mono text-[10px]">🎫 {b.ticket_code}</p>
+                        ) : null}
+                        <p className="text-[#6B7280]">
+                          <span className="font-medium text-[#374151]">{t.paymentRFC}:</span>{" "}
+                          {buyerRfc ? (
+                            <span className="font-mono tracking-wide text-[#1C1917]">{buyerRfc}</span>
+                          ) : (
+                            <span>{t.paymentRFCMissing}</span>
+                          )}
+                        </p>
+                        <p className="text-[10px] text-[#6B7280] leading-snug border-t border-[#E5E0D8] pt-2 mt-2">
+                          {t.paymentTaxNote}
+                        </p>
+                        <button
+                          type="button"
+                          disabled={stripeReceiptBusyId === b.id}
+                          onClick={() => void openStripeReceipt(b.id)}
+                          className="mt-1 w-full py-2 rounded-lg border border-[#1B4332] text-[#1B4332] text-[11px] font-semibold bg-white hover:bg-[#ECFDF5] disabled:opacity-50"
+                        >
+                          {stripeReceiptBusyId === b.id ? t.paymentStripeReceiptBusy : t.paymentStripeReceipt}
+                        </button>
+                        {stripeReceiptErr[b.id] === "none" ? (
+                          <p className="text-[10px] text-amber-800">{t.paymentStripeNone}</p>
+                        ) : null}
+                        {stripeReceiptErr[b.id] && stripeReceiptErr[b.id] !== "none" ? (
+                          <p className="text-[10px] text-red-600">
+                            {stripeReceiptErr[b.id] === "network"
+                              ? lang === "es"
+                                ? "Error de red. Intenta de nuevo."
+                                : "Network error. Try again."
+                              : stripeReceiptErr[b.id]}
+                          </p>
+                        ) : null}
+                      </div>
+                    </details>
+                  )}
 
                   <div className="flex flex-wrap gap-2">
                     <Link
