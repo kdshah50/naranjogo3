@@ -53,35 +53,49 @@ export async function sendWhatsApp(to: string, message: string): Promise<boolean
     return false;
   }
 
-  try {
-    const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
-      method: "POST",
-      headers: {
-        Authorization: "Basic " + Buffer.from(`${sid}:${token}`).toString("base64"),
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({
-        From: asWhatsappAddress(from),
-        To: asWhatsappAddress(to),
-        Body: message,
-      }),
-    });
-    const text = await res.text();
-    if (!res.ok) {
+  const url = `https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`;
+  const auth = "Basic " + Buffer.from(`${sid}:${token}`).toString("base64");
+  const form = new URLSearchParams({
+    From: asWhatsappAddress(from),
+    To: asWhatsappAddress(to),
+    Body: message,
+  });
+
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { Authorization: auth, "Content-Type": "application/x-www-form-urlencoded" },
+        body: form,
+      });
+      const text = await res.text();
+      if (res.ok) {
+        try {
+          const j = JSON.parse(text) as { sid?: string; status?: string };
+          if (j.sid) {
+            console.log("[twilio] whatsapp accepted", {
+              sid: j.sid,
+              status: j.status ?? "",
+              toTail: String(to).replace(/\D/g, "").slice(-4),
+            });
+          }
+        } catch {
+          /* non-json body */
+        }
+        return true;
+      }
+      if (res.status === 429 && attempt < 3) {
+        const backoff = 1200 * (attempt + 1);
+        console.warn("[twilio] 429 rate limit, retry after ms", backoff, { toTail: String(to).replace(/\D/g, "").slice(-4) });
+        await new Promise((r) => setTimeout(r, backoff));
+        continue;
+      }
       console.error("[twilio] send failed", { to, status: res.status, body: text });
       return false;
+    } catch (e) {
+      console.error("[twilio] send error", e);
+      return false;
     }
-    try {
-      const j = JSON.parse(text) as { sid?: string; status?: string };
-      if (j.sid) {
-        console.log("[twilio] whatsapp accepted", { sid: j.sid, status: j.status ?? "", toTail: String(to).replace(/\D/g, "").slice(-4) });
-      }
-    } catch {
-      /* non-json body */
-    }
-    return true;
-  } catch (e) {
-    console.error("[twilio] send error", e);
-    return false;
   }
+  return false;
 }

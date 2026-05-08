@@ -122,13 +122,20 @@ export default function ServiceBookingBlock({
   useEffect(() => {
     const onContact = () => void load();
     const onPaid = () => void load();
+    const onLifecycle = (ev: Event) => {
+      const d = (ev as CustomEvent<{ listingId?: string }>).detail;
+      if (d?.listingId && String(d.listingId) !== String(listingId)) return;
+      void load();
+    };
     window.addEventListener("tianguis:listing-contact", onContact);
     window.addEventListener("tianguis:booking-paid", onPaid);
+    window.addEventListener("tianguis:booking-lifecycle", onLifecycle);
     return () => {
       window.removeEventListener("tianguis:listing-contact", onContact);
       window.removeEventListener("tianguis:booking-paid", onPaid);
+      window.removeEventListener("tianguis:booking-lifecycle", onLifecycle);
     };
-  }, [load]);
+  }, [load, listingId]);
 
   useEffect(() => {
     const onVis = () => {

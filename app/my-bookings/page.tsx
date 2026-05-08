@@ -283,13 +283,12 @@ function MyBookingsPageInner() {
     return () => document.removeEventListener("visibilitychange", onVis);
   }, [loadData]);
 
-  /** Provider updates status server-side; buyer never receives seller-tab `tianguis:booking-lifecycle` — poll to refresh. */
+  /** Provider updates status on the server — buyer never gets seller-only `tianguis:booking-lifecycle`. Poll whenever this screen is open (including when every row is already completed) so we never stop refreshing after a stale read. */
   useEffect(() => {
-    const hasLifecycleActive = bookings.some((b) => !["completed", "cancelled"].includes(String(b.status ?? "")));
-    if (loading || !hasLifecycleActive) return;
+    if (loading) return;
     const interval = window.setInterval(() => loadData(), 8_000);
     return () => clearInterval(interval);
-  }, [loading, bookings, loadData]);
+  }, [loading, loadData]);
 
   useEffect(() => {
     if (loading || bookings.length === 0) return;
