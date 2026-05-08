@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminSupabase, getUserIdFromRequest } from "@/lib/auth-server";
+import { createAdminSupabase, getUserIdFromRequest, idMatchVariantsForIn } from "@/lib/auth-server";
 import { SERVICE_BOOKING_LIST_COLUMNS } from "@/lib/booking-list-select";
-import { expandUserAccountIdPool } from "@/lib/user-account-pool";
+import { expandUserAccountIdPool, poolsOverlap } from "@/lib/user-account-pool";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +23,9 @@ function cmpRecentBookingActivity(a: BookingRow, b: BookingRow): number {
  *
  * Seller: merge rows where `seller_id` is in the provider pool with rows for any `listing_id`
  * the provider owns. Fixes missing UI when `service_bookings.seller_id` drifted from listing owner.
+ *
+ * Buyer: merge rows where `buyer_id` is in the buyer pool with paid rows on `listing_id`s from
+ * `listing_conversations` when `expandRow(buyer_id)` overlaps the pool (stale `buyer_id` on booking).
  */
 export async function GET(req: NextRequest) {
   const userId = await getUserIdFromRequest(req);
@@ -91,9 +94,9 @@ export async function GET(req: NextRequest) {
       bookingRows = bookingRows.slice(0, PAID_BOOKING_LIST_LIMIT);
     }
   } else {
-    let query = supabase.from("service_bookings").select(SERVICE_BOOKING_LIST_COLUMNS);
     const buyerPool = await expandUserAccountIdPool(supabase, userId);
-    query = query.in("buyer_id", buyerPool);
+
+    let query = supabase.from("service_bookings").select(SERVICE_BOOKING_LIST_COLUMNS).in("buyer_id", buyerPool);
     if (statusFilter === "paid") {
       query = query
         .eq("payment_status", "paid")
@@ -103,9 +106,61 @@ export async function GET(req: NextRequest) {
       query = query.order("created_at", { ascending: false });
     }
     query = query.limit(PAID_BOOKING_LIST_LIMIT);
-    const { data: bookings, error } = await query;
+    const { data: byBuyerId, error } = await query;
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    bookingRows = (bookings ?? []) as BookingRow[];
+
+    const mergedBuy = new Map<string, BookingRow>();
+    for (const row of byBuyerId ?? []) mergedBuy.set(String(row.id), row as BookingRow);
+
+    const { data: convs } = await supabase
+      .from("listing_conversations")
+      .select("listing_id")
+      .in("buyer_id", buyerPool)
+      .limit(200);
+
+    const listingKeys = [...new Set((convs ?? []).map((c) => String(c.listing_id)))].slice(0, 120);
+    const listingIdVariants = [...new Set(listingKeys.flatMap((id) => idMatchVariantsForIn(id)))];
+
+    if (listingIdVariants.length > 0) {
+      let qByListing = supabase
+        .from("service_bookings")
+        .select(SERVICE_BOOKING_LIST_COLUMNS)
+        .in("listing_id", listingIdVariants);
+      if (statusFilter === "paid") {
+        qByListing = qByListing
+          .eq("payment_status", "paid")
+          .order("paid_at", { ascending: false, nullsFirst: false })
+          .order("created_at", { ascending: false });
+      } else {
+        qByListing = qByListing.order("created_at", { ascending: false });
+      }
+      qByListing = qByListing.limit(PAID_BOOKING_LIST_LIMIT);
+      const { data: byListingRows, error: err2 } = await qByListing;
+      if (err2) return NextResponse.json({ error: err2.message }, { status: 500 });
+
+      const bookingBuyerExpandCache = new Map<string, string[]>();
+      const poolForBookingBuyer = async (buyerId: string) => {
+        if (!bookingBuyerExpandCache.has(buyerId)) {
+          bookingBuyerExpandCache.set(buyerId, await expandUserAccountIdPool(supabase, buyerId));
+        }
+        return bookingBuyerExpandCache.get(buyerId)!;
+      };
+
+      for (const row of byListingRows ?? []) {
+        if (mergedBuy.has(String(row.id))) continue;
+        const rowBuyerPool = await poolForBookingBuyer(String(row.buyer_id));
+        if (poolsOverlap(rowBuyerPool, buyerPool)) mergedBuy.set(String(row.id), row as BookingRow);
+      }
+    }
+
+    bookingRows = [...mergedBuy.values()].sort((a, b) =>
+      statusFilter === "paid"
+        ? cmpRecentBookingActivity(a, b)
+        : new Date(String(b.created_at)).getTime() - new Date(String(a.created_at)).getTime(),
+    );
+    if (bookingRows.length > PAID_BOOKING_LIST_LIMIT) {
+      bookingRows = bookingRows.slice(0, PAID_BOOKING_LIST_LIMIT);
+    }
   }
 
   const bookingIds = bookingRows.map((b) => String(b.id));
@@ -122,10 +177,11 @@ export async function GET(req: NextRequest) {
 
   const enriched = await Promise.all(
     bookingRows.map(async (b) => {
+      const listingIdVars = idMatchVariantsForIn(String(b.listing_id));
       const { data: listing } = await supabase
         .from("listings")
         .select("title_es")
-        .eq("id", b.listing_id)
+        .in("id", listingIdVars)
         .maybeSingle();
 
       let buyer_name = "Comprador";
