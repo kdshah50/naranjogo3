@@ -150,8 +150,8 @@ function SellerBookingsInner() {
     statsCompletedLead: es ? "Completados en Naranjogo (toda tu cuenta):" : "Completed on Naranjogo (your whole account):",
     statsPaidLead: es ? "Reservas pagadas en la app (proveedor):" : "Paid platform bookings (seller):",
     statsListNote: es
-      ? "Los totales coinciden con la ficha del anuncio. Debajo aparece cada reserva pagada en esta cuenta (la lista está limitada por antigüedad del pago si hay muchas)."
-      : "These totals match the numbers on your listing’s trust strip. Below is each paid booking for this account (the list caps by payment recency if you have many).",
+      ? "Los totales usan las mismas reglas que la lista (tus anuncios o tu seller_id). Las que aún requieren acción aparecen arriba. La lista se acota por antigüedad del pago si hay muchas filas."
+      : "Totals use the same rules as the list (your listings or your seller_id). Rows that still need action sort to the top. The list caps by payment recency if you have many.",
   };
 
   const router = useRouter();

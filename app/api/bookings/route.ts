@@ -67,6 +67,39 @@ function cmpRecentBookingActivity(a: BookingRow, b: BookingRow): number {
   return new Date(String(b.created_at)).getTime() - new Date(String(a.created_at)).getTime();
 }
 
+/** Paid seller list: show in-progress / scheduled / confirmed before completed so the one still open is on top. */
+function cmpSellerPaidBookingsList(a: BookingRow, b: BookingRow): number {
+  const pri = (s: string): number => {
+    switch (s) {
+      case "in_progress":
+        return 0;
+      case "scheduled":
+        return 1;
+      case "confirmed":
+      case "pending":
+        return 2;
+      case "completed":
+        return 3;
+      case "cancelled":
+        return 4;
+      default:
+        return 2;
+    }
+  };
+  const pa = pri(String(a.status ?? ""));
+  const pb = pri(String(b.status ?? ""));
+  if (pa !== pb) return pa - pb;
+  return cmpRecentBookingActivity(a, b);
+}
+
+function sortSellerMergedRows(rows: BookingRow[], statusFilter: string | null): BookingRow[] {
+  return [...rows].sort((a, b) =>
+    statusFilter === "paid"
+      ? cmpSellerPaidBookingsList(a, b)
+      : new Date(String(b.created_at)).getTime() - new Date(String(a.created_at)).getTime(),
+  );
+}
+
 /**
  * GET /api/bookings?status=paid
  * GET /api/bookings?seller=1&status=paid — authenticated seller's paid bookings (mark complete UI).
@@ -94,8 +127,6 @@ export async function GET(req: NextRequest) {
     const pool = await expandUserAccountIdPool(supabase, userId);
     const poolVariants = uuidPoolForIn(pool);
 
-    sellerStats = await getSellerAccountBookingCounts(supabase, poolVariants);
-
     const { data: strikeRow } = await supabase
       .from("users")
       .select("provider_strike_count")
@@ -103,6 +134,10 @@ export async function GET(req: NextRequest) {
       .limit(1)
       .maybeSingle();
     sellerStrikeCount = strikeRow?.provider_strike_count ?? 0;
+
+    const listingIds = await listingIdsOwnedBySellerPool(supabase, poolVariants);
+    const listingIdVariantsForBookings = [...new Set(listingIds.flatMap((id) => idMatchVariantsForIn(id)))];
+    sellerStats = await getSellerAccountBookingCounts(supabase, poolVariants, listingIdVariantsForBookings);
 
     let qBySeller = supabase.from("service_bookings").select(SERVICE_BOOKING_LIST_COLUMNS).in("seller_id", poolVariants);
     if (statusFilter === "paid") {
@@ -116,9 +151,6 @@ export async function GET(req: NextRequest) {
     qBySeller = qBySeller.limit(SELLER_PAID_FETCH_CAP);
     const { data: bySellerId, error: err1 } = await qBySeller;
     if (err1) return NextResponse.json({ error: err1.message }, { status: 500 });
-
-    const listingIds = await listingIdsOwnedBySellerPool(supabase, poolVariants);
-    const listingIdVariantsForBookings = [...new Set(listingIds.flatMap((id) => idMatchVariantsForIn(id)))];
 
     let byListing: NonNullable<typeof bySellerId> = [];
     if (listingIdVariantsForBookings.length > 0) {
@@ -147,9 +179,7 @@ export async function GET(req: NextRequest) {
       if (!prev) merged.set(key, row as BookingRow);
       else merged.set(key, mergeBookingListRowsPreferTruth(prev, row as BookingRow) as BookingRow);
     }
-    bookingRows = [...merged.values()].sort((a, b) =>
-      statusFilter === "paid" ? cmpRecentBookingActivity(a, b) : new Date(String(b.created_at)).getTime() - new Date(String(a.created_at)).getTime(),
-    );
+    bookingRows = sortSellerMergedRows([...merged.values()], statusFilter);
     if (bookingRows.length > SELLER_PAID_RESPONSE_CAP) {
       bookingRows = bookingRows.slice(0, SELLER_PAID_RESPONSE_CAP);
     }
@@ -166,9 +196,7 @@ export async function GET(req: NextRequest) {
         const prevMap = merged.get(key);
         if (!prevMap) merged.set(key, tr);
         else merged.set(key, mergeBookingListRowsPreferTruth(prevMap as BookingRow, tr) as BookingRow);
-        bookingRows = [...merged.values()].sort((a, b) =>
-          statusFilter === "paid" ? cmpRecentBookingActivity(a, b) : new Date(String(b.created_at)).getTime() - new Date(String(a.created_at)).getTime(),
-        );
+        bookingRows = sortSellerMergedRows([...merged.values()], statusFilter);
         if (bookingRows.length > SELLER_PAID_RESPONSE_CAP) {
           bookingRows = bookingRows.slice(0, SELLER_PAID_RESPONSE_CAP);
         }
