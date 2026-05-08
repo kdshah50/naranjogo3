@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { getPublicAppUrl } from "@/lib/app-url";
 import { idMatchVariantsForIn } from "@/lib/user-id-variants";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 
@@ -49,10 +50,11 @@ export async function appendListingChatBookingLifecycleNotice(
     case "in_progress":
       line = "[Naranjogo] El proveedor marcó el servicio como en curso.";
       break;
-    case "completed":
-      line =
-        "[Naranjogo] El proveedor marcó el servicio como completado. Puedes dejar una reseña en «Mis reservas».";
+    case "completed": {
+      const reviewUrl = `${getPublicAppUrl()}/my-bookings?review=${encodeURIComponent(booking.id)}`;
+      line = `[Naranjogo] El proveedor marcó el servicio como completado. Estado: completado. Deja tu reseña: ${reviewUrl}`;
       break;
+    }
     default:
       return;
   }

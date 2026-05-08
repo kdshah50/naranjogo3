@@ -133,16 +133,21 @@ export async function notifyBuyerCompletedReviewPrompt(
     const ticketLine = row.ticket_code ? `Ticket: *${row.ticket_code}*` : "";
 
     const msg = [
-      `⭐ *Servicio marcado como completado — Naranjogo*`,
+      `⭐ *Servicio completado — Naranjogo*`,
+      ``,
+      `📌 *Estado:* Completado`,
+      `📌 *Status:* Completed`,
       ``,
       ...(ticketLine ? [ticketLine, ``] : []),
       `*${listingTitle}*`,
-      `Proveedor: *${providerName}*`,
+      `Proveedor / *Provider:* *${providerName}*`,
       ``,
-      `¿Todo bien? Ayuda a otros dejando una reseña con estrellas:`,
+      `⭐ *Tu reseña ayuda a otros* — abre el enlace y valora con estrellas:`,
+      `⭐ *Your review helps others* — open the link to rate:`,
       reviewUrl,
       ``,
-      `_Inicia sesión en Naranjogo y abre el enlace si no estás dentro de la app._`,
+      `_También en la app: Perfil → Mis reservas._`,
+      `_In the app: Profile → My bookings._`,
     ].join("\n");
 
     const ok = await sendWhatsAppToE164Digits(buyerDigits, msg);

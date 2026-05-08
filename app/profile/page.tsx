@@ -74,6 +74,7 @@ function ProfilePageInner() {
   const [favorites, setFavorites] = useState<
     { listing_id: string; title: string; price_mxn: number; location_city: string | null }[]
   >([]);
+  const [pendingReviewCount, setPendingReviewCount] = useState(0);
 
   useEffect(() => {
     if (!user) return;
@@ -83,6 +84,21 @@ function ProfilePageInner() {
         setFavorites(Array.isArray(d.favorites) ? d.favorites : []);
       })
       .catch(() => {});
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    fetch("/api/bookings?status=paid", { credentials: "same-origin", cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        const list = Array.isArray(d?.bookings) ? d.bookings : [];
+        const n = list.filter(
+          (b: { status?: string; has_review?: boolean }) =>
+            String(b.status ?? "") === "completed" && !b.has_review
+        ).length;
+        setPendingReviewCount(n);
+      })
+      .catch(() => setPendingReviewCount(0));
   }, [user]);
 
   const t = {
@@ -489,12 +505,23 @@ function ProfilePageInner() {
                     {lang === "es" ? "Mis reservas" : "My bookings"}
                   </p>
                   <p className="text-xs text-[#6B7280]">
-                    {lang === "es" ? "Historial y volver a reservar" : "History and rebook"}
+                    {lang === "es" ? "Historial, estado del servicio y reseñas" : "History, service status, and reviews"}
                   </p>
                 </div>
               </div>
               <span className="text-[#6B7280] text-sm">→</span>
             </div>
+            {pendingReviewCount > 0 ? (
+              <p className="text-xs font-semibold text-amber-900 mt-3 px-2 py-2 rounded-xl bg-amber-50 border border-amber-100">
+                {lang === "es"
+                  ? `⭐ Tienes ${pendingReviewCount} ${
+                      pendingReviewCount === 1 ? "servicio completado por valorar" : "servicios completados por valorar"
+                    }. Abre para dejar tu reseña al proveedor.`
+                  : `⭐ You have ${pendingReviewCount} completed ${
+                      pendingReviewCount === 1 ? "booking" : "bookings"
+                    } to rate. Open to review your provider.`}
+              </p>
+            ) : null}
           </div>
         </Link>
 
