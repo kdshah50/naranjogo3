@@ -185,22 +185,46 @@ function MyBookingsPageInner() {
   const [busyCancelId, setBusyCancelId] = useState<string | null>(null);
   const [buyerCancelCode, setBuyerCancelCode] = useState<Record<string, string>>({});
   const [cancelMsg, setCancelMsg] = useState<Record<string, string>>({});
+  const [bookingsLoadError, setBookingsLoadError] = useState<string | null>(null);
 
   const loadData = useCallback(() => {
     Promise.all([
-      fetch("/api/bookings?status=paid", { credentials: "same-origin" }).then((r) => {
+      fetch("/api/bookings?status=paid", {
+        credentials: "same-origin",
+        cache: "no-store",
+      }).then(async (r) => {
         if (r.status === 401) {
           router.push("/auth/login?returnTo=/my-bookings");
-          return { bookings: [] };
+          return { bookings: [], _loadError: null };
         }
-        return r.ok ? r.json() : { bookings: [] };
+        if (!r.ok) {
+          let msg = `${r.status}`;
+          try {
+            const j = (await r.json()) as { error?: string };
+            if (j?.error) msg = j.error;
+          } catch {
+            try {
+              msg = (await r.text()).slice(0, 200) || msg;
+            } catch {
+              /* ignore */
+            }
+          }
+          console.error("[my-bookings] /api/bookings failed", r.status, msg);
+          return { bookings: [], _loadError: msg };
+        }
+        const j = (await r.json()) as { bookings?: Booking[] };
+        return {
+          bookings: Array.isArray(j.bookings) ? j.bookings : [],
+          _loadError: null,
+        };
       }),
-      fetch("/api/reminders", { credentials: "same-origin" }).then((r) =>
+      fetch("/api/reminders", { credentials: "same-origin", cache: "no-store" }).then((r) =>
         r.ok ? r.json() : { reminders: [] },
       ),
     ])
       .then(([bData, rData]) => {
-        const list = Array.isArray(bData.bookings) ? bData.bookings : [];
+        setBookingsLoadError(bData._loadError ?? null);
+        const list = bData.bookings;
         setBookings(list);
         const initCancel: Record<string, string> = {};
         for (const x of list as Booking[]) {
@@ -541,6 +565,16 @@ function MyBookingsPageInner() {
 
         <h1 className="font-serif text-2xl font-bold text-[#1B4332] mt-0 mb-2">{t.title}</h1>
         <p className="text-sm text-[#6B7280] mb-4">{t.subtitle}</p>
+
+        {bookingsLoadError && (
+          <div
+            className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+            role="alert"
+          >
+            {lang === "es" ? "No se pudo cargar la lista de reservas." : "Could not load your bookings list."}{" "}
+            <span className="font-mono text-xs opacity-90">{bookingsLoadError}</span>
+          </div>
+        )}
 
         <div className="mb-6">
           <BuyerRetentionPanel variant="banner" lang={lang} />
