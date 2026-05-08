@@ -5,11 +5,19 @@ import {
   poolsOverlap,
   userParticipatesInConversation,
 } from "@/lib/user-account-pool";
-import { sendWhatsApp } from "@/lib/twilio";
+import { canonicalizeAuthPhone, normalizeAuthPhone } from "@/lib/phone";
+import { sendWhatsAppToE164Digits } from "@/lib/twilio";
 import { getPublicAppUrl } from "@/lib/app-url";
 import { buyerPaidContactFeeForListing } from "@/lib/contact-gate";
 
 export const dynamic = "force-dynamic";
+
+function digitsForWhatsApp(raw: string | null | undefined): string {
+  const s = (raw ?? "").trim();
+  if (!s) return "";
+  const d = canonicalizeAuthPhone(normalizeAuthPhone(s));
+  return d || "";
+}
 
 /** Pasted wa.me links, WhatsApp URL handlers, tel:, or Google-style share text — blocked for sellers until buyer pays. */
 function bodyLeaksExternalWhatsAppInvite(raw: string): boolean {
@@ -124,12 +132,23 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       const { data: recipientRows } = await supabase
         .from("users")
         .select("phone,display_name")
-        .in("id", recipientPool)
-        .limit(1);
-      const recipient = recipientRows?.[0];
+        .in("id", recipientPool);
 
-      if (!recipient?.phone) {
-        console.warn("[notify] no phone for recipient", recipientRootId);
+      let recipientDigits = "";
+      for (const row of recipientRows ?? []) {
+        const d = digitsForWhatsApp(row?.phone);
+        if (d.length >= 11) {
+          recipientDigits = d;
+          break;
+        }
+      }
+
+      if (!recipientDigits) {
+        console.warn("[notify] no dialable phone for recipient pool", {
+          recipientRootId,
+          poolSize: recipientPool.length,
+          rows: recipientRows?.length ?? 0,
+        });
       } else {
         const { data: sender } = await supabase
           .from("users")
@@ -159,9 +178,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
           `→ ${appUrl}/listing/${conv.listing_id}?chat=${convRowId}`,
         ].join("\n");
 
-        console.log("[notify] sending WhatsApp to:", recipient.phone);
-        const sent = await sendWhatsApp(recipient.phone, msg);
-        console.log("[notify]", sent ? "sent" : "failed", { to: recipient.phone });
+        console.log("[notify] sending WhatsApp to digits:", recipientDigits.slice(0, 5) + "…");
+        const sent = await sendWhatsAppToE164Digits(recipientDigits, msg);
+        console.log("[notify]", sent ? "sent" : "failed");
       }
     } catch (e) {
       console.error("[notify] error", e);

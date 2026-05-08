@@ -86,7 +86,12 @@ export default function ConversationThread({
         const data = await res.json();
         const fresh: typeof messages = data.messages ?? [];
         if (fresh.length === 0) return;
-        setMessages((prev) => (fresh.length > prev.length ? fresh : prev));
+        setMessages((prev) => {
+          const lastFresh = fresh[fresh.length - 1]?.id;
+          const lastPrev = prev[prev.length - 1]?.id;
+          if (lastFresh !== lastPrev || fresh.length !== prev.length) return fresh;
+          return prev;
+        });
       } catch { /* silent */ }
     }, 5000);
     return () => clearInterval(poll);

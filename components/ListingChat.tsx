@@ -105,7 +105,8 @@ export default function ListingChat({
         const data = await res.json();
         setMessages(data.messages ?? []);
         const conv = data.conversation as { listing_id?: string } | undefined;
-        if (conv?.listing_id === listingId) {
+        const apiListingId = conv?.listing_id?.trim().toLowerCase() ?? "";
+        if (apiListingId && apiListingId === listingId.trim().toLowerCase()) {
           conversationListingIdRef.current = listingId;
         } else {
           conversationListingIdRef.current = null;
@@ -179,6 +180,15 @@ export default function ListingChat({
     }, 5000);
     return () => clearInterval(poll);
   }, [selectedId]);
+
+  // Buyers: re-fetch listing-scoped thread periodically so seller replies appear even if /conversations/[id] lags.
+  useEffect(() => {
+    if (role !== "buyer" || !listingId) return;
+    const poll = setInterval(() => {
+      void loadListingScope();
+    }, 7500);
+    return () => clearInterval(poll);
+  }, [role, listingId, loadListingScope]);
 
   // Poll thread list for new buyers/messages (seller only)
   useEffect(() => {
