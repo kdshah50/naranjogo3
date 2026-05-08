@@ -115,15 +115,19 @@ function SellerBookingsInner() {
       es
         ? "✓ Estado guardado. WhatsApp para este paso ya se había enviado antes (sin duplicar)."
         : "✓ Status saved. WhatsApp for this step was already sent (not duplicated).",
-    notifyWhatsappNotSent: (detail: string) =>
+    notifyScheduledSavedWhatsAppFailed: (detail: string) =>
       es
-        ? `⚠️ Estado guardado en la app. WhatsApp al comprador: no enviado (${detail}). Puede ver el avance en «Mis reservas».`
-        : `⚠️ Saved in the app. Buyer WhatsApp: not sent (${detail}). They can still see status in My bookings.`,
+        ? `✓ Agendado en la app: el cliente ve el avance en «Mensajes» y «Mis reservas». (WhatsApp automático no enviado: ${detail} — puede escribirle por el chat del anuncio.)`
+        : `✓ Scheduled saved in the app — the buyer sees updates in Messages and My bookings. (Automatic WhatsApp not sent: ${detail} — you can message them on the listing thread.)`,
+    notifyProgressSavedWhatsAppFailed: (detail: string) =>
+      es
+        ? `✓ «En curso» guardado en la app: el cliente ve el avance en «Mensajes» y «Mis reservas». (WhatsApp automático no enviado: ${detail} — puede escribirle por el chat del anuncio.)`
+        : `✓ In progress saved in the app — the buyer sees updates in Messages and My bookings. (Automatic WhatsApp not sent: ${detail} — you can message them on the listing thread.)`,
     notifyCompleteOk:
       es
         ? "✓ Completado guardado y WhatsApp de reseña enviado al comprador."
         : "✓ Completed saved and review WhatsApp sent to the buyer.",
-    /** Same as notifyWhatsappNotSent but completion is clearly OK; only optional WhatsApp nudge failed. */
+    /** Success-first copy when complete; only the optional review WhatsApp nudge failed. */
     notifyCompleteSavedWhatsAppFailed: (detail: string) =>
       es
         ? `✓ Completado en la app: el cliente lo ve en «Mensajes» y «Mis reservas». (WhatsApp de reseña no enviado: ${detail} — puede avisarle por el chat del anuncio si hace falta.)`
@@ -181,6 +185,19 @@ function SellerBookingsInner() {
     const data = (await res.json()) as { bookings?: SellerBooking[]; sellerStrikeCount?: number };
     const list = Array.isArray(data.bookings) ? data.bookings : [];
     setBookings(list);
+    /** Drop stale ⚠️ lines from an earlier lifecycle step once the server shows `completed`. */
+    setMsg((prev) => {
+      const next = { ...prev };
+      for (const row of list as SellerBooking[]) {
+        if (String(row.status) !== "completed") continue;
+        const line = next[row.id];
+        if (!line) continue;
+        if (line.startsWith("⚠️")) delete next[row.id];
+        else if (line.includes("Saved in the app.") && !line.includes("Marked complete in the app")) delete next[row.id];
+        else if (line.includes("Estado guardado en la app.") && !line.includes("Completado en la app")) delete next[row.id];
+      }
+      return next;
+    });
     if (typeof data.sellerStrikeCount === "number") setSellerStrikeCount(data.sellerStrikeCount);
     const initCodes: Record<string, string> = {};
     for (const row of list as SellerBooking[]) {
@@ -291,7 +308,10 @@ function SellerBookingsInner() {
           if (w.reason === "deduped") {
             feedback = t.notifyDeduped;
           } else {
-            feedback = t.notifyWhatsappNotSent(waReasonDetail(w.reason, es));
+            feedback =
+              status === "scheduled"
+                ? t.notifyScheduledSavedWhatsAppFailed(waReasonDetail(w.reason, es))
+                : t.notifyProgressSavedWhatsAppFailed(waReasonDetail(w.reason, es));
           }
         } else {
           feedback = t.updated;
