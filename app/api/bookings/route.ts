@@ -65,10 +65,14 @@ export async function GET(req: NextRequest) {
 
     const { data: listingRows } = await supabase.from("listings").select("id").in("seller_id", pool);
     const listingIds = [...new Set((listingRows ?? []).map((r) => String(r.id)))];
+    const listingIdVariantsForBookings = [...new Set(listingIds.flatMap((id) => idMatchVariantsForIn(id)))];
 
     let byListing: NonNullable<typeof bySellerId> = [];
-    if (listingIds.length > 0) {
-      let qByList = supabase.from("service_bookings").select(SERVICE_BOOKING_LIST_COLUMNS).in("listing_id", listingIds);
+    if (listingIdVariantsForBookings.length > 0) {
+      let qByList = supabase
+        .from("service_bookings")
+        .select(SERVICE_BOOKING_LIST_COLUMNS)
+        .in("listing_id", listingIdVariantsForBookings);
       if (statusFilter === "paid") {
         qByList = qByList
           .eq("payment_status", "paid")

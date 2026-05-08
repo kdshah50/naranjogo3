@@ -142,6 +142,7 @@ function SellerBookingsInner() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastSyncLabel, setLastSyncLabel] = useState("");
   const [newPaidBanner, setNewPaidBanner] = useState<string | null>(null);
+  const [bookingsLoadError, setBookingsLoadError] = useState<string | null>(null);
 
   const syncCountRef = useRef(0);
   const prevIdsRef = useRef<Set<string>>(new Set());
@@ -153,7 +154,26 @@ function SellerBookingsInner() {
       router.push("/auth/login?returnTo=/seller-bookings");
       return;
     }
-    const data = res.ok ? await res.json() : { bookings: [] };
+    if (!res.ok) {
+      let msg = `${res.status}`;
+      try {
+        const j = (await res.json()) as { error?: string };
+        if (j?.error) msg = j.error;
+      } catch {
+        try {
+          msg = (await res.text()).slice(0, 200) || msg;
+        } catch {
+          /* ignore */
+        }
+      }
+      console.error("[seller-bookings] /api/bookings failed", res.status, msg);
+      setBookingsLoadError(msg);
+      setBookings([]);
+      setLoading(false);
+      return;
+    }
+    setBookingsLoadError(null);
+    const data = (await res.json()) as { bookings?: SellerBooking[]; sellerStrikeCount?: number };
     const list = Array.isArray(data.bookings) ? data.bookings : [];
     setBookings(list);
     if (typeof data.sellerStrikeCount === "number") setSellerStrikeCount(data.sellerStrikeCount);
@@ -347,6 +367,16 @@ function SellerBookingsInner() {
           </div>
         </div>
         <p className="text-sm text-[#6B7280] mb-6">{t.lead}</p>
+
+        {bookingsLoadError && (
+          <div
+            className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+            role="alert"
+          >
+            {es ? "No se pudo cargar la lista de reservas." : "Could not load the bookings list."}{" "}
+            <span className="font-mono text-xs opacity-90">{bookingsLoadError}</span>
+          </div>
+        )}
 
         {sellerStrikeCount !== null && sellerStrikeCount > 0 && (
           <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
