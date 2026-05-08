@@ -30,15 +30,16 @@ function lifecycleRank(status: string): number {
 }
 
 /**
- * Prefer the snapshot that matches the latest write / most advanced lifecycle so a stale row
- * cannot overwrite e.g. `completed` with `confirmed` when merging seller bookings.
+ * Prefer the **most advanced** `status` first (completed beats confirmed even if another snapshot
+ * has a newer `updated_at`), then tie-break with `updated_at`. Avoids seller/buyer merged lists
+ * showing "scheduling pending" after a completed booking when two branches return inconsistent rows.
  */
 export function mergeBookingListRowsPreferTruth(a: BookingListMergeRow, b: BookingListMergeRow): BookingListMergeRow {
-  const ta = updatedAtMs(a);
-  const tb = updatedAtMs(b);
-  if (ta !== tb) return ta >= tb ? a : b;
   const ra = lifecycleRank(String(a.status ?? ""));
   const rb = lifecycleRank(String(b.status ?? ""));
   if (ra !== rb) return ra >= rb ? a : b;
+  const ta = updatedAtMs(a);
+  const tb = updatedAtMs(b);
+  if (ta !== tb) return ta >= tb ? a : b;
   return a;
 }
