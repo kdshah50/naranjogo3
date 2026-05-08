@@ -123,6 +123,11 @@ function SellerBookingsInner() {
       es
         ? "✓ Completado guardado y WhatsApp de reseña enviado al comprador."
         : "✓ Completed saved and review WhatsApp sent to the buyer.",
+    /** Same as notifyWhatsappNotSent but completion is clearly OK; only optional WhatsApp nudge failed. */
+    notifyCompleteSavedWhatsAppFailed: (detail: string) =>
+      es
+        ? `✓ Completado en la app: el cliente lo ve en «Mensajes» y «Mis reservas». (WhatsApp de reseña no enviado: ${detail} — puede avisarle por el chat del anuncio si hace falta.)`
+        : `✓ Marked complete in the app — the buyer sees this in Messages and My bookings. (Review WhatsApp was not sent: ${detail} — you can message them on the listing thread if needed.)`,
     updated: es ? "✓ Actualizado" : "✓ Updated",
     cancelOk:
       es
@@ -273,7 +278,7 @@ function SellerBookingsInner() {
           if (w.reason === "deduped") {
             feedback = t.notifyDeduped;
           } else {
-            feedback = t.notifyWhatsappNotSent(waReasonDetail(w.reason, es));
+            feedback = t.notifyCompleteSavedWhatsAppFailed(waReasonDetail(w.reason, es));
           }
         } else {
           feedback = t.updated;
