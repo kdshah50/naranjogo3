@@ -40,13 +40,22 @@ export default function ListingChat({
   const [messages, setMessages] = useState<Msg[]>([]);
   const [myUserId, setMyUserId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
-  const bottomRef = useRef<HTMLDivElement | null>(null);
+  /** Scroll this pane — `scrollIntoView` on children scrolls the whole page in Chrome (nested overflow). */
+  const messagesScrollRef = useRef<HTMLDivElement | null>(null);
   /** Which listing `selectedId` belongs to. If it differs from `listingId`, do not use `selectedId` for sends. */
   const conversationListingIdRef = useRef<string | null>(null);
   /** Only full reset (loading + clear threads) when `listingId` actually changes, not on React remount. Stops seller flicker. */
   const lastScopeListingIdRef = useRef<string | null>(null);
 
-  const scrollToBottom = () => bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  const scrollMessagesToBottom = () => {
+    const el = messagesScrollRef.current;
+    if (!el) return;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        el.scrollTop = el.scrollHeight;
+      });
+    });
+  };
 
   const loadListingScope = useCallback(async () => {
     setError("");
@@ -157,7 +166,7 @@ export default function ListingChat({
   }, [role, threads, selectedId, initialConversationId, loadConversation]);
 
   useEffect(() => {
-    scrollToBottom();
+    scrollMessagesToBottom();
   }, [messages]);
 
   // Poll selected conversation for new messages
@@ -361,7 +370,10 @@ export default function ListingChat({
         ) : null;
       })()}
 
-      <div className="max-h-64 overflow-y-auto px-4 py-3 space-y-2">
+      <div
+        ref={messagesScrollRef}
+        className="max-h-64 overflow-y-auto overflow-x-hidden px-4 py-3 space-y-2 overscroll-y-contain"
+      >
         {messages.map((m) => {
           const mine = myUserId && m.sender_id === myUserId;
           return (
@@ -376,7 +388,6 @@ export default function ListingChat({
             </div>
           );
         })}
-        <div ref={bottomRef} />
       </div>
 
       {error && <div className="px-4 pb-2 text-xs text-red-600">{error}</div>}

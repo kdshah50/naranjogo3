@@ -48,7 +48,7 @@ export default function ConversationThread({
   const [messages, setMessages] = useState<Msg[]>([]);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
-  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const messagesScrollRef = useRef<HTMLDivElement | null>(null);
 
   const load = useCallback(async () => {
     const strings = UI[lang];
@@ -72,8 +72,18 @@ export default function ConversationThread({
     void load();
   }, [load]);
 
+  const scrollMessagesToBottom = () => {
+    const el = messagesScrollRef.current;
+    if (!el) return;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        el.scrollTop = el.scrollHeight;
+      });
+    });
+  };
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    scrollMessagesToBottom();
   }, [messages]);
 
   // Poll for new messages
@@ -140,7 +150,10 @@ export default function ConversationThread({
           </p>
         )}
       </div>
-      <div className="max-h-[50vh] overflow-y-auto px-4 py-3 space-y-2 min-h-[120px]">
+      <div
+        ref={messagesScrollRef}
+        className="max-h-[50vh] overflow-y-auto overflow-x-hidden px-4 py-3 space-y-2 min-h-[120px] overscroll-y-contain"
+      >
         {messages.map((m) => {
           const mine = myUserId && m.sender_id === myUserId;
           return (
@@ -160,7 +173,6 @@ export default function ConversationThread({
             </div>
           );
         })}
-        <div ref={bottomRef} />
       </div>
       {error && <div className="px-4 text-xs text-red-600">{error}</div>}
       <div className="p-3 border-t border-[#E5E0D8] flex gap-2">
