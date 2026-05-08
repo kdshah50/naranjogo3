@@ -147,6 +147,11 @@ function SellerBookingsInner() {
         ? "✓ Reserva cancelada; cliente notificado por WhatsApp si hay número."
         : "✓ Booking cancelled; buyer notified on WhatsApp when we have a number.",
     lastSyncPrefix: es ? "Actualizado:" : "Updated:",
+    statsCompletedLead: es ? "Completados en Naranjogo (toda tu cuenta):" : "Completed on Naranjogo (your whole account):",
+    statsPaidLead: es ? "Reservas pagadas en la app (proveedor):" : "Paid platform bookings (seller):",
+    statsListNote: es
+      ? "Los totales coinciden con la ficha del anuncio. Debajo aparece cada reserva pagada en esta cuenta (la lista está limitada por antigüedad del pago si hay muchas)."
+      : "These totals match the numbers on your listing’s trust strip. Below is each paid booking for this account (the list caps by payment recency if you have many).",
   };
 
   const router = useRouter();
@@ -163,6 +168,10 @@ function SellerBookingsInner() {
   const [lastSyncLabel, setLastSyncLabel] = useState("");
   const [newPaidBanner, setNewPaidBanner] = useState<string | null>(null);
   const [bookingsLoadError, setBookingsLoadError] = useState<string | null>(null);
+  const [sellerStats, setSellerStats] = useState<{
+    sellerCompletedPaid: number;
+    sellerPaidBookings: number;
+  } | null>(null);
 
   const syncCountRef = useRef(0);
   const prevIdsRef = useRef<Set<string>>(new Set());
@@ -192,13 +201,27 @@ function SellerBookingsInner() {
       console.error("[seller-bookings] /api/bookings failed", res.status, msg);
       setBookingsLoadError(msg);
       setBookings([]);
+      setSellerStats(null);
       setLoading(false);
       return;
     }
     setBookingsLoadError(null);
-    const data = (await res.json()) as { bookings?: SellerBooking[]; sellerStrikeCount?: number };
+    const data = (await res.json()) as {
+      bookings?: SellerBooking[];
+      sellerStrikeCount?: number;
+      sellerStats?: { sellerCompletedPaid: number; sellerPaidBookings: number };
+    };
     const list = Array.isArray(data.bookings) ? data.bookings : [];
     setBookings(list);
+    if (
+      data.sellerStats &&
+      typeof data.sellerStats.sellerCompletedPaid === "number" &&
+      typeof data.sellerStats.sellerPaidBookings === "number"
+    ) {
+      setSellerStats(data.sellerStats);
+    } else {
+      setSellerStats(null);
+    }
     /** Drop stale ⚠️ lines from an earlier lifecycle step once the server shows `completed`. */
     setMsg((prev) => {
       const next = { ...prev };
@@ -413,6 +436,22 @@ function SellerBookingsInner() {
           </div>
         </div>
         <p className="text-sm text-[#6B7280] mb-6">{t.lead}</p>
+
+        {sellerStats != null && (sellerStats.sellerPaidBookings > 0 || sellerStats.sellerCompletedPaid > 0) && (
+          <div className="mb-4 rounded-xl border border-emerald-200 bg-[#ECFDF5] px-3 py-2 text-xs text-[#374151]">
+            <ul className="space-y-1">
+              <li>
+                <span className="font-semibold text-[#1B4332]">{t.statsCompletedLead}</span>{" "}
+                <strong className="tabular-nums">{sellerStats.sellerCompletedPaid}</strong>
+              </li>
+              <li>
+                <span className="font-semibold text-[#374151]">{t.statsPaidLead}</span>{" "}
+                <strong className="tabular-nums">{sellerStats.sellerPaidBookings}</strong>
+              </li>
+            </ul>
+            <p className="mt-2 text-[10px] text-[#6B7280] leading-snug">{t.statsListNote}</p>
+          </div>
+        )}
 
         {bookingsLoadError && (
           <div

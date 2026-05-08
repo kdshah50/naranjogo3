@@ -3,6 +3,7 @@ import { createAdminSupabase, getUserIdFromRequest, idMatchVariantsForIn } from 
 import { canonicalBookingRowIdKey, mergeBookingListRowsPreferTruth } from "@/lib/booking-list-merge";
 import { SERVICE_BOOKING_LIST_COLUMNS } from "@/lib/booking-list-select";
 import { expandUserAccountIdPool, poolsOverlap } from "@/lib/user-account-pool";
+import { getSellerAccountBookingCounts } from "@/lib/seller-platform-stats";
 
 export const dynamic = "force-dynamic";
 
@@ -87,10 +88,13 @@ export async function GET(req: NextRequest) {
 
   let bookingRows: BookingRow[] = [];
   let sellerStrikeCount: number | undefined;
+  let sellerStats: { sellerCompletedPaid: number; sellerPaidBookings: number } | undefined;
 
   if (sellerMode) {
     const pool = await expandUserAccountIdPool(supabase, userId);
     const poolVariants = uuidPoolForIn(pool);
+
+    sellerStats = await getSellerAccountBookingCounts(supabase, poolVariants);
 
     const { data: strikeRow } = await supabase
       .from("users")
@@ -298,6 +302,7 @@ export async function GET(req: NextRequest) {
     {
       bookings: enriched,
       ...(sellerMode && sellerStrikeCount !== undefined ? { sellerStrikeCount } : {}),
+      ...(sellerMode && sellerStats ? { sellerStats } : {}),
     },
     { headers: { "Cache-Control": "private, no-store, max-age=0" } }
   );

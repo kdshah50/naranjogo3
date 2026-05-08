@@ -10,6 +10,33 @@ export type SellerPlatformJobStats = {
   sellerPaidBookings: number;
 };
 
+/** Seller-wide counts for `/seller-bookings` (same filters as listing trust strip, no listing scope). */
+export async function getSellerAccountBookingCounts(
+  supabase: SupabaseClient,
+  sellerIdVariants: string[],
+): Promise<{ sellerCompletedPaid: number; sellerPaidBookings: number }> {
+  if (sellerIdVariants.length === 0) {
+    return { sellerCompletedPaid: 0, sellerPaidBookings: 0 };
+  }
+  const { count: sellerCompleted } = await supabase
+    .from("service_bookings")
+    .select("id", { count: "exact", head: true })
+    .in("seller_id", sellerIdVariants)
+    .eq("payment_status", "paid")
+    .eq("status", "completed");
+
+  const { count: sellerPaid } = await supabase
+    .from("service_bookings")
+    .select("id", { count: "exact", head: true })
+    .in("seller_id", sellerIdVariants)
+    .eq("payment_status", "paid");
+
+  return {
+    sellerCompletedPaid: sellerCompleted ?? 0,
+    sellerPaidBookings: sellerPaid ?? 0,
+  };
+}
+
 /**
  * Counts from service_bookings for trust UI ("completed via platform").
  */
