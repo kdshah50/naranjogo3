@@ -8,6 +8,26 @@ export const dynamic = "force-dynamic";
 
 type BookingRow = Record<string, unknown>;
 
+/** PostgREST `.in()` is literal — `service_bookings.seller_id` / `buyer_id` are TEXT; match all UUID casing variants */
+function uuidPoolForIn(ids: string[]): string[] {
+  return [...new Set(ids.flatMap((id) => idMatchVariantsForIn(id)))];
+}
+
+async function sellerCanSeePaidBookingRow(
+  supabase: ReturnType<typeof createAdminSupabase>,
+  sellerPoolVariants: string[],
+  row: BookingRow
+): Promise<boolean> {
+  const sellerIdStr = String(row.seller_id ?? "");
+  const sidVars = idMatchVariantsForIn(sellerIdStr);
+  if (sidVars.some((v) => sellerPoolVariants.includes(v))) return true;
+
+  const listVars = idMatchVariantsForIn(String(row.listing_id ?? ""));
+  if (listVars.length === 0) return false;
+  const { data: own } = await supabase.from("listings").select("id").in("id", listVars).in("seller_id", sellerPoolVariants).limit(1).maybeSingle();
+  return Boolean(own);
+}
+
 /** Paid bookings must sort by settlement time — row `created_at` is checkout start and can be much older than `paid_at`. */
 const PAID_BOOKING_LIST_LIMIT = 100;
 
@@ -42,16 +62,17 @@ export async function GET(req: NextRequest) {
 
   if (sellerMode) {
     const pool = await expandUserAccountIdPool(supabase, userId);
+    const poolVariants = uuidPoolForIn(pool);
 
     const { data: strikeRow } = await supabase
       .from("users")
       .select("provider_strike_count")
-      .in("id", pool)
+      .in("id", poolVariants)
       .limit(1)
       .maybeSingle();
     sellerStrikeCount = strikeRow?.provider_strike_count ?? 0;
 
-    let qBySeller = supabase.from("service_bookings").select(SERVICE_BOOKING_LIST_COLUMNS).in("seller_id", pool);
+    let qBySeller = supabase.from("service_bookings").select(SERVICE_BOOKING_LIST_COLUMNS).in("seller_id", poolVariants);
     if (statusFilter === "paid") {
       qBySeller = qBySeller
         .eq("payment_status", "paid")
@@ -64,7 +85,7 @@ export async function GET(req: NextRequest) {
     const { data: bySellerId, error: err1 } = await qBySeller;
     if (err1) return NextResponse.json({ error: err1.message }, { status: 500 });
 
-    const { data: listingRows } = await supabase.from("listings").select("id").in("seller_id", pool);
+    const { data: listingRows } = await supabase.from("listings").select("id").in("seller_id", poolVariants);
     const listingIds = [...new Set((listingRows ?? []).map((r) => String(r.id)))];
     const listingIdVariantsForBookings = [...new Set(listingIds.flatMap((id) => idMatchVariantsForIn(id)))];
 
@@ -101,10 +122,34 @@ export async function GET(req: NextRequest) {
     if (bookingRows.length > PAID_BOOKING_LIST_LIMIT) {
       bookingRows = bookingRows.slice(0, PAID_BOOKING_LIST_LIMIT);
     }
+
+    /** If seller_id drifted vs listing.owner or UUID casing mismatched joins, WhatsApp still fires — stitch row by NG-ticket lookup */
+    const ticketHint = req.nextUrl.searchParams.get("ticket")?.trim();
+    const ticketNorm =
+      ticketHint && /^NG-[\da-f]{8}$/i.test(ticketHint) ? ticketHint.replace(/^ng-/i, "NG-").toUpperCase() : null;
+    if (ticketNorm) {
+      let qTk = supabase.from("service_bookings").select(SERVICE_BOOKING_LIST_COLUMNS).eq("ticket_code", ticketNorm);
+      if (statusFilter === "paid") qTk = qTk.eq("payment_status", "paid");
+      const { data: byTicketRow } = await qTk.maybeSingle();
+      const tr = byTicketRow as BookingRow | null;
+      if (tr?.id != null && (await sellerCanSeePaidBookingRow(supabase, poolVariants, tr))) {
+        const key = String(tr.id);
+        const prevMap = merged.get(key);
+        if (!prevMap) merged.set(key, tr);
+        else merged.set(key, mergeBookingListRowsPreferTruth(prevMap as BookingRow, tr) as BookingRow);
+        bookingRows = [...merged.values()].sort((a, b) =>
+          statusFilter === "paid" ? cmpRecentBookingActivity(a, b) : new Date(String(b.created_at)).getTime() - new Date(String(a.created_at)).getTime(),
+        );
+        if (bookingRows.length > PAID_BOOKING_LIST_LIMIT) {
+          bookingRows = bookingRows.slice(0, PAID_BOOKING_LIST_LIMIT);
+        }
+      }
+    }
   } else {
     const buyerPool = await expandUserAccountIdPool(supabase, userId);
+    const buyerVariants = uuidPoolForIn(buyerPool);
 
-    let query = supabase.from("service_bookings").select(SERVICE_BOOKING_LIST_COLUMNS).in("buyer_id", buyerPool);
+    let query = supabase.from("service_bookings").select(SERVICE_BOOKING_LIST_COLUMNS).in("buyer_id", buyerVariants);
     if (statusFilter === "paid") {
       query = query
         .eq("payment_status", "paid")
@@ -123,7 +168,7 @@ export async function GET(req: NextRequest) {
     const { data: convs } = await supabase
       .from("listing_conversations")
       .select("listing_id")
-      .in("buyer_id", buyerPool)
+      .in("buyer_id", buyerVariants)
       .limit(200);
 
     const listingKeys = [...new Set((convs ?? []).map((c) => String(c.listing_id)))].slice(0, 120);
@@ -157,7 +202,7 @@ export async function GET(req: NextRequest) {
       for (const row of byListingRows ?? []) {
         const key = String(row.id);
         const rowBuyerPool = await poolForBookingBuyer(String(row.buyer_id));
-        if (!poolsOverlap(rowBuyerPool, buyerPool)) continue;
+        if (!poolsOverlap(rowBuyerPool, buyerVariants)) continue;
         const prev = mergedBuy.get(key);
         if (!prev) mergedBuy.set(key, row as BookingRow);
         else mergedBuy.set(key, mergeBookingListRowsPreferTruth(prev, row as BookingRow) as BookingRow);
