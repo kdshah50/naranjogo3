@@ -11,6 +11,7 @@ import {
 import { notifyBuyerCompletedReviewPrompt } from "@/lib/buyer-completed-review-notify";
 import { notifyBuyerLifecyclePhase, type BuyerPhaseWhatsAppResult } from "@/lib/buyer-phase-notify";
 import { appendBookingEvent, BookingLifecycleStatus, canTransitionLifecycle } from "@/lib/booking-lifecycle";
+import { appendListingChatBookingLifecycleNotice, type BookingChatLifecyclePhase } from "@/lib/listing-chat-booking-notices";
 import { getPublicAppUrl } from "@/lib/app-url";
 
 export const dynamic = "force-dynamic";
@@ -263,7 +264,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     const { data: booking, error: fetchErr } = await supabase
       .from("service_bookings")
-      .select("id,buyer_id,seller_id,payment_status,status,ticket_code")
+      .select("id,buyer_id,seller_id,listing_id,payment_status,status,ticket_code")
       .eq("id", bookingId)
       .maybeSingle();
 
@@ -329,6 +330,21 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       toStatus: nextStatus,
       meta: {},
     });
+
+    try {
+      await appendListingChatBookingLifecycleNotice(
+        supabase,
+        {
+          id: String(booking.id),
+          listing_id: String(booking.listing_id),
+          buyer_id: String(booking.buyer_id),
+          ticket_code: booking.ticket_code ?? null,
+        },
+        nextStatus as BookingChatLifecyclePhase
+      );
+    } catch (chatErr) {
+      console.error("[bookings/:id] lifecycle in-app chat notice (non-fatal)", chatErr);
+    }
 
     let buyerPhaseWhatsApp: BuyerPhaseWhatsAppResult | undefined;
 

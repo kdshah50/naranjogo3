@@ -153,6 +153,21 @@ export default function ListingChat({
   }, [listingId, loadListingScope, loadConversation, selectedId]);
 
   useEffect(() => {
+    const onLifecycle = (ev: Event) => {
+      const d = (ev as CustomEvent<{ listingId?: string }>).detail;
+      if (
+        d?.listingId &&
+        d.listingId.trim().toLowerCase() === listingId.trim().toLowerCase()
+      ) {
+        void loadListingScope();
+        if (selectedId) void loadConversation(selectedId);
+      }
+    };
+    window.addEventListener("tianguis:booking-lifecycle", onLifecycle);
+    return () => window.removeEventListener("tianguis:booking-lifecycle", onLifecycle);
+  }, [listingId, loadListingScope, loadConversation, selectedId]);
+
+  useEffect(() => {
     if (!initialConversationId) return;
     void loadConversation(initialConversationId);
   }, [initialConversationId, loadConversation]);

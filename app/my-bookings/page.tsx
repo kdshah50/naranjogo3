@@ -250,6 +250,12 @@ function MyBookingsPageInner() {
   }, [loadData]);
 
   useEffect(() => {
+    const onLifecycle = () => void loadData();
+    window.addEventListener("tianguis:booking-lifecycle", onLifecycle);
+    return () => window.removeEventListener("tianguis:booking-lifecycle", onLifecycle);
+  }, [loadData]);
+
+  useEffect(() => {
     const onPaid = () => loadData();
     window.addEventListener("tianguis:booking-paid", onPaid);
     return () => window.removeEventListener("tianguis:booking-paid", onPaid);

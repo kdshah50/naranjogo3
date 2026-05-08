@@ -299,6 +299,12 @@ function SellerBookingsInner() {
       setBookings((prev) =>
         prev.map((b) => (b.id === id ? { ...b, status: status === "completed" ? "completed" : status } : b))
       );
+      const listingIdForEvent = bookings.find((b) => b.id === id)?.listing_id;
+      if (listingIdForEvent && typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("tianguis:booking-lifecycle", { detail: { listingId: listingIdForEvent } })
+        );
+      }
     } catch (e) {
       setMsg((m) => ({
         ...m,

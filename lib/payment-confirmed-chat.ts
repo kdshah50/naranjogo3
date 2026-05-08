@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { idMatchVariantsForIn } from "@/lib/user-id-variants";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 
 /**
@@ -13,10 +14,11 @@ export async function appendListingChatPaymentNotice(
   const pool = await expandUserAccountIdPool(supabase, String(booking.buyer_id));
   if (pool.length === 0) return;
 
+  const listingVars = idMatchVariantsForIn(String(booking.listing_id));
   const { data: conv } = await supabase
     .from("listing_conversations")
     .select("id,buyer_id")
-    .eq("listing_id", String(booking.listing_id))
+    .in("listing_id", listingVars)
     .in("buyer_id", pool)
     .maybeSingle();
 

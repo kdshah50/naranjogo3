@@ -70,10 +70,12 @@ export async function notifyBuyerLifecyclePhase(
     return { delivered: false, reason: "twilio_unconfigured" };
   }
 
+  const listingIdVars = idMatchVariantsForIn(String(booking.listing_id));
   const { data: listingRow } = await supabase
     .from("listings")
     .select("title_es")
-    .eq("id", booking.listing_id)
+    .in("id", listingIdVars)
+    .limit(1)
     .maybeSingle();
   const title = listingRow?.title_es?.trim() || "Tu servicio";
 
