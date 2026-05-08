@@ -5,7 +5,7 @@ import { awardPoints } from "@/lib/loyalty";
 import { maybeAwardReferralBonus } from "@/lib/referral";
 import { notifyBuyerBookingCommissionPaid } from "@/lib/buyer-booking-notify";
 import { notifySellerBookingCommissionPaid } from "@/lib/seller-booking-notify";
-import { appendBookingEvent, ensureTicketCodeForPaidBooking } from "@/lib/booking-lifecycle";
+import { appendBookingEvent, ensureTicketCodeForPaidBooking, statusAfterPaymentSucceeded } from "@/lib/booking-lifecycle";
 import { appendListingChatPaymentNotice } from "@/lib/payment-confirmed-chat";
 
 export const dynamic = "force-dynamic";
@@ -71,8 +71,24 @@ export async function POST(req: NextRequest) {
         ? await supabase.from("users").select("phone").in("id", sellerIdVars).maybeSingle()
         : { data: null as { phone: string | null } | null };
 
-    // Only transition unpaid rows. Stripe retries checkout.session.completed; without this,
-    // a replay would overwrite seller lifecycle (scheduled / in_progress / completed) back to confirmed.
+    const { data: curBook, error: curErr } = await supabase
+      .from("service_bookings")
+      .select("id,status,payment_status")
+      .in("id", bookingIdVars)
+      .maybeSingle();
+
+    if (curErr || !curBook) {
+      console.error("[stripe-webhook] booking lookup", curErr);
+      return NextResponse.json({ received: true });
+    }
+    if (curBook.payment_status === "paid") {
+      return NextResponse.json({ received: true });
+    }
+
+    const nextStatus = statusAfterPaymentSucceeded(curBook.status);
+
+    // Only transition unpaid rows. Preserve scheduled / in_progress / completed if row already advanced
+    // (delayed webhook + bad payment_status, or replays).
     const { data: bookingPaySynced, error: upErr } = await supabase
       .from("service_bookings")
       .update({
@@ -81,7 +97,7 @@ export async function POST(req: NextRequest) {
         paid_at: now,
         seller_phone_snapshot: seller?.phone ?? null,
         contact_revealed_at: now,
-        status: "confirmed",
+        status: nextStatus,
         updated_at: now,
       })
       .in("id", bookingIdVars)
@@ -109,8 +125,8 @@ export async function POST(req: NextRequest) {
         bookingId: bookingIdMeta,
         actorId: null,
         eventType: "payment_confirmed",
-        fromStatus: "pending",
-        toStatus: "confirmed",
+        fromStatus: String(curBook.status ?? "pending"),
+        toStatus: nextStatus,
         meta: { source: "stripe_webhook" },
       });
     } catch (evErr) {

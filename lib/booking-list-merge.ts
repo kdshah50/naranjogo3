@@ -9,6 +9,11 @@ function updatedAtMs(row: BookingListMergeRow): number {
   return Number.isFinite(t) ? t : 0;
 }
 
+/** Collapse UUID `id` variants so the same booking never appears twice in merged maps (stale branch + fresh branch). */
+export function canonicalBookingRowIdKey(id: unknown): string {
+  return String(id ?? "").trim().toLowerCase();
+}
+
 /** Further along typical service flow (tie-break if updated_at missing / equal). */
 function lifecycleRank(status: string): number {
   switch (status) {

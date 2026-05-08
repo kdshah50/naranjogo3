@@ -25,6 +25,19 @@ export function canTransitionLifecycle(from: string | null | undefined, to: Book
   return ALLOWED[f]?.has(to) ?? false;
 }
 
+/**
+ * When Stripe first marks a booking paid, we normally set `confirmed`. If the row already moved
+ * along the seller lifecycle (or was completed), never downgrade — fixes rare replays / delayed
+ * webhooks / bad rows that still had payment_status pending.
+ */
+export function statusAfterPaymentSucceeded(currentStatus: string | null | undefined): BookingLifecycleStatus {
+  const s = String(currentStatus ?? "pending");
+  if (s === "scheduled" || s === "in_progress" || s === "completed" || s === "cancelled") {
+    return s as BookingLifecycleStatus;
+  }
+  return "confirmed";
+}
+
 export function generateTicketCodeCandidate(): string {
   return `NG-${randomBytes(4).toString("hex").toUpperCase()}`;
 }

@@ -6,7 +6,7 @@ import { awardPoints } from "@/lib/loyalty";
 import { maybeAwardReferralBonus } from "@/lib/referral";
 import { notifyBuyerBookingCommissionPaid } from "@/lib/buyer-booking-notify";
 import { notifySellerBookingCommissionPaid } from "@/lib/seller-booking-notify";
-import { appendBookingEvent, ensureTicketCodeForPaidBooking } from "@/lib/booking-lifecycle";
+import { appendBookingEvent, ensureTicketCodeForPaidBooking, statusAfterPaymentSucceeded } from "@/lib/booking-lifecycle";
 import { appendListingChatPaymentNotice } from "@/lib/payment-confirmed-chat";
 
 export type ReconcileResult = "synced" | "skipped" | "error";
@@ -44,7 +44,7 @@ export async function reconcileOneCheckoutSession(
   const idVars = idMatchVariantsForIn(String(row.id));
   const { data: booking } = await supabase
     .from("service_bookings")
-    .select("id, payment_status, buyer_id, seller_id")
+    .select("id, payment_status, buyer_id, seller_id, status")
     .in("id", idVars)
     .maybeSingle();
 
@@ -61,6 +61,8 @@ export async function reconcileOneCheckoutSession(
 
   const intentId = stripePaymentIntentId(session.payment_intent);
 
+  const newStatus = statusAfterPaymentSucceeded(booking.status);
+
   const { data: updatedRows, error: upErr } = await supabase
     .from("service_bookings")
     .update({
@@ -69,7 +71,7 @@ export async function reconcileOneCheckoutSession(
       paid_at: now,
       seller_phone_snapshot: seller?.phone ?? null,
       contact_revealed_at: now,
-      status: "confirmed",
+      status: newStatus,
       updated_at: now,
     })
     .in("id", idVars)
@@ -95,8 +97,8 @@ export async function reconcileOneCheckoutSession(
       bookingId: String(booking.id),
       actorId: null,
       eventType: "payment_confirmed",
-      fromStatus: "pending",
-      toStatus: "confirmed",
+      fromStatus: String(booking.status ?? "pending"),
+      toStatus: newStatus,
       meta: { source: "reconcile_cron" },
     });
   } catch (e) {

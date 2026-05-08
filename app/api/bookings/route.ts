@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminSupabase, getUserIdFromRequest, idMatchVariantsForIn } from "@/lib/auth-server";
-import { mergeBookingListRowsPreferTruth } from "@/lib/booking-list-merge";
+import { canonicalBookingRowIdKey, mergeBookingListRowsPreferTruth } from "@/lib/booking-list-merge";
 import { SERVICE_BOOKING_LIST_COLUMNS } from "@/lib/booking-list-select";
 import { expandUserAccountIdPool, poolsOverlap } from "@/lib/user-account-pool";
 
@@ -138,7 +138,7 @@ export async function GET(req: NextRequest) {
 
     const merged = new Map<string, BookingRow>();
     for (const row of [...(bySellerId ?? []), ...byListing]) {
-      const key = String(row.id);
+      const key = canonicalBookingRowIdKey(row.id);
       const prev = merged.get(key);
       if (!prev) merged.set(key, row as BookingRow);
       else merged.set(key, mergeBookingListRowsPreferTruth(prev, row as BookingRow) as BookingRow);
@@ -158,7 +158,7 @@ export async function GET(req: NextRequest) {
       const { data: byTicketRow } = await qTk.maybeSingle();
       const tr = byTicketRow as BookingRow | null;
       if (tr?.id != null && (await sellerCanSeePaidBookingRow(supabase, poolVariants, tr))) {
-        const key = String(tr.id);
+        const key = canonicalBookingRowIdKey(tr.id);
         const prevMap = merged.get(key);
         if (!prevMap) merged.set(key, tr);
         else merged.set(key, mergeBookingListRowsPreferTruth(prevMap as BookingRow, tr) as BookingRow);
@@ -188,7 +188,7 @@ export async function GET(req: NextRequest) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
     const mergedBuy = new Map<string, BookingRow>();
-    for (const row of byBuyerId ?? []) mergedBuy.set(String(row.id), row as BookingRow);
+    for (const row of byBuyerId ?? []) mergedBuy.set(canonicalBookingRowIdKey(row.id), row as BookingRow);
 
     const { data: convs } = await supabase
       .from("listing_conversations")
@@ -225,7 +225,7 @@ export async function GET(req: NextRequest) {
       };
 
       for (const row of byListingRows ?? []) {
-        const key = String(row.id);
+        const key = canonicalBookingRowIdKey(row.id);
         const rowBuyerPool = await poolForBookingBuyer(String(row.buyer_id));
         if (!poolsOverlap(rowBuyerPool, buyerVariants)) continue;
         const prev = mergedBuy.get(key);
@@ -244,15 +244,15 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const bookingIds = bookingRows.map((b) => String(b.id));
+  const bookingIdVariants = [...new Set(bookingRows.flatMap((b) => idMatchVariantsForIn(String(b.id))))];
   const reviewedSet = new Set<string>();
-  if (bookingIds.length > 0) {
+  if (bookingIdVariants.length > 0) {
     const { data: revRows } = await supabase
       .from("seller_reviews")
       .select("booking_id")
-      .in("booking_id", bookingIds);
+      .in("booking_id", bookingIdVariants);
     for (const r of revRows ?? []) {
-      if (r.booking_id) reviewedSet.add(r.booking_id);
+      if (r.booking_id) reviewedSet.add(canonicalBookingRowIdKey(r.booking_id));
     }
   }
 
@@ -287,15 +287,18 @@ export async function GET(req: NextRequest) {
 
       return {
         ...b,
-        has_review: reviewedSet.has(String(b.id)),
+        has_review: reviewedSet.has(canonicalBookingRowIdKey(b.id)),
         listing_title: listing?.title_es ?? "Servicio",
         ...(sellerMode ? { buyer_name } : { seller_name }),
       };
     })
   );
 
-  return NextResponse.json({
-    bookings: enriched,
-    ...(sellerMode && sellerStrikeCount !== undefined ? { sellerStrikeCount } : {}),
-  });
+  return NextResponse.json(
+    {
+      bookings: enriched,
+      ...(sellerMode && sellerStrikeCount !== undefined ? { sellerStrikeCount } : {}),
+    },
+    { headers: { "Cache-Control": "private, no-store, max-age=0" } }
+  );
 }

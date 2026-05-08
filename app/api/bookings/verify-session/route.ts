@@ -4,7 +4,7 @@ import { getStripe, stripePaymentIntentId } from "@/lib/stripe";
 import { getPublicAppUrl } from "@/lib/app-url";
 import { notifyBuyerBookingCommissionPaid } from "@/lib/buyer-booking-notify";
 import { notifySellerBookingCommissionPaid } from "@/lib/seller-booking-notify";
-import { appendBookingEvent, ensureTicketCodeForPaidBooking } from "@/lib/booking-lifecycle";
+import { appendBookingEvent, ensureTicketCodeForPaidBooking, statusAfterPaymentSucceeded } from "@/lib/booking-lifecycle";
 import { appendListingChatPaymentNotice } from "@/lib/payment-confirmed-chat";
 
 export const dynamic = "force-dynamic";
@@ -60,6 +60,7 @@ export async function GET(req: NextRequest) {
         .maybeSingle();
 
       const intentId = stripePaymentIntentId(checkoutSession.payment_intent);
+      const nextStatus = statusAfterPaymentSucceeded(booking.status);
 
       const { data: updatedRows, error: upErr } = await supabase
         .from("service_bookings")
@@ -69,7 +70,7 @@ export async function GET(req: NextRequest) {
           paid_at: now,
           seller_phone_snapshot: seller?.phone ?? null,
           contact_revealed_at: now,
-          status: "confirmed",
+          status: nextStatus,
           updated_at: now,
         })
         .in("id", idVars)
@@ -93,8 +94,8 @@ export async function GET(req: NextRequest) {
             bookingId: bookingRowId,
             actorId: null,
             eventType: "payment_confirmed",
-            fromStatus: "pending",
-            toStatus: "confirmed",
+            fromStatus: String(booking.status ?? "pending"),
+            toStatus: nextStatus,
             meta: { source: "verify_session" },
           });
         } catch (evErr) {
