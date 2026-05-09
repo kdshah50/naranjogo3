@@ -43,18 +43,22 @@ export async function getSellerAccountBookingCounts(
     return q;
   };
 
-  const activeLifecycle = ["pending", "confirmed", "scheduled", "in_progress"] as const;
-
-  const [{ count: sellerCompleted }, { count: sellerPaid }, { count: sellerActive }] = await Promise.all([
+  const [{ count: sellerCompleted }, { count: sellerPaid }, { count: sellerCancelled }] = await Promise.all([
     scopedPaid().eq("status", "completed"),
     scopedPaid(),
-    scopedPaid().in("status", [...activeLifecycle]),
+    scopedPaid().eq("status", "cancelled"),
   ]);
 
+  const paid = sellerPaid ?? 0;
+  const completed = sellerCompleted ?? 0;
+  const cancelled = sellerCancelled ?? 0;
+  /** Derive so “paid = completed + active + cancelled” always matches the banner (avoids stray active count vs head queries). */
+  const activeDerived = Math.max(0, paid - completed - cancelled);
+
   return {
-    sellerCompletedPaid: sellerCompleted ?? 0,
-    sellerPaidBookings: sellerPaid ?? 0,
-    sellerActivePaidBookings: sellerActive ?? 0,
+    sellerCompletedPaid: completed,
+    sellerPaidBookings: paid,
+    sellerActivePaidBookings: activeDerived,
   };
 }
 
@@ -78,14 +82,12 @@ export async function getSellerPlatformJobStats(
     };
   }
 
-  const activeLifecycle = ["pending", "confirmed", "scheduled", "in_progress"] as const;
-
   const [
     { count: sellerCompleted },
     { count: listingCompleted },
     { count: sellerPaid },
     { count: listingPaid },
-    { count: listingActive },
+    { count: listingCancelled },
   ] = await Promise.all([
     supabase
       .from("service_bookings")
@@ -114,14 +116,18 @@ export async function getSellerPlatformJobStats(
       .select("id", { count: "exact", head: true })
       .in("listing_id", listingVars)
       .eq("payment_status", "paid")
-      .in("status", [...activeLifecycle]),
+      .eq("status", "cancelled"),
   ]);
+
+  const lp = listingPaid ?? 0;
+  const lc = listingCompleted ?? 0;
+  const lx = listingCancelled ?? 0;
 
   return {
     sellerCompletedPaid: sellerCompleted ?? 0,
-    listingCompletedPaid: listingCompleted ?? 0,
+    listingCompletedPaid: lc,
     sellerPaidBookings: sellerPaid ?? 0,
-    listingPaidBookings: listingPaid ?? 0,
-    listingActivePaidBookings: listingActive ?? 0,
+    listingPaidBookings: lp,
+    listingActivePaidBookings: Math.max(0, lp - lc - lx),
   };
 }
