@@ -109,7 +109,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       .limit(50);
 
     const latestPaid = paidRows?.[0] ?? null;
-    const checkoutBlocked = checkoutBlockedByExistingPaidRows(paidRows ?? [], hasPackage);
+    const checkoutBlocked = checkoutBlockedByExistingPaidRows(paidRows ?? []);
 
     let revealedPhone: string | null = null;
     let revealedWhatsappUrl: string | null = null;

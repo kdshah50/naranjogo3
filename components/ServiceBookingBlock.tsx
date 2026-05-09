@@ -145,6 +145,22 @@ export default function ServiceBookingBlock({
     return () => document.removeEventListener("visibilitychange", onVis);
   }, [load]);
 
+  /**
+   * Listing trust/stats are server-rendered; this block is client-only. Buyers do not receive
+   * `tianguis:booking-lifecycle` (seller dashboard fires it). Poll while a paid booking still
+   * blocks checkout or a Stripe session is pending so seller status updates unblock rebook / UI.
+   */
+  useEffect(() => {
+    if (!booking?.flowActive) return;
+    const shouldPoll = Boolean(booking.checkoutBlocked || booking.hasPendingBooking);
+    if (!shouldPoll) return;
+    const id = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void load();
+    }, 8_000);
+    return () => window.clearInterval(id);
+  }, [load, booking?.flowActive, booking?.checkoutBlocked, booking?.hasPendingBooking]);
+
   /** Server uses merged account (phone) to detect seller; client id match is fallback. */
   const iAmSellerOnThisListing = Boolean(booking?.isSeller) || Boolean(sellerId && meId && sameUserId(meId, sellerId));
 

@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
       .eq("payment_status", "paid")
       .limit(50);
 
-    if (checkoutBlockedByExistingPaidRows(existingPaidRows ?? [], hasPackageListing)) {
+    if (checkoutBlockedByExistingPaidRows(existingPaidRows ?? [])) {
       return NextResponse.json(
         {
           error: hasPackageListing
