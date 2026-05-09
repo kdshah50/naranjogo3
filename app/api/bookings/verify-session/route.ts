@@ -10,6 +10,84 @@ import { appendListingChatPaymentNotice } from "@/lib/payment-confirmed-chat";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+type ServiceBookingRow = Record<string, unknown> & {
+  id: string;
+  listing_id: string;
+  seller_id: string;
+  buyer_id: string;
+  ticket_code?: string | null;
+  payment_status: string;
+  status: string;
+  commission_amount_cents: number;
+  commission_pct?: number | null;
+  paid_at: string | null;
+  created_at: string;
+  seller_phone_snapshot?: string | null;
+};
+
+async function verifySessionResponseBody(supabase: ReturnType<typeof createAdminSupabase>, fresh: ServiceBookingRow) {
+  const listingIdVars = idMatchVariantsForIn(String(fresh.listing_id));
+  const { data: listing } = await supabase
+    .from("listings")
+    .select("title_es,photo_urls,price_mxn")
+    .in("id", listingIdVars)
+    .maybeSingle();
+
+  const freshSellerIdVars = idMatchVariantsForIn(String(fresh.seller_id));
+  const { data: seller } = await supabase
+    .from("users")
+    .select("display_name,avatar_url,phone,whatsapp_optin")
+    .in("id", freshSellerIdVars)
+    .maybeSingle();
+
+  const isPaid = fresh.payment_status === "paid";
+  const phone = isPaid ? (fresh.seller_phone_snapshot || seller?.phone) : null;
+  const waDigits = phone?.replace(/\D/g, "") ?? "";
+  const waUrl =
+    isPaid && waDigits
+      ? `https://wa.me/${waDigits}?text=${encodeURIComponent(
+          `Hola! Ya reservé tu servicio "${listing?.title_es ?? ""}" en Naranjogo.`,
+        )}`
+      : null;
+
+  const appUrl = getPublicAppUrl();
+
+  return {
+    id: fresh.id,
+    listingId: fresh.listing_id,
+    ticketCode: fresh.ticket_code ?? null,
+    paymentStatus: fresh.payment_status,
+    status: fresh.status,
+    commissionAmountCents: fresh.commission_amount_cents,
+    commissionPct: fresh.commission_pct,
+    paidAt: fresh.paid_at,
+    createdAt: fresh.created_at,
+    isBuyer: true,
+    tracking: {
+      buyerBookingsUrl: `${appUrl}/my-bookings`,
+      sellerBookingsUrl: `${appUrl}/seller-bookings`,
+      listingUrl: `${appUrl}/listing/${fresh.listing_id}`,
+      claimsUrl: `${appUrl}/claims?booking=${encodeURIComponent(fresh.id)}`,
+    },
+    listing: listing
+      ? {
+          title: listing.title_es,
+          photo: listing.photo_urls?.[0] ?? null,
+          priceMxn: listing.price_mxn,
+        }
+      : null,
+    seller: seller
+      ? {
+          displayName: seller.display_name,
+          avatarUrl: seller.avatar_url,
+        }
+      : null,
+    contact: isPaid ? { whatsappUrl: waUrl } : null,
+  };
+}
+
+const sessionJsonHeaders = { "Cache-Control": "no-store, max-age=0" as const };
+
 /**
  * GET ?session_id=cs_xxx
  * Loads booking after Stripe Checkout without requiring auth cookie (fixes post-payment 401
@@ -27,11 +105,7 @@ export async function GET(req: NextRequest) {
     const stripe = getStripe();
     const checkoutSession = await stripe.checkout.sessions.retrieve(sessionId);
 
-    if (checkoutSession.payment_status !== "paid") {
-      return NextResponse.json({ error: "Pago no completado" }, { status: 402 });
-    }
-
-    const bookingIdFromMeta = checkoutSession.metadata?.booking_id;
+    const bookingIdFromMeta = checkoutSession.metadata?.booking_id?.trim() ?? "";
     if (!bookingIdFromMeta) {
       return NextResponse.json({ error: "Sesión sin reserva" }, { status: 404 });
     }
@@ -46,6 +120,19 @@ export async function GET(req: NextRequest) {
 
     if (!booking) {
       return NextResponse.json({ error: "Reserva no encontrada" }, { status: 404 });
+    }
+
+    const sessionPaid = checkoutSession.payment_status === "paid";
+
+    /**
+     * Stripe’s session can briefly lag `checkout.session.completed` / bank capture while the user
+     * already landed on success_url. Returning 402 made the success page treat it as fatal and
+     * stopped polling — users saw “could not load booking” with a working payment.
+     */
+    if (!sessionPaid && booking.payment_status === "pending") {
+      return NextResponse.json(await verifySessionResponseBody(supabase, booking as ServiceBookingRow), {
+        headers: sessionJsonHeaders,
+      });
     }
 
     const bookingRowId = booking.id;
@@ -170,67 +257,9 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const listingIdVars = idMatchVariantsForIn(String(fresh.listing_id));
-    const { data: listing } = await supabase
-      .from("listings")
-      .select("title_es,photo_urls,price_mxn")
-      .in("id", listingIdVars)
-      .maybeSingle();
-
-    const freshSellerIdVars = idMatchVariantsForIn(String(fresh.seller_id));
-    const { data: seller } = await supabase
-      .from("users")
-      .select("display_name,avatar_url,phone,whatsapp_optin")
-      .in("id", freshSellerIdVars)
-      .maybeSingle();
-
-    const isPaid = fresh.payment_status === "paid";
-    const phone = isPaid ? (fresh.seller_phone_snapshot || seller?.phone) : null;
-    const waDigits = phone?.replace(/\D/g, "") ?? "";
-    const waUrl =
-      isPaid && waDigits
-        ? `https://wa.me/${waDigits}?text=${encodeURIComponent(
-            `Hola! Ya reservé tu servicio "${listing?.title_es ?? ""}" en Naranjogo.`
-          )}`
-        : null;
-
-    const appUrl = getPublicAppUrl();
-
-    return NextResponse.json(
-      {
-        id: fresh.id,
-        listingId: fresh.listing_id,
-        ticketCode: fresh.ticket_code ?? null,
-        paymentStatus: fresh.payment_status,
-        status: fresh.status,
-        commissionAmountCents: fresh.commission_amount_cents,
-        commissionPct: fresh.commission_pct,
-        paidAt: fresh.paid_at,
-        createdAt: fresh.created_at,
-        isBuyer: true,
-        tracking: {
-          buyerBookingsUrl: `${appUrl}/my-bookings`,
-          sellerBookingsUrl: `${appUrl}/seller-bookings`,
-          listingUrl: `${appUrl}/listing/${fresh.listing_id}`,
-          claimsUrl: `${appUrl}/claims?booking=${encodeURIComponent(fresh.id)}`,
-        },
-        listing: listing
-          ? {
-              title: listing.title_es,
-              photo: listing.photo_urls?.[0] ?? null,
-              priceMxn: listing.price_mxn,
-            }
-          : null,
-        seller: seller
-          ? {
-              displayName: seller.display_name,
-              avatarUrl: seller.avatar_url,
-            }
-          : null,
-        contact: isPaid ? { whatsappUrl: waUrl } : null,
-      },
-      { headers: { "Cache-Control": "no-store, max-age=0" } }
-    );
+    return NextResponse.json(await verifySessionResponseBody(supabase, fresh as ServiceBookingRow), {
+      headers: sessionJsonHeaders,
+    });
   } catch (e) {
     console.error("[verify-session] GET", e);
     return NextResponse.json({ error: "Error del servidor" }, { status: 500 });

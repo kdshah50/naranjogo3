@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminSupabase, getUserIdFromRequest } from "@/lib/auth-server";
+import { createAdminSupabase, getUserIdFromRequest, idMatchVariantsForIn } from "@/lib/auth-server";
 import { expandUserAccountIdPool, poolsOverlap } from "@/lib/user-account-pool";
 import { notifyBookingCancelledParty } from "@/lib/booking-cancel-notify";
 import {
@@ -28,10 +28,14 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     }
 
     const supabase = createAdminSupabase();
+    const idVars = idMatchVariantsForIn(String(params.id ?? ""));
+    if (idVars.length === 0) {
+      return NextResponse.json({ error: "Reserva no encontrada" }, { status: 404 });
+    }
     const { data: booking } = await supabase
       .from("service_bookings")
       .select("*")
-      .eq("id", params.id)
+      .in("id", idVars)
       .maybeSingle();
 
     if (!booking) {
