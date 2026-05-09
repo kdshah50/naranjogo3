@@ -19,11 +19,16 @@ export async function getSellerAccountBookingCounts(
   supabase: SupabaseClient,
   sellerIdVariants: string[],
   listingIdVariants: string[],
-): Promise<{ sellerCompletedPaid: number; sellerPaidBookings: number }> {
+): Promise<{
+  sellerCompletedPaid: number;
+  sellerPaidBookings: number;
+  /** Paid and not completed/cancelled — provider should advance lifecycle. */
+  sellerActivePaidBookings: number;
+}> {
   const hasSeller = sellerIdVariants.length > 0;
   const hasList = listingIdVariants.length > 0;
   if (!hasSeller && !hasList) {
-    return { sellerCompletedPaid: 0, sellerPaidBookings: 0 };
+    return { sellerCompletedPaid: 0, sellerPaidBookings: 0, sellerActivePaidBookings: 0 };
   }
 
   const scopedPaid = () => {
@@ -38,12 +43,18 @@ export async function getSellerAccountBookingCounts(
     return q;
   };
 
-  const { count: sellerCompleted } = await scopedPaid().eq("status", "completed");
-  const { count: sellerPaid } = await scopedPaid();
+  const activeLifecycle = ["pending", "confirmed", "scheduled", "in_progress"] as const;
+
+  const [{ count: sellerCompleted }, { count: sellerPaid }, { count: sellerActive }] = await Promise.all([
+    scopedPaid().eq("status", "completed"),
+    scopedPaid(),
+    scopedPaid().in("status", [...activeLifecycle]),
+  ]);
 
   return {
     sellerCompletedPaid: sellerCompleted ?? 0,
     sellerPaidBookings: sellerPaid ?? 0,
+    sellerActivePaidBookings: sellerActive ?? 0,
   };
 }
 

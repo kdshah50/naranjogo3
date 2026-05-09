@@ -131,7 +131,13 @@ export async function GET(req: NextRequest) {
 
   let bookingRows: BookingRow[] = [];
   let sellerStrikeCount: number | undefined;
-  let sellerStats: { sellerCompletedPaid: number; sellerPaidBookings: number } | undefined;
+  let sellerStats:
+    | {
+        sellerCompletedPaid: number;
+        sellerPaidBookings: number;
+        sellerActivePaidBookings: number;
+      }
+    | undefined;
 
   if (sellerMode) {
     const pool = await expandUserAccountIdPool(supabase, userId);

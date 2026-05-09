@@ -147,11 +147,12 @@ function SellerBookingsInner() {
         ? "✓ Reserva cancelada; cliente notificado por WhatsApp si hay número."
         : "✓ Booking cancelled; buyer notified on WhatsApp when we have a number.",
     lastSyncPrefix: es ? "Actualizado:" : "Updated:",
-    statsCompletedLead: es ? "Completados en Naranjogo (toda tu cuenta):" : "Completed on Naranjogo (your whole account):",
-    statsPaidLead: es ? "Reservas pagadas en la app (proveedor):" : "Paid platform bookings (seller):",
+    statsPaidLead: es ? "Pagadas por la app (todas tus cuentas y anuncios):" : "Paid via platform (your whole seller account & all ads):",
+    statsCompletedLead: es ? "Marcadas completadas:" : "Marked complete:",
+    statsActiveLead: es ? "Activas (aún no completadas — requieren tu avance):" : "Still active (not marked complete yet — need your updates):",
     statsListNote: es
-      ? "Los totales usan las mismas reglas que la lista (tus anuncios o tu seller_id). Las que aún requieren acción aparecen arriba. La lista se acota por antigüedad del pago si hay muchas filas."
-      : "Totals use the same rules as the list (your listings or your seller_id). Rows that still need action sort to the top. The list caps by payment recency if you have many.",
+      ? "Los totales siguen la misma lógica que la lista (tu seller_id o anuncios que te pertenecen). El cliente ve el estado en «Mis reservas» y en el chat. Si acabas de cobrar, el ticket puede tardar unos segundos. La lista prioriza lo pendiente y se acota si hay muchas filas."
+      : "Totals match the list rules (your seller_id or listings you own). Buyers see status in My bookings and Messages. Tickets can take a few seconds right after payment. Pending work sorts to the top; the list caps by recency if you have many rows.",
   };
 
   const router = useRouter();
@@ -171,6 +172,7 @@ function SellerBookingsInner() {
   const [sellerStats, setSellerStats] = useState<{
     sellerCompletedPaid: number;
     sellerPaidBookings: number;
+    sellerActivePaidBookings: number;
   } | null>(null);
 
   const syncCountRef = useRef(0);
@@ -209,7 +211,11 @@ function SellerBookingsInner() {
     const data = (await res.json()) as {
       bookings?: SellerBooking[];
       sellerStrikeCount?: number;
-      sellerStats?: { sellerCompletedPaid: number; sellerPaidBookings: number };
+      sellerStats?: {
+        sellerCompletedPaid: number;
+        sellerPaidBookings: number;
+        sellerActivePaidBookings: number;
+      };
     };
     const list = Array.isArray(data.bookings) ? data.bookings : [];
     setBookings(list);
@@ -218,7 +224,14 @@ function SellerBookingsInner() {
       typeof data.sellerStats.sellerCompletedPaid === "number" &&
       typeof data.sellerStats.sellerPaidBookings === "number"
     ) {
-      setSellerStats(data.sellerStats);
+      setSellerStats({
+        sellerCompletedPaid: data.sellerStats.sellerCompletedPaid,
+        sellerPaidBookings: data.sellerStats.sellerPaidBookings,
+        sellerActivePaidBookings:
+          typeof data.sellerStats.sellerActivePaidBookings === "number"
+            ? data.sellerStats.sellerActivePaidBookings
+            : 0,
+      });
     } else {
       setSellerStats(null);
     }
@@ -441,12 +454,16 @@ function SellerBookingsInner() {
           <div className="mb-4 rounded-xl border border-emerald-200 bg-[#ECFDF5] px-3 py-2 text-xs text-[#374151]">
             <ul className="space-y-1">
               <li>
+                <span className="font-semibold text-[#374151]">{t.statsPaidLead}</span>{" "}
+                <strong className="tabular-nums">{sellerStats.sellerPaidBookings}</strong>
+              </li>
+              <li>
                 <span className="font-semibold text-[#1B4332]">{t.statsCompletedLead}</span>{" "}
                 <strong className="tabular-nums">{sellerStats.sellerCompletedPaid}</strong>
               </li>
               <li>
-                <span className="font-semibold text-[#374151]">{t.statsPaidLead}</span>{" "}
-                <strong className="tabular-nums">{sellerStats.sellerPaidBookings}</strong>
+                <span className="font-semibold text-amber-900">{t.statsActiveLead}</span>{" "}
+                <strong className="tabular-nums">{sellerStats.sellerActivePaidBookings}</strong>
               </li>
             </ul>
             <p className="mt-2 text-[10px] text-[#6B7280] leading-snug">{t.statsListNote}</p>
