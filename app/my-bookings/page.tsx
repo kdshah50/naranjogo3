@@ -7,6 +7,7 @@ import GuaranteeBadge from "@/components/GuaranteeBadge";
 import RoutineHabitsCard from "@/components/RoutineHabitsCard";
 import BuyerRetentionPanel from "@/components/BuyerRetentionPanel";
 import { useAppLang, useAppLangActions } from "@/hooks/use-app-lang";
+import { normalizeNgTicketQuery } from "@/lib/ng-ticket-normalize";
 
 type Booking = {
   id: string;
@@ -37,15 +38,6 @@ type ReminderRow = {
   delivery_email?: string | null;
   listing_title?: string | null;
 };
-
-/** Must match server `normalizeTicketQueryParam` — stitch finds the row when `buyer_id` predates account merge. */
-function ticketParamForBookingsApi(raw: string | null): string | undefined {
-  const t = raw?.trim();
-  if (!t) return undefined;
-  if (/^NG-[\da-f]{8}$/i.test(t)) return t.replace(/^ng-/i, "NG-").toUpperCase();
-  if (/^[\da-f]{8}$/i.test(t)) return `NG-${t.toUpperCase()}`;
-  return undefined;
-}
 
 function formatMXN(cents: number, lang: "es" | "en") {
   return new Intl.NumberFormat(lang === "es" ? "es-MX" : "en-MX", {
@@ -204,7 +196,7 @@ function MyBookingsPageInner() {
 
   const loadData = useCallback(() => {
     const qp = new URLSearchParams({ status: "paid" });
-    const tk = ticketParamForBookingsApi(ticketHint);
+    const tk = normalizeNgTicketQuery(ticketHint) ?? undefined;
     if (tk) qp.set("ticket", tk);
     Promise.all([
       fetch(`/api/bookings?${qp}`, {

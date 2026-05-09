@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAppLang } from "@/hooks/use-app-lang";
 import { formatCurrencyMXN } from "@/lib/locale-format";
+import { normalizeNgTicketQuery } from "@/lib/ng-ticket-normalize";
 import type { Lang } from "@/lib/i18n-lang";
 
 type SellerBooking = {
@@ -38,15 +39,6 @@ function phaseLabel(status: string, lang: Lang): { label: string; cls: string } 
     default:
       return { label: status, cls: "bg-[#F4F0EB] text-[#6B7280]" };
   }
-}
-
-/** Must match server `normalizeTicketQueryParam` — append to `/api/bookings` so stitch finds the row. */
-function ticketParamForBookingsApi(raw: string | null): string | undefined {
-  const t = raw?.trim();
-  if (!t) return undefined;
-  if (/^NG-[\da-f]{8}$/i.test(t)) return t.replace(/^ng-/i, "NG-").toUpperCase();
-  if (/^[\da-f]{8}$/i.test(t)) return `NG-${t.toUpperCase()}`;
-  return undefined;
 }
 
 function waReasonDetail(reason: string | undefined, es: boolean): string {
@@ -181,7 +173,7 @@ function SellerBookingsInner() {
 
   const load = useCallback(async () => {
     const q = new URLSearchParams({ seller: "1", status: "paid" });
-    const tk = ticketParamForBookingsApi(ticketHint);
+    const tk = normalizeNgTicketQuery(ticketHint) ?? undefined;
     if (tk) q.set("ticket", tk);
     const res = await fetch(`/api/bookings?${q}`, { credentials: "same-origin", cache: "no-store" });
     if (res.status === 401) {

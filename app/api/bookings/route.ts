@@ -4,6 +4,7 @@ import { canonicalBookingRowIdKey, mergeBookingListRowsPreferTruth } from "@/lib
 import { SERVICE_BOOKING_LIST_COLUMNS } from "@/lib/booking-list-select";
 import { expandUserAccountIdPool, poolsOverlap } from "@/lib/user-account-pool";
 import { getSellerAccountBookingCounts } from "@/lib/seller-platform-stats";
+import { normalizeNgTicketQuery } from "@/lib/ng-ticket-normalize";
 
 export const dynamic = "force-dynamic";
 
@@ -29,15 +30,6 @@ async function listingIdsOwnedBySellerPool(
 }
 function uuidPoolForIn(ids: string[]): string[] {
   return [...new Set(ids.flatMap((id) => idMatchVariantsForIn(id)))];
-}
-
-/** Accept `NG-4019DC39` or `4019dc39` from WhatsApp / URL bar. */
-function normalizeTicketQueryParam(raw: string | null | undefined): string | null {
-  const t = raw?.trim();
-  if (!t) return null;
-  if (/^NG-[\da-f]{8}$/i.test(t)) return t.replace(/^ng-/i, "NG-").toUpperCase();
-  if (/^[\da-f]{8}$/i.test(t)) return `NG-${t.toUpperCase()}`;
-  return null;
 }
 
 async function sellerCanSeePaidBookingRow(
@@ -201,7 +193,7 @@ export async function GET(req: NextRequest) {
     }
 
     /** If seller_id drifted vs listing.owner or UUID casing mismatched joins, WhatsApp still fires — stitch row by NG-ticket lookup */
-    const ticketNorm = normalizeTicketQueryParam(req.nextUrl.searchParams.get("ticket"));
+    const ticketNorm = normalizeNgTicketQuery(req.nextUrl.searchParams.get("ticket"));
     if (ticketNorm) {
       let qTk = supabase.from("service_bookings").select(SERVICE_BOOKING_LIST_COLUMNS).ilike("ticket_code", ticketNorm);
       if (statusFilter === "paid") qTk = qTk.eq("payment_status", "paid");
@@ -283,7 +275,7 @@ export async function GET(req: NextRequest) {
     }
 
     /** WhatsApp / payment can succeed while `buyer_id` on the row predates account merge — stitch by NG-ticket (mirrors seller). */
-    const ticketNormBuyer = normalizeTicketQueryParam(req.nextUrl.searchParams.get("ticket"));
+    const ticketNormBuyer = normalizeNgTicketQuery(req.nextUrl.searchParams.get("ticket"));
     if (ticketNormBuyer) {
       let qTk = supabase.from("service_bookings").select(SERVICE_BOOKING_LIST_COLUMNS).ilike("ticket_code", ticketNormBuyer);
       if (statusFilter === "paid") qTk = qTk.eq("payment_status", "paid");
