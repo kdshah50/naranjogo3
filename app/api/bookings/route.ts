@@ -341,6 +341,23 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  /** One DB truth pass: multi-branch merge + caps must never show an older lifecycle than `service_bookings`. */
+  if (bookingRows.length > 0) {
+    const truthIdVars = [...new Set(bookingRows.flatMap((b) => idMatchVariantsForIn(String(b.id))))];
+    const { data: truthRows, error: truthErr } = await supabase
+      .from("service_bookings")
+      .select("id,status,updated_at")
+      .in("id", truthIdVars);
+    if (!truthErr && truthRows?.length) {
+      const truthByKey = new Map(truthRows.map((r) => [canonicalBookingRowIdKey(r.id), r]));
+      bookingRows = bookingRows.map((b) => {
+        const t = truthByKey.get(canonicalBookingRowIdKey(b.id));
+        if (!t) return b;
+        return { ...b, status: t.status, updated_at: t.updated_at } as BookingRow;
+      });
+    }
+  }
+
   const bookingIdVariants = [...new Set(bookingRows.flatMap((b) => idMatchVariantsForIn(String(b.id))))];
   const reviewedSet = new Set<string>();
   if (bookingIdVariants.length > 0) {

@@ -171,11 +171,8 @@ function SellerBookingsInner() {
   const syncCountRef = useRef(0);
   const prevIdsRef = useRef<Set<string>>(new Set());
   const bannerTimerRef = useRef<number | null>(null);
-  /** Drop stale `/api/bookings` responses when a newer load was started (poll + PATCH refresh races). */
-  const sellerFetchGenRef = useRef(0);
 
   const load = useCallback(async () => {
-    const fetchGen = ++sellerFetchGenRef.current;
     const q = new URLSearchParams({ seller: "1", status: "paid" });
     const tk = normalizeNgTicketQuery(ticketHint) ?? undefined;
     if (tk) q.set("ticket", tk);
@@ -197,7 +194,6 @@ function SellerBookingsInner() {
         }
       }
       console.error("[seller-bookings] /api/bookings failed", res.status, msg);
-      if (fetchGen !== sellerFetchGenRef.current) return;
       setBookingsLoadError(msg);
       setBookings([]);
       setSellerStats(null);
@@ -214,7 +210,6 @@ function SellerBookingsInner() {
         sellerActivePaidBookings: number;
       };
     };
-    if (fetchGen !== sellerFetchGenRef.current) return;
     const list = Array.isArray(data.bookings) ? data.bookings : [];
     setBookings((prev) => mergeBookingListAvoidStatusRegression(prev, list));
     if (
@@ -375,7 +370,9 @@ function SellerBookingsInner() {
       const listingIdForEvent = bookings.find((b) => b.id === id)?.listing_id;
       if (listingIdForEvent && typeof window !== "undefined") {
         window.dispatchEvent(
-          new CustomEvent("tianguis:booking-lifecycle", { detail: { listingId: listingIdForEvent } })
+          new CustomEvent("tianguis:booking-lifecycle", {
+            detail: { listingId: listingIdForEvent, bookingId: id },
+          })
         );
       }
       void load();

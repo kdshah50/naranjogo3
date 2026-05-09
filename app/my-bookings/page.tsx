@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, Suspense } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import GuaranteeBadge from "@/components/GuaranteeBadge";
@@ -195,10 +195,7 @@ function MyBookingsPageInner() {
   const [stripeReceiptBusyId, setStripeReceiptBusyId] = useState<string | null>(null);
   const [stripeReceiptErr, setStripeReceiptErr] = useState<Record<string, string>>({});
 
-  const buyerFetchGenRef = useRef(0);
-
   const loadData = useCallback(() => {
-    const fetchGen = ++buyerFetchGenRef.current;
     const qp = new URLSearchParams({ status: "paid" });
     const tk = normalizeNgTicketQuery(ticketHint) ?? undefined;
     if (tk) qp.set("ticket", tk);
@@ -237,7 +234,6 @@ function MyBookingsPageInner() {
       ),
     ])
       .then(([bData, rData]) => {
-        if (fetchGen !== buyerFetchGenRef.current) return;
         setBookingsLoadError(bData._loadError ?? null);
         const list = bData.bookings;
         setBookings((prev) => mergeBookingListAvoidStatusRegression(prev, list));
@@ -293,6 +289,19 @@ function MyBookingsPageInner() {
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);
   }, [loadData]);
+
+  const reviewFromWa = searchParams.get("review")?.trim() ?? "";
+  /** Buyer opens `/my-bookings?review=…` from the completed-job WhatsApp — don’t wait for the 8s poll to see “completed”. */
+  useEffect(() => {
+    if (!reviewFromWa) return;
+    void loadData();
+    const fast = window.setInterval(() => void loadData(), 2500);
+    const stop = window.setTimeout(() => window.clearInterval(fast), 90_000);
+    return () => {
+      window.clearInterval(fast);
+      window.clearTimeout(stop);
+    };
+  }, [reviewFromWa, loadData]);
 
   /** Provider updates status on the server — buyer never gets seller-only `tianguis:booking-lifecycle`. Poll whenever this screen is open (including when every row is already completed) so we never stop refreshing after a stale read. */
   useEffect(() => {

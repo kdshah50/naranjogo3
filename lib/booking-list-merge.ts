@@ -14,9 +14,14 @@ export function canonicalBookingRowIdKey(id: unknown): string {
   return String(id ?? "").trim().toLowerCase();
 }
 
+/** DB / JSON may vary in casing; unknown values must not outrank known lifecycles. */
+export function normalizeLifecycleStatus(status: unknown): string {
+  return String(status ?? "").trim().toLowerCase();
+}
+
 /** Further along typical service flow (tie-break if updated_at missing / equal). */
-function lifecycleRank(status: string): number {
-  switch (status) {
+function lifecycleRankNormalized(norm: string): number {
+  switch (norm) {
     case "cancelled":
       return 100;
     case "completed":
@@ -40,8 +45,10 @@ function lifecycleRank(status: string): number {
  * showing "scheduling pending" after a completed booking when two branches return inconsistent rows.
  */
 export function mergeBookingListRowsPreferTruth(a: BookingListMergeRow, b: BookingListMergeRow): BookingListMergeRow {
-  const ra = lifecycleRank(String(a.status ?? ""));
-  const rb = lifecycleRank(String(b.status ?? ""));
+  const na = normalizeLifecycleStatus(a.status);
+  const nb = normalizeLifecycleStatus(b.status);
+  const ra = lifecycleRankNormalized(na);
+  const rb = lifecycleRankNormalized(nb);
   if (ra !== rb) return ra >= rb ? a : b;
   const ta = updatedAtMs(a);
   const tb = updatedAtMs(b);
@@ -52,6 +59,7 @@ export function mergeBookingListRowsPreferTruth(a: BookingListMergeRow, b: Booki
 /**
  * When applying `/api/bookings` results to React state, keep the more advanced `status` already on
  * screen if the payload is stale (parallel polls or a slow fetch finishing after an optimistic PATCH).
+ * Same rank → prefer newer `updated_at` so a slower-but-fresher response beats a fast stale one.
  */
 export function mergeBookingListAvoidStatusRegression<T extends { id: string; status?: string | null }>(
   prev: T[],
@@ -61,9 +69,16 @@ export function mergeBookingListAvoidStatusRegression<T extends { id: string; st
   return server.map((s) => {
     const o = prevByKey.get(canonicalBookingRowIdKey(s.id));
     if (!o) return s;
-    const rs = lifecycleRank(String(s.status ?? ""));
-    const ro = lifecycleRank(String(o.status ?? ""));
+    const ns = normalizeLifecycleStatus(s.status);
+    const no = normalizeLifecycleStatus(o.status);
+    const rs = lifecycleRankNormalized(ns);
+    const ro = lifecycleRankNormalized(no);
     if (ro > rs) return { ...s, status: o.status };
+    if (rs > ro) return s;
+    const ts = updatedAtMs(s as BookingListMergeRow);
+    const to = updatedAtMs(o as BookingListMergeRow);
+    if (ts > to) return s;
+    if (to > ts) return { ...s, status: o.status };
     return s;
   });
 }
