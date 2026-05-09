@@ -10,9 +10,90 @@ import {
   packageVsListSavings,
 } from "@/lib/package-pricing";
 import { checkoutBlockedByExistingPaidRows } from "@/lib/booking-checkout-guard";
-import { expandUserAccountIdPool, userIsListingSellerAccount } from "@/lib/user-account-pool";
+import { canonicalBookingRowIdKey, mergeBookingListRowsPreferTruth } from "@/lib/booking-list-merge";
+import { poolsOverlap, expandUserAccountIdPool, userIsListingSellerAccount } from "@/lib/user-account-pool";
 
 export const dynamic = "force-dynamic";
+
+const PAID_LISTING_MERGE_LIMIT = 60;
+
+type PaidRow = Record<string, unknown> & {
+  id: string;
+  buyer_id: string;
+  status?: string | null;
+  seller_phone_snapshot?: string | null;
+  paid_at?: string | null;
+  created_at?: string;
+  ticket_code?: string | null;
+};
+
+function cmpPaidRecent(a: PaidRow, b: PaidRow): number {
+  const pa = a.paid_at ? new Date(String(a.paid_at)).getTime() : 0;
+  const pb = b.paid_at ? new Date(String(b.paid_at)).getTime() : 0;
+  if (pb !== pa) return pb - pa;
+  return new Date(String(b.created_at ?? 0)).getTime() - new Date(String(a.created_at ?? 0)).getTime();
+}
+
+/**
+ * Same visibility as buyer GET /api/bookings: paid rows on this listing where merged buyer pools
+ * overlap (covers stale `buyer_id` after account linking).
+ */
+async function mergePaidBookingsForListingBuyer(
+  supabase: ReturnType<typeof createAdminSupabase>,
+  listingId: string,
+  myPool: string[],
+): Promise<PaidRow[]> {
+  const listVars = idMatchVariantsForIn(listingId);
+  if (listVars.length === 0 || myPool.length === 0) return [];
+
+  const cols =
+    "id,buyer_id,payment_status,seller_phone_snapshot,paid_at,status,package_session_count,ticket_code,created_at,updated_at";
+
+  const { data: byBuyer } = await supabase
+    .from("service_bookings")
+    .select(cols)
+    .in("listing_id", listVars)
+    .in("buyer_id", myPool)
+    .eq("payment_status", "paid")
+    .order("paid_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
+    .limit(PAID_LISTING_MERGE_LIMIT);
+
+  const { data: byListing } = await supabase
+    .from("service_bookings")
+    .select(cols)
+    .in("listing_id", listVars)
+    .eq("payment_status", "paid")
+    .order("paid_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
+    .limit(PAID_LISTING_MERGE_LIMIT);
+
+  const merged = new Map<string, PaidRow>();
+  for (const row of byBuyer ?? []) {
+    merged.set(canonicalBookingRowIdKey(row.id), row as PaidRow);
+  }
+
+  const poolCache = new Map<string, string[]>();
+  const rowBuyerPool = async (buyerId: string) => {
+    if (!poolCache.has(buyerId)) {
+      poolCache.set(buyerId, await expandUserAccountIdPool(supabase, String(buyerId)));
+    }
+    return poolCache.get(buyerId)!;
+  };
+
+  for (const row of byListing ?? []) {
+    const key = canonicalBookingRowIdKey(row.id);
+    const rowPool = await rowBuyerPool(String(row.buyer_id));
+    if (!poolsOverlap(rowPool, myPool)) continue;
+    const prev = merged.get(key);
+    if (!prev) merged.set(key, row as PaidRow);
+    else merged.set(key, mergeBookingListRowsPreferTruth(prev, row as PaidRow) as PaidRow);
+  }
+
+  return [...merged.values()].sort(cmpPaidRecent);
+}
+
+const jsonNoStore = { "Cache-Control": "private, no-store, max-age=0" as const };
 
 async function loadListing(supabase: ReturnType<typeof createAdminSupabase>, listingId: string) {
   const { data, error } = await supabase
@@ -99,22 +180,17 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       package_total_price_mxn: listingPricing?.package_total_price_mxn,
     });
 
-    const { data: paidRows } = await supabase
-      .from("service_bookings")
-      .select("id,payment_status,seller_phone_snapshot,paid_at,status,package_session_count")
-      .eq("listing_id", listingId)
-      .in("buyer_id", myPool)
-      .eq("payment_status", "paid")
-      .order("paid_at", { ascending: false })
-      .limit(50);
-
-    const latestPaid = paidRows?.[0] ?? null;
-    const checkoutBlocked = checkoutBlockedByExistingPaidRows(paidRows ?? []);
+    const paidRows = await mergePaidBookingsForListingBuyer(supabase, listingId, myPool);
+    const latestPaid = paidRows[0] ?? null;
+    const checkoutBlocked = checkoutBlockedByExistingPaidRows(
+      paidRows.map((r) => ({ status: r.status ?? null })),
+    );
 
     let revealedPhone: string | null = null;
     let revealedWhatsappUrl: string | null = null;
     if (latestPaid) {
-      revealedPhone = latestPaid.seller_phone_snapshot;
+      const snap = latestPaid.seller_phone_snapshot;
+      revealedPhone = typeof snap === "string" ? snap : null;
       if (!revealedPhone && listing.seller_id) {
         const sellerIdVars = idMatchVariantsForIn(String(listing.seller_id));
         const { data: sellerUser } = await supabase
@@ -180,27 +256,32 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
           })
         : null;
 
-    return NextResponse.json({
-      isService: isServicesCategory,
-      flowActive: true,
-      canBook: hasContacted,
-      contactedInApp,
-      checkoutBlocked,
-      paidBookingId: latestPaid?.id ?? null,
-      revealedWhatsappUrl,
-      hasPendingBooking: !!pendingBooking,
-      pendingBookingId: pendingBooking?.id ?? null,
-      commissionAmountCents: commCents,
-      commissionBeforeLoyaltyCents,
-      loyaltyDiscountPctApplied,
-      loyaltyDiscountCents,
-      commissionPct: commPct,
-      hasPackage,
-      packageSessionCount: hasPackage ? listingPricing?.package_session_count : null,
-      packageTotalMxnCents: hasPackage ? listingPricing?.package_total_price_mxn : null,
-      packageSavingsPctApprox: pkgSavings?.savingsPctApprox ?? null,
-      packageSavingsMxnCents: pkgSavings?.savingsCents ?? null,
-    });
+    return NextResponse.json(
+      {
+        isService: isServicesCategory,
+        flowActive: true,
+        canBook: hasContacted,
+        contactedInApp,
+        checkoutBlocked,
+        paidBookingId: latestPaid?.id ?? null,
+        paidBookingStatus: latestPaid ? (String(latestPaid.status ?? "confirmed")) : null,
+        ticketCode: latestPaid?.ticket_code != null ? String(latestPaid.ticket_code) : null,
+        revealedWhatsappUrl,
+        hasPendingBooking: !!pendingBooking,
+        pendingBookingId: pendingBooking?.id ?? null,
+        commissionAmountCents: commCents,
+        commissionBeforeLoyaltyCents,
+        loyaltyDiscountPctApplied,
+        loyaltyDiscountCents,
+        commissionPct: commPct,
+        hasPackage,
+        packageSessionCount: hasPackage ? listingPricing?.package_session_count : null,
+        packageTotalMxnCents: hasPackage ? listingPricing?.package_total_price_mxn : null,
+        packageSavingsPctApprox: pkgSavings?.savingsPctApprox ?? null,
+        packageSavingsMxnCents: pkgSavings?.savingsCents ?? null,
+      },
+      { headers: jsonNoStore },
+    );
   } catch (e) {
     console.error("[service-booking] GET", e);
     return NextResponse.json({ error: "Error del servidor" }, { status: 500 });

@@ -29,6 +29,9 @@ type BookingState = {
   packageTotalMxnCents?: number | null;
   packageSavingsPctApprox?: number | null;
   packageSavingsMxnCents?: number | null;
+  /** Latest paid booking lifecycle (for polling + buyer UI). */
+  paidBookingStatus?: string | null;
+  ticketCode?: string | null;
 };
 
 function formatMXN(cents: number): string {
@@ -37,6 +40,24 @@ function formatMXN(cents: number): string {
     currency: "MXN",
     maximumFractionDigits: 0,
   }).format(cents / 100);
+}
+
+function paidBookingStatusCaption(status: string | null | undefined, lang: Lang): string {
+  const s = String(status ?? "confirmed").toLowerCase();
+  if (lang === "en") {
+    if (s === "scheduled") return "Provider marked your visit as scheduled";
+    if (s === "in_progress") return "Provider marked this job in progress";
+    if (s === "completed") return "Provider marked this service completed";
+    if (s === "cancelled") return "Booking cancelled";
+    if (s === "pending") return "Payment processing";
+    return "Paid — awaiting next update from provider";
+  }
+  if (s === "scheduled") return "El proveedor marcó tu visita como agendada";
+  if (s === "in_progress") return "El proveedor marcó el trabajo en curso";
+  if (s === "completed") return "El proveedor marcó el servicio como completado";
+  if (s === "cancelled") return "Reserva cancelada";
+  if (s === "pending") return "Procesando pago";
+  return "Pagado — esperando actualización del proveedor";
 }
 
 /** Match auth-server: JWT sub is lowercased; `users.id` in DB can differ in letter case. */
@@ -91,7 +112,10 @@ export default function ServiceBookingBlock({
       setMeId(null);
     }
 
-    const res = await fetch(`/api/listings/${listingId}/service-booking`, { credentials: "same-origin" });
+    const res = await fetch(`/api/listings/${listingId}/service-booking`, {
+      credentials: "same-origin",
+      cache: "no-store",
+    });
     const data = res.ok ? await res.json() : null;
     setBooking(data as BookingState | null);
     setLoading(false);
@@ -146,20 +170,32 @@ export default function ServiceBookingBlock({
   }, [load]);
 
   /**
-   * Listing trust/stats are server-rendered; this block is client-only. Buyers do not receive
-   * `tianguis:booking-lifecycle` (seller dashboard fires it). Poll while a paid booking still
-   * blocks checkout or a Stripe session is pending so seller status updates unblock rebook / UI.
+   * Buyers rarely receive `tianguis:booking-lifecycle` (seller dashboard dispatches it). Poll while
+   * checkout is blocked, payment is pending, or the latest paid booking is still in progress so
+   * ticket codes and seller-driven status updates appear without a full page refresh.
    */
   useEffect(() => {
     if (!booking?.flowActive) return;
-    const shouldPoll = Boolean(booking.checkoutBlocked || booking.hasPendingBooking);
+    const st = String(booking.paidBookingStatus ?? "");
+    const activePaidLifecycle =
+      Boolean(booking.paidBookingId) && st !== "completed" && st !== "cancelled";
+    const shouldPoll = Boolean(
+      booking.checkoutBlocked || booking.hasPendingBooking || activePaidLifecycle,
+    );
     if (!shouldPoll) return;
     const id = window.setInterval(() => {
       if (document.visibilityState !== "visible") return;
       void load();
     }, 8_000);
     return () => window.clearInterval(id);
-  }, [load, booking?.flowActive, booking?.checkoutBlocked, booking?.hasPendingBooking]);
+  }, [
+    load,
+    booking?.flowActive,
+    booking?.checkoutBlocked,
+    booking?.hasPendingBooking,
+    booking?.paidBookingId,
+    booking?.paidBookingStatus,
+  ]);
 
   /** Server uses merged account (phone) to detect seller; client id match is fallback. */
   const iAmSellerOnThisListing = Boolean(booking?.isSeller) || Boolean(sellerId && meId && sameUserId(meId, sellerId));
@@ -344,6 +380,29 @@ export default function ServiceBookingBlock({
                 ? `This payment covers your ${booking.packageSessionCount}-visit plan. Schedule each visit on WhatsApp—your next rebook on Naranjogo can unlock loyalty discounts.`
                 : `Este pago cubre tu plan de ${booking.packageSessionCount} visitas. Agenda cada cita por WhatsApp; tu próxima reserva en Naranjogo puede sumar descuentos por lealtad.`}
             </p>
+          )}
+          {(booking.paidBookingStatus || booking.ticketCode) && (
+            <div className="rounded-lg border border-emerald-200/90 bg-white/80 px-3 py-2 space-y-1">
+              {booking.paidBookingStatus ? (
+                <p className="text-[11px] font-semibold text-emerald-950 leading-snug">
+                  {paidBookingStatusCaption(booking.paidBookingStatus, listingLang)}
+                </p>
+              ) : null}
+              {booking.ticketCode ? (
+                <p className="text-[11px] text-emerald-900">
+                  <span className="text-emerald-800 font-semibold uppercase tracking-wide">
+                    {listingLang === "en" ? "Ticket" : "Ticket"}
+                  </span>{" "}
+                  <span className="font-mono font-bold">{booking.ticketCode}</span>
+                </p>
+              ) : (
+                <p className="text-[10px] text-amber-900/90 italic">
+                  {listingLang === "en"
+                    ? "Ticket code generating… this page refreshes automatically."
+                    : "Generando código de ticket… esta página se actualiza sola."}
+                </p>
+              )}
+            </div>
           )}
           {booking.revealedWhatsappUrl && (
             <a
