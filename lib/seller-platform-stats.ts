@@ -1,6 +1,50 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { idMatchVariantsForIn } from "@/lib/user-id-variants";
 
+/**
+ * |A ∪ B| for A = paid bookings with seller_id ∈ pool, B = paid with listing_id ∈ owned,
+ * same filters on payment_status / status. Avoids one huge PostgREST `.or()` (can truncate / miscount).
+ */
+async function countPaidBookingsUnionSellerListingScope(
+  supabase: SupabaseClient,
+  sellerIdVariants: string[],
+  listingIdVariants: string[],
+  status: "any" | "completed" | "cancelled",
+): Promise<number> {
+  const hasSeller = sellerIdVariants.length > 0;
+  const hasList = listingIdVariants.length > 0;
+  if (!hasSeller && !hasList) return 0;
+
+  const scoped = () => {
+    let q = supabase.from("service_bookings").select("id", { count: "exact", head: true }).eq("payment_status", "paid");
+    if (status === "completed") q = q.eq("status", "completed");
+    else if (status === "cancelled") q = q.eq("status", "cancelled");
+    return q;
+  };
+
+  let a = 0;
+  let b = 0;
+  let ab = 0;
+
+  if (hasSeller) {
+    const { count, error } = await scoped().in("seller_id", sellerIdVariants);
+    if (error) throw error;
+    a = count ?? 0;
+  }
+  if (hasList) {
+    const { count, error } = await scoped().in("listing_id", listingIdVariants);
+    if (error) throw error;
+    b = count ?? 0;
+  }
+  if (hasSeller && hasList) {
+    const { count, error } = await scoped().in("seller_id", sellerIdVariants).in("listing_id", listingIdVariants);
+    if (error) throw error;
+    ab = count ?? 0;
+  }
+
+  return a + b - ab;
+}
+
 export type SellerPlatformJobStats = {
   /** Paid bookings marked completed (all seller listings). */
   sellerCompletedPaid: number;
@@ -31,28 +75,13 @@ export async function getSellerAccountBookingCounts(
     return { sellerCompletedPaid: 0, sellerPaidBookings: 0, sellerActivePaidBookings: 0 };
   }
 
-  const scopedPaid = () => {
-    let q = supabase.from("service_bookings").select("id", { count: "exact", head: true }).eq("payment_status", "paid");
-    if (hasSeller && hasList) {
-      q = q.or(`seller_id.in.(${sellerIdVariants.join(",")}),listing_id.in.(${listingIdVariants.join(",")})`);
-    } else if (hasSeller) {
-      q = q.in("seller_id", sellerIdVariants);
-    } else {
-      q = q.in("listing_id", listingIdVariants);
-    }
-    return q;
-  };
-
-  const [{ count: sellerCompleted }, { count: sellerPaid }, { count: sellerCancelled }] = await Promise.all([
-    scopedPaid().eq("status", "completed"),
-    scopedPaid(),
-    scopedPaid().eq("status", "cancelled"),
+  const [paid, completed, cancelled] = await Promise.all([
+    countPaidBookingsUnionSellerListingScope(supabase, sellerIdVariants, listingIdVariants, "any"),
+    countPaidBookingsUnionSellerListingScope(supabase, sellerIdVariants, listingIdVariants, "completed"),
+    countPaidBookingsUnionSellerListingScope(supabase, sellerIdVariants, listingIdVariants, "cancelled"),
   ]);
 
-  const paid = sellerPaid ?? 0;
-  const completed = sellerCompleted ?? 0;
-  const cancelled = sellerCancelled ?? 0;
-  /** Derive so “paid = completed + active + cancelled” always matches the banner (avoids stray active count vs head queries). */
+  /** Derive so “paid = completed + active + cancelled” always matches the banner. */
   const activeDerived = Math.max(0, paid - completed - cancelled);
 
   return {
