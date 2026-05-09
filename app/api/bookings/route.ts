@@ -14,6 +14,14 @@ type BookingRow = Record<string, unknown>;
 const SELLER_PAID_FETCH_CAP = 350;
 const SELLER_PAID_RESPONSE_CAP = 220;
 
+/**
+ * Paid rows still in an open phase — must be merged even when `paid_at` is old, otherwise they drop
+ * out of the recency-capped `bySeller`/`byListing` fetches while `sellerActivePaidBookings` counts them.
+ * Cap bounds pathological accounts; normal providers have few concurrent actives.
+ */
+const SELLER_ACTIVE_PAID_FETCH_CAP = 400;
+const SELLER_ACTIVE_LIFECYCLE = ["pending", "confirmed", "scheduled", "in_progress"] as const;
+
 /** PostgREST `.in()` on `listings.seller_id` can fail when column is uuid and pool is text — `or(eq…)` is reliable. */
 async function listingIdsOwnedBySellerPool(
   supabase: ReturnType<typeof createAdminSupabase>,
@@ -187,6 +195,40 @@ export async function GET(req: NextRequest) {
       if (!prev) merged.set(key, row as BookingRow);
       else merged.set(key, mergeBookingListRowsPreferTruth(prev, row as BookingRow) as BookingRow);
     }
+
+    if (statusFilter === "paid") {
+      const hasSeller = poolVariants.length > 0;
+      const hasList = listingIdVariantsForBookings.length > 0;
+      if (hasSeller || hasList) {
+        let qActive = supabase
+          .from("service_bookings")
+          .select(SERVICE_BOOKING_LIST_COLUMNS)
+          .eq("payment_status", "paid")
+          .in("status", [...SELLER_ACTIVE_LIFECYCLE]);
+        if (hasSeller && hasList) {
+          qActive = qActive.or(
+            `seller_id.in.(${poolVariants.join(",")}),listing_id.in.(${listingIdVariantsForBookings.join(",")})`,
+          );
+        } else if (hasSeller) {
+          qActive = qActive.in("seller_id", poolVariants);
+        } else {
+          qActive = qActive.in("listing_id", listingIdVariantsForBookings);
+        }
+        qActive = qActive
+          .order("paid_at", { ascending: false, nullsFirst: false })
+          .order("created_at", { ascending: false })
+          .limit(SELLER_ACTIVE_PAID_FETCH_CAP);
+        const { data: activePaidRows, error: errActive } = await qActive;
+        if (errActive) return NextResponse.json({ error: errActive.message }, { status: 500 });
+        for (const row of activePaidRows ?? []) {
+          const key = canonicalBookingRowIdKey(row.id);
+          const prev = merged.get(key);
+          if (!prev) merged.set(key, row as BookingRow);
+          else merged.set(key, mergeBookingListRowsPreferTruth(prev, row as BookingRow) as BookingRow);
+        }
+      }
+    }
+
     bookingRows = sortSellerMergedRows([...merged.values()], statusFilter);
     if (bookingRows.length > SELLER_PAID_RESPONSE_CAP) {
       bookingRows = bookingRows.slice(0, SELLER_PAID_RESPONSE_CAP);
