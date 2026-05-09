@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAppLang } from "@/hooks/use-app-lang";
 import { formatCurrencyMXN } from "@/lib/locale-format";
+import { mergeBookingListAvoidStatusRegression } from "@/lib/booking-list-merge";
 import { normalizeNgTicketQuery } from "@/lib/ng-ticket-normalize";
 import type { Lang } from "@/lib/i18n-lang";
 
@@ -170,8 +171,11 @@ function SellerBookingsInner() {
   const syncCountRef = useRef(0);
   const prevIdsRef = useRef<Set<string>>(new Set());
   const bannerTimerRef = useRef<number | null>(null);
+  /** Drop stale `/api/bookings` responses when a newer load was started (poll + PATCH refresh races). */
+  const sellerFetchGenRef = useRef(0);
 
   const load = useCallback(async () => {
+    const fetchGen = ++sellerFetchGenRef.current;
     const q = new URLSearchParams({ seller: "1", status: "paid" });
     const tk = normalizeNgTicketQuery(ticketHint) ?? undefined;
     if (tk) q.set("ticket", tk);
@@ -193,6 +197,7 @@ function SellerBookingsInner() {
         }
       }
       console.error("[seller-bookings] /api/bookings failed", res.status, msg);
+      if (fetchGen !== sellerFetchGenRef.current) return;
       setBookingsLoadError(msg);
       setBookings([]);
       setSellerStats(null);
@@ -209,8 +214,9 @@ function SellerBookingsInner() {
         sellerActivePaidBookings: number;
       };
     };
+    if (fetchGen !== sellerFetchGenRef.current) return;
     const list = Array.isArray(data.bookings) ? data.bookings : [];
-    setBookings(list);
+    setBookings((prev) => mergeBookingListAvoidStatusRegression(prev, list));
     if (
       data.sellerStats &&
       typeof data.sellerStats.sellerCompletedPaid === "number" &&

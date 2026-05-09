@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback, Suspense } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import GuaranteeBadge from "@/components/GuaranteeBadge";
 import RoutineHabitsCard from "@/components/RoutineHabitsCard";
 import BuyerRetentionPanel from "@/components/BuyerRetentionPanel";
 import { useAppLang, useAppLangActions } from "@/hooks/use-app-lang";
+import { mergeBookingListAvoidStatusRegression } from "@/lib/booking-list-merge";
 import { normalizeNgTicketQuery } from "@/lib/ng-ticket-normalize";
 
 type Booking = {
@@ -194,7 +195,10 @@ function MyBookingsPageInner() {
   const [stripeReceiptBusyId, setStripeReceiptBusyId] = useState<string | null>(null);
   const [stripeReceiptErr, setStripeReceiptErr] = useState<Record<string, string>>({});
 
+  const buyerFetchGenRef = useRef(0);
+
   const loadData = useCallback(() => {
+    const fetchGen = ++buyerFetchGenRef.current;
     const qp = new URLSearchParams({ status: "paid" });
     const tk = normalizeNgTicketQuery(ticketHint) ?? undefined;
     if (tk) qp.set("ticket", tk);
@@ -233,9 +237,10 @@ function MyBookingsPageInner() {
       ),
     ])
       .then(([bData, rData]) => {
+        if (fetchGen !== buyerFetchGenRef.current) return;
         setBookingsLoadError(bData._loadError ?? null);
         const list = bData.bookings;
-        setBookings(list);
+        setBookings((prev) => mergeBookingListAvoidStatusRegression(prev, list));
         const initCancel: Record<string, string> = {};
         for (const x of list as Booking[]) {
           initCancel[x.id] = "changed_mind";

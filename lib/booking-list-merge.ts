@@ -48,3 +48,22 @@ export function mergeBookingListRowsPreferTruth(a: BookingListMergeRow, b: Booki
   if (ta !== tb) return ta >= tb ? a : b;
   return a;
 }
+
+/**
+ * When applying `/api/bookings` results to React state, keep the more advanced `status` already on
+ * screen if the payload is stale (parallel polls or a slow fetch finishing after an optimistic PATCH).
+ */
+export function mergeBookingListAvoidStatusRegression<T extends { id: string; status?: string | null }>(
+  prev: T[],
+  server: T[],
+): T[] {
+  const prevByKey = new Map(prev.map((row) => [canonicalBookingRowIdKey(row.id), row]));
+  return server.map((s) => {
+    const o = prevByKey.get(canonicalBookingRowIdKey(s.id));
+    if (!o) return s;
+    const rs = lifecycleRank(String(s.status ?? ""));
+    const ro = lifecycleRank(String(o.status ?? ""));
+    if (ro > rs) return { ...s, status: o.status };
+    return s;
+  });
+}
