@@ -57,6 +57,16 @@ async function sellerCanSeePaidBookingRow(
   return idMatchVariantsForIn(ls).some((v) => sellerPoolVariants.includes(v));
 }
 
+/** Same overlap rule as listing-stitched buyer rows (JWT pool vs booking.buyer_id account pool). */
+async function buyerCanSeePaidBookingRow(
+  supabase: ReturnType<typeof createAdminSupabase>,
+  buyerPoolVariants: string[],
+  row: BookingRow
+): Promise<boolean> {
+  const rowBuyerPool = await expandUserAccountIdPool(supabase, String(row.buyer_id ?? ""));
+  return poolsOverlap(rowBuyerPool, buyerPoolVariants);
+}
+
 /** Paid bookings must sort by settlement time — row `created_at` is checkout start and can be much older than `paid_at`. */
 const PAID_BOOKING_LIST_LIMIT = 100;
 
@@ -263,6 +273,21 @@ export async function GET(req: NextRequest) {
         const prev = mergedBuy.get(key);
         if (!prev) mergedBuy.set(key, row as BookingRow);
         else mergedBuy.set(key, mergeBookingListRowsPreferTruth(prev, row as BookingRow) as BookingRow);
+      }
+    }
+
+    /** WhatsApp / payment can succeed while `buyer_id` on the row predates account merge — stitch by NG-ticket (mirrors seller). */
+    const ticketNormBuyer = normalizeTicketQueryParam(req.nextUrl.searchParams.get("ticket"));
+    if (ticketNormBuyer) {
+      let qTk = supabase.from("service_bookings").select(SERVICE_BOOKING_LIST_COLUMNS).ilike("ticket_code", ticketNormBuyer);
+      if (statusFilter === "paid") qTk = qTk.eq("payment_status", "paid");
+      const { data: byTicketRow } = await qTk.maybeSingle();
+      const tr = byTicketRow as BookingRow | null;
+      if (tr?.id != null && (await buyerCanSeePaidBookingRow(supabase, buyerVariants, tr))) {
+        const key = canonicalBookingRowIdKey(tr.id);
+        const prevMap = mergedBuy.get(key);
+        if (!prevMap) mergedBuy.set(key, tr);
+        else mergedBuy.set(key, mergeBookingListRowsPreferTruth(prevMap as BookingRow, tr) as BookingRow);
       }
     }
 

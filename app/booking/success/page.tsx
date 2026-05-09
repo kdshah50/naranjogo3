@@ -314,6 +314,10 @@ function BookingSuccessContent() {
   }
 
   const isPaid = data.paymentStatus === "paid";
+  const myBookingsHref =
+    isPaid && data.ticketCode
+      ? withLang(`/my-bookings?ticket=${encodeURIComponent(String(data.ticketCode))}`, lang)
+      : withLang("/my-bookings", lang);
   const showRetryPaid =
     Boolean(stripeSessionId) &&
     !isPaid &&
@@ -418,7 +422,7 @@ function BookingSuccessContent() {
             >
               {t.backListing}
             </Link>
-            <Link href={withLang("/my-bookings", lang)} className="text-sm text-[#1B4332] font-semibold hover:underline">
+            <Link href={myBookingsHref} className="text-sm text-[#1B4332] font-semibold hover:underline">
               {t.myBookings}
             </Link>
             <Link href={withLang("/messages", lang)} className="text-sm text-[#1B4332] font-semibold hover:underline">
@@ -437,7 +441,7 @@ function BookingSuccessContent() {
           <div className="mt-6 px-6">
             <p className="text-center text-sm text-[#374151] mb-2">
               {t.reviewBlurb}{" "}
-              <Link href={withLang("/my-bookings", lang)} className="font-semibold text-[#1B4332] hover:underline">
+              <Link href={myBookingsHref} className="font-semibold text-[#1B4332] hover:underline">
                 {t.myBookings}
               </Link>
               .

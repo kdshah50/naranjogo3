@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import GuaranteeBadge from "@/components/GuaranteeBadge";
 import RoutineHabitsCard from "@/components/RoutineHabitsCard";
 import BuyerRetentionPanel from "@/components/BuyerRetentionPanel";
@@ -37,6 +37,15 @@ type ReminderRow = {
   delivery_email?: string | null;
   listing_title?: string | null;
 };
+
+/** Must match server `normalizeTicketQueryParam` — stitch finds the row when `buyer_id` predates account merge. */
+function ticketParamForBookingsApi(raw: string | null): string | undefined {
+  const t = raw?.trim();
+  if (!t) return undefined;
+  if (/^NG-[\da-f]{8}$/i.test(t)) return t.replace(/^ng-/i, "NG-").toUpperCase();
+  if (/^[\da-f]{8}$/i.test(t)) return `NG-${t.toUpperCase()}`;
+  return undefined;
+}
 
 function formatMXN(cents: number, lang: "es" | "en") {
   return new Intl.NumberFormat(lang === "es" ? "es-MX" : "en-MX", {
@@ -171,6 +180,8 @@ export default function MyBookingsPage() {
 
 function MyBookingsPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const ticketHint = searchParams.get("ticket");
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [reminders, setReminders] = useState<ReminderRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -192,8 +203,11 @@ function MyBookingsPageInner() {
   const [stripeReceiptErr, setStripeReceiptErr] = useState<Record<string, string>>({});
 
   const loadData = useCallback(() => {
+    const qp = new URLSearchParams({ status: "paid" });
+    const tk = ticketParamForBookingsApi(ticketHint);
+    if (tk) qp.set("ticket", tk);
     Promise.all([
-      fetch("/api/bookings?status=paid", {
+      fetch(`/api/bookings?${qp}`, {
         credentials: "same-origin",
         cache: "no-store",
       }).then(async (r) => {
@@ -247,7 +261,7 @@ function MyBookingsPageInner() {
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [router]);
+  }, [router, ticketHint]);
 
   useEffect(() => {
     loadData();
