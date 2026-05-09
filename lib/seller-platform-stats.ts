@@ -6,8 +6,12 @@ export type SellerPlatformJobStats = {
   sellerCompletedPaid: number;
   /** Paid platform bookings for this listing marked completed. */
   listingCompletedPaid: number;
-  /** Any paid booking on platform for seller (completed + confirmed + cancelled). */
+  /** Any paid booking on platform for seller (all listings, all buyers). */
   sellerPaidBookings: number;
+  /** Any paid booking on this listing only (all buyers, any lifecycle). */
+  listingPaidBookings: number;
+  /** This listing: paid and not yet completed or cancelled (open / in progress). */
+  listingActivePaidBookings: number;
 };
 
 /** Seller-wide counts for `/seller-bookings`: same visibility as merged list (seller_id pool OR listing you own). */
@@ -54,32 +58,59 @@ export async function getSellerPlatformJobStats(
   const sellerVars = idMatchVariantsForIn(String(sellerId));
   const listingVars = idMatchVariantsForIn(String(listingId));
   if (sellerVars.length === 0 || listingVars.length === 0) {
-    return { sellerCompletedPaid: 0, listingCompletedPaid: 0, sellerPaidBookings: 0 };
+    return {
+      sellerCompletedPaid: 0,
+      listingCompletedPaid: 0,
+      sellerPaidBookings: 0,
+      listingPaidBookings: 0,
+      listingActivePaidBookings: 0,
+    };
   }
 
-  const { count: sellerCompleted } = await supabase
-    .from("service_bookings")
-    .select("id", { count: "exact", head: true })
-    .in("seller_id", sellerVars)
-    .eq("payment_status", "paid")
-    .eq("status", "completed");
+  const activeLifecycle = ["pending", "confirmed", "scheduled", "in_progress"] as const;
 
-  const { count: listingCompleted } = await supabase
-    .from("service_bookings")
-    .select("id", { count: "exact", head: true })
-    .in("listing_id", listingVars)
-    .eq("payment_status", "paid")
-    .eq("status", "completed");
-
-  const { count: sellerPaid } = await supabase
-    .from("service_bookings")
-    .select("id", { count: "exact", head: true })
-    .in("seller_id", sellerVars)
-    .eq("payment_status", "paid");
+  const [
+    { count: sellerCompleted },
+    { count: listingCompleted },
+    { count: sellerPaid },
+    { count: listingPaid },
+    { count: listingActive },
+  ] = await Promise.all([
+    supabase
+      .from("service_bookings")
+      .select("id", { count: "exact", head: true })
+      .in("seller_id", sellerVars)
+      .eq("payment_status", "paid")
+      .eq("status", "completed"),
+    supabase
+      .from("service_bookings")
+      .select("id", { count: "exact", head: true })
+      .in("listing_id", listingVars)
+      .eq("payment_status", "paid")
+      .eq("status", "completed"),
+    supabase
+      .from("service_bookings")
+      .select("id", { count: "exact", head: true })
+      .in("seller_id", sellerVars)
+      .eq("payment_status", "paid"),
+    supabase
+      .from("service_bookings")
+      .select("id", { count: "exact", head: true })
+      .in("listing_id", listingVars)
+      .eq("payment_status", "paid"),
+    supabase
+      .from("service_bookings")
+      .select("id", { count: "exact", head: true })
+      .in("listing_id", listingVars)
+      .eq("payment_status", "paid")
+      .in("status", [...activeLifecycle]),
+  ]);
 
   return {
     sellerCompletedPaid: sellerCompleted ?? 0,
     listingCompletedPaid: listingCompleted ?? 0,
     sellerPaidBookings: sellerPaid ?? 0,
+    listingPaidBookings: listingPaid ?? 0,
+    listingActivePaidBookings: listingActive ?? 0,
   };
 }

@@ -136,6 +136,8 @@ export default async function ListingPage({
     sellerCompletedPaid: 0,
     listingCompletedPaid: 0,
     sellerPaidBookings: 0,
+    listingPaidBookings: 0,
+    listingActivePaidBookings: 0,
   };
   if (isServiceListing && sellerId) {
     try {

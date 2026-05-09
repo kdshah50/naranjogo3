@@ -29,8 +29,12 @@ export default function ListingTrustStrip({
 
   const verifiedProvider = isVerifiedProviderProfile({ ineVerified, rfcVerified, trustBadge });
   const hasPhoneSignal = phoneVerified || listingAdminVerified;
-  const completed = stats.sellerCompletedPaid;
-  const paidJobs = stats.sellerPaidBookings;
+
+  const thisListingPaid = stats.listingPaidBookings;
+  const thisListingDone = stats.listingCompletedPaid;
+  const thisListingActive = stats.listingActivePaidBookings;
+  const sellerAllPaid = stats.sellerPaidBookings;
+  const sellerAllDone = stats.sellerCompletedPaid;
 
   return (
     <section
@@ -72,36 +76,72 @@ export default function ListingTrustStrip({
       </p>
 
       <ul className="text-sm text-[#374151] space-y-1.5 mb-3">
-        <li className="flex flex-wrap gap-x-1">
-          <span className="font-bold text-[#1B4332]">
-            {lang === "en" ? "Completed on Naranjogo:" : "Completados en Naranjogo:"}
-          </span>
-          <span>
-            {completed > 0
-              ? lang === "en"
-                ? `${completed} job${completed === 1 ? "" : "s"} (platform booking marked done)`
-                : `${completed} trabajo${completed === 1 ? "" : "s"} (reserva marcada completada)`
-              : lang === "en"
+        {thisListingPaid === 0 && thisListingDone === 0 && sellerAllPaid === 0 && (
+          <li className="flex flex-wrap gap-x-1">
+            <span className="font-bold text-[#1B4332]">
+              {lang === "en" ? "Completed on Naranjogo:" : "Completados en Naranjogo:"}
+            </span>
+            <span>
+              {lang === "en"
                 ? "Building track record — be the first to leave a review."
                 : "Construyendo historial — sé el primero en dejar reseña."}
-          </span>
+            </span>
+          </li>
+        )}
+        {thisListingPaid === 0 && sellerAllPaid > 0 && (
+          <li className="text-xs text-[#6B7280] leading-snug">
+            {lang === "en"
+              ? "No paid platform bookings on this specific ad yet — provider totals below include their other listings."
+              : "Aún no hay reservas pagadas por la app en este anuncio — los totales del proveedor abajo incluyen sus otros anuncios."}
+          </li>
+        )}
+        {(thisListingPaid > 0 || thisListingDone > 0) && (
+          <li className="flex flex-col gap-0.5">
+            <span className="font-bold text-[#1B4332]">
+              {lang === "en" ? "On this listing (all buyers):" : "En este anuncio (todos los clientes):"}
+            </span>
+            <span>
+              {lang === "en" ? (
+                <>
+                  {thisListingPaid} paid via platform · {thisListingDone} marked completed
+                  {thisListingActive > 0
+                    ? ` · ${thisListingActive} still active (not completed yet)`
+                    : ""}
+                </>
+              ) : (
+                <>
+                  {thisListingPaid} pagadas por la app · {thisListingDone} marcadas completadas
+                  {thisListingActive > 0
+                    ? ` · ${thisListingActive} siguen activas (aún no completadas)`
+                    : ""}
+                </>
+              )}
+            </span>
+          </li>
+        )}
+        {(sellerAllPaid > 0 || sellerAllDone > 0) && (
+          <li className="flex flex-col gap-0.5 text-xs text-[#6B7280]">
+            <span className="font-semibold text-[#374151]">
+              {lang === "en" ? "Provider total (all their ads):" : "Total del proveedor (todos sus anuncios):"}
+            </span>
+            <span>
+              {lang === "en" ? (
+                <>
+                  {sellerAllPaid} paid · {sellerAllDone} completed
+                </>
+              ) : (
+                <>
+                  {sellerAllPaid} pagadas · {sellerAllDone} completadas
+                </>
+              )}
+            </span>
+          </li>
+        )}
+        <li className="text-[11px] text-[#6B7280] leading-snug border-t border-emerald-200/60 pt-2">
+          {lang === "en"
+            ? "“My bookings” shows only your own reservations. Figures above for “this listing” include every buyer; provider totals include all of their ads."
+            : "«Mis reservas» muestra solo tus reservas. Las cifras de «este anuncio» incluyen a todos los compradores; los totales del proveedor incluyen todos sus anuncios."}
         </li>
-        {paidJobs > 0 && (
-          <li className="flex flex-wrap gap-x-1 text-xs text-[#6B7280]">
-            <span className="font-semibold text-[#374151]">
-              {lang === "en" ? "Paid platform bookings (seller):" : "Reservas pagadas en la app (proveedor):"}
-            </span>
-            {paidJobs}
-          </li>
-        )}
-        {stats.listingCompletedPaid > 0 && (
-          <li className="flex flex-wrap gap-x-1 text-xs text-[#6B7280]">
-            <span className="font-semibold text-[#374151]">
-              {lang === "en" ? "Completed for this listing:" : "Completados en este anuncio:"}
-            </span>
-            {stats.listingCompletedPaid}
-          </li>
-        )}
       </ul>
 
       <p className="text-xs text-[#6B7280] leading-relaxed border-t border-emerald-200/60 pt-3 italic">
