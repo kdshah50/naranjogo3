@@ -175,8 +175,9 @@ function SellerBookingsInner() {
   const prevIdsRef = useRef<Set<string>>(new Set());
   const bannerTimerRef = useRef<number | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { cacheBust?: boolean }) => {
     const q = new URLSearchParams({ seller: "1", status: "paid" });
+    if (opts?.cacheBust) q.set("_cb", String(Date.now()));
     const tk = normalizeNgTicketQuery(ticketHint) ?? undefined;
     if (tk) q.set("ticket", tk);
     const res = await fetch(`/api/bookings?${q}`, { credentials: "same-origin", cache: "no-store" });
@@ -378,7 +379,7 @@ function SellerBookingsInner() {
           })
         );
       }
-      void load();
+      void load({ cacheBust: true });
     } catch (e) {
       setMsg((m) => ({
         ...m,

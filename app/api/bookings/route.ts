@@ -343,19 +343,40 @@ export async function GET(req: NextRequest) {
 
   /** One DB truth pass: multi-branch merge + caps must never show an older lifecycle than `service_bookings`. */
   if (bookingRows.length > 0) {
-    const truthIdVars = [...new Set(bookingRows.flatMap((b) => idMatchVariantsForIn(String(b.id))))];
-    const { data: truthRows, error: truthErr } = await supabase
-      .from("service_bookings")
-      .select("id,status,updated_at")
-      .in("id", truthIdVars);
-    if (!truthErr && truthRows?.length) {
-      const truthByKey = new Map(truthRows.map((r) => [canonicalBookingRowIdKey(r.id), r]));
-      bookingRows = bookingRows.map((b) => {
-        const t = truthByKey.get(canonicalBookingRowIdKey(b.id));
-        if (!t) return b;
-        return { ...b, status: t.status, updated_at: t.updated_at } as BookingRow;
-      });
+    const canonicalIds = [...new Set(bookingRows.map((b) => canonicalBookingRowIdKey(b.id)))].filter(Boolean);
+    const truthByKey = new Map<string, { id: unknown; status: unknown; updated_at: unknown }>();
+    /** Keep each `.in("id", …)` small — hundreds of UUID variants can exceed PostgREST URL limits, skip truth, and leave stale `confirmed` on completed rows. */
+    const TRUTH_ID_CHUNK = 45;
+
+    for (let i = 0; i < canonicalIds.length; i += TRUTH_ID_CHUNK) {
+      const slice = canonicalIds.slice(i, i + TRUTH_ID_CHUNK);
+      const chunkVars = [...new Set(slice.flatMap((cid) => idMatchVariantsForIn(cid)))];
+      if (chunkVars.length === 0) continue;
+
+      const { data: truthRows, error: truthErr } = await supabase
+        .from("service_bookings")
+        .select("id,status,updated_at")
+        .in("id", chunkVars);
+
+      if (truthErr) {
+        console.error("[api/bookings] truth pass chunk failed", truthErr.message, {
+          chunkStart: i,
+          canonicalCount: slice.length,
+          variantCount: chunkVars.length,
+        });
+        continue;
+      }
+
+      for (const r of truthRows ?? []) {
+        truthByKey.set(canonicalBookingRowIdKey(r.id), r);
+      }
     }
+
+    bookingRows = bookingRows.map((b) => {
+      const t = truthByKey.get(canonicalBookingRowIdKey(b.id));
+      if (!t) return b;
+      return { ...b, status: t.status, updated_at: t.updated_at } as BookingRow;
+    });
   }
 
   const bookingIdVariants = [...new Set(bookingRows.flatMap((b) => idMatchVariantsForIn(String(b.id))))];
