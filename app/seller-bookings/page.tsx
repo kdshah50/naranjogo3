@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAppLang } from "@/hooks/use-app-lang";
 import { formatCurrencyMXN } from "@/lib/locale-format";
-import { mergeBookingListAvoidStatusRegression } from "@/lib/booking-list-merge";
+import { canonicalBookingRowIdKey, mergeBookingListAvoidStatusRegression } from "@/lib/booking-list-merge";
 import { normalizeNgTicketQuery } from "@/lib/ng-ticket-normalize";
 import type { Lang } from "@/lib/i18n-lang";
 
@@ -26,7 +26,8 @@ type SellerBooking = {
 
 function phaseLabel(status: string, lang: Lang): { label: string; cls: string } {
   const es = lang === "es";
-  switch (status) {
+  const s = String(status ?? "").trim().toLowerCase();
+  switch (s) {
     case "confirmed":
       return { label: es ? "Pagado — pendiente agendar" : "Paid — scheduling pending", cls: "bg-blue-50 text-blue-800" };
     case "scheduled":
@@ -38,7 +39,7 @@ function phaseLabel(status: string, lang: Lang): { label: string; cls: string } 
     case "cancelled":
       return { label: es ? "Cancelada" : "Cancelled", cls: "bg-red-50 text-red-800" };
     default:
-      return { label: status, cls: "bg-[#F4F0EB] text-[#6B7280]" };
+      return { label: status || "—", cls: "bg-[#F4F0EB] text-[#6B7280]" };
   }
 }
 
@@ -237,25 +238,33 @@ function SellerBookingsInner() {
       const next = { ...prev };
       for (const row of list as SellerBooking[]) {
         if (String(row.status) !== "completed") continue;
-        const line = next[row.id];
+        const rk = canonicalBookingRowIdKey(row.id);
+        const line = next[rk] ?? next[row.id];
         if (!line) continue;
-        if (line.startsWith("⚠️")) delete next[row.id];
-        else if (line.includes("Saved in the app.") && !line.includes("Marked complete in the app")) delete next[row.id];
-        else if (line.includes("Estado guardado en la app.") && !line.includes("Completado en la app")) delete next[row.id];
+        if (line.startsWith("⚠️")) {
+          delete next[rk];
+          delete next[row.id];
+        } else if (line.includes("Saved in the app.") && !line.includes("Marked complete in the app")) {
+          delete next[rk];
+          delete next[row.id];
+        } else if (line.includes("Estado guardado en la app.") && !line.includes("Completado en la app")) {
+          delete next[rk];
+          delete next[row.id];
+        }
       }
       return next;
     });
     if (typeof data.sellerStrikeCount === "number") setSellerStrikeCount(data.sellerStrikeCount);
     const initCodes: Record<string, string> = {};
     for (const row of list as SellerBooking[]) {
-      initCodes[row.id] = "mutual_agreement";
+      initCodes[canonicalBookingRowIdKey(row.id)] = "mutual_agreement";
     }
     setSellerCancelCode((prev) => ({ ...initCodes, ...prev }));
 
     syncCountRef.current += 1;
-    const ids = new Set((list as SellerBooking[]).map((b) => b.id));
+    const ids = new Set((list as SellerBooking[]).map((b) => canonicalBookingRowIdKey(b.id)));
     if (syncCountRef.current > 1) {
-      const added = (list as SellerBooking[]).filter((b) => !prevIdsRef.current.has(b.id));
+      const added = (list as SellerBooking[]).filter((b) => !prevIdsRef.current.has(canonicalBookingRowIdKey(b.id)));
       if (added.length > 0) {
         const first = added[0];
         const tk = first.ticket_code ? ` (${first.ticket_code})` : "";
@@ -318,10 +327,11 @@ function SellerBookingsInner() {
   };
 
   const patchStatus = async (id: string, status: "scheduled" | "in_progress" | "completed") => {
-    setBusyId(id);
-    setMsg((m) => ({ ...m, [id]: "" }));
+    const rowKey = canonicalBookingRowIdKey(id);
+    setBusyId(rowKey);
+    setMsg((m) => ({ ...m, [rowKey]: "" }));
     try {
-      const res = await fetch(`/api/bookings/${id}`, {
+      const res = await fetch(`/api/bookings/${encodeURIComponent(id)}`, {
         method: "PATCH",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
@@ -367,11 +377,15 @@ function SellerBookingsInner() {
         feedback = t.updated;
       }
 
-      setMsg((m) => ({ ...m, [id]: feedback }));
+      setMsg((m) => ({ ...m, [rowKey]: feedback }));
       setBookings((prev) =>
-        prev.map((b) => (b.id === id ? { ...b, status: status === "completed" ? "completed" : status } : b))
+        prev.map((b) =>
+          canonicalBookingRowIdKey(b.id) === rowKey
+            ? { ...b, status: status === "completed" ? "completed" : status }
+            : b
+        )
       );
-      const listingIdForEvent = bookings.find((b) => b.id === id)?.listing_id;
+      const listingIdForEvent = bookings.find((b) => canonicalBookingRowIdKey(b.id) === rowKey)?.listing_id;
       if (listingIdForEvent && typeof window !== "undefined") {
         window.dispatchEvent(
           new CustomEvent("tianguis:booking-lifecycle", {
@@ -383,7 +397,7 @@ function SellerBookingsInner() {
     } catch (e) {
       setMsg((m) => ({
         ...m,
-        [id]: e instanceof Error ? e.message : "Error",
+        [rowKey]: e instanceof Error ? e.message : "Error",
       }));
     } finally {
       setBusyId(null);
@@ -391,11 +405,12 @@ function SellerBookingsInner() {
   };
 
   const patchCancel = async (id: string) => {
-    const cancelReasonCode = sellerCancelCode[id] ?? "mutual_agreement";
-    setBusyId(id);
-    setMsg((m) => ({ ...m, [id]: "" }));
+    const rowKey = canonicalBookingRowIdKey(id);
+    const cancelReasonCode = sellerCancelCode[rowKey] ?? sellerCancelCode[id] ?? "mutual_agreement";
+    setBusyId(rowKey);
+    setMsg((m) => ({ ...m, [rowKey]: "" }));
     try {
-      const res = await fetch(`/api/bookings/${id}`, {
+      const res = await fetch(`/api/bookings/${encodeURIComponent(id)}`, {
         method: "PATCH",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
@@ -403,12 +418,14 @@ function SellerBookingsInner() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error((data as { error?: string }).error ?? "Error");
-      setMsg((m) => ({ ...m, [id]: t.cancelOk }));
-      setBookings((prev) => prev.map((b) => (b.id === id ? { ...b, status: "cancelled" } : b)));
+      setMsg((m) => ({ ...m, [rowKey]: t.cancelOk }));
+      setBookings((prev) =>
+        prev.map((b) => (canonicalBookingRowIdKey(b.id) === rowKey ? { ...b, status: "cancelled" } : b))
+      );
     } catch (e) {
       setMsg((m) => ({
         ...m,
-        [id]: e instanceof Error ? e.message : "Error",
+        [rowKey]: e instanceof Error ? e.message : "Error",
       }));
     } finally {
       setBusyId(null);
@@ -500,10 +517,11 @@ function SellerBookingsInner() {
         ) : (
           <ul className="space-y-4">
             {bookings.map((b) => {
+              const rowKey = canonicalBookingRowIdKey(b.id);
               const ph = phaseLabel(b.status, lang);
-              const disabled = busyId === b.id;
+              const disabled = busyId === rowKey;
               return (
-                <li key={b.id} className="bg-white rounded-2xl border border-[#E5E0D8] p-4 shadow-sm">
+                <li key={rowKey} className="bg-white rounded-2xl border border-[#E5E0D8] p-4 shadow-sm">
                   <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold text-[#1C1917]">{b.listing_title}</p>
@@ -579,9 +597,9 @@ function SellerBookingsInner() {
                         <summary className="text-xs font-semibold text-[#57534E] cursor-pointer list-none">{t.cancelSummary}</summary>
                         <p className="text-[10px] text-[#6B7280] mt-2 leading-relaxed">{t.cancelHelp}</p>
                         <select
-                          value={sellerCancelCode[b.id] ?? "mutual_agreement"}
+                          value={sellerCancelCode[rowKey] ?? sellerCancelCode[b.id] ?? "mutual_agreement"}
                           onChange={(e) =>
-                            setSellerCancelCode((prev) => ({ ...prev, [b.id]: e.target.value }))
+                            setSellerCancelCode((prev) => ({ ...prev, [rowKey]: e.target.value }))
                           }
                           className="mt-2 w-full border border-[#E5E0D8] rounded-lg px-2 py-1.5 text-xs bg-white"
                         >
@@ -604,17 +622,17 @@ function SellerBookingsInner() {
 
                   {b.status === "completed" && b.has_review && <p className="text-xs text-amber-700 font-semibold mt-2">{t.reviewed}</p>}
 
-                  {msg[b.id] && (
+                  {(msg[rowKey] ?? msg[b.id]) && (
                     <p
                       className={`text-xs mt-2 ${
-                        msg[b.id].startsWith("⚠️")
+                        (msg[rowKey] ?? msg[b.id]).startsWith("⚠️")
                           ? "text-amber-800"
-                          : msg[b.id].startsWith("✓")
+                          : (msg[rowKey] ?? msg[b.id]).startsWith("✓")
                             ? "text-emerald-600"
                             : "text-red-600"
                       }`}
                     >
-                      {msg[b.id]}
+                      {msg[rowKey] ?? msg[b.id]}
                     </p>
                   )}
                 </li>

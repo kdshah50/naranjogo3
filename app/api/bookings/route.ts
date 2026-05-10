@@ -346,7 +346,7 @@ export async function GET(req: NextRequest) {
     const canonicalIds = [...new Set(bookingRows.map((b) => canonicalBookingRowIdKey(b.id)))].filter(Boolean);
     const truthByKey = new Map<string, { id: unknown; status: unknown; updated_at: unknown }>();
     /** Keep each `.in("id", …)` small — hundreds of UUID variants can exceed PostgREST URL limits, skip truth, and leave stale `confirmed` on completed rows. */
-    const TRUTH_ID_CHUNK = 45;
+    const TRUTH_ID_CHUNK = 20;
 
     for (let i = 0; i < canonicalIds.length; i += TRUTH_ID_CHUNK) {
       const slice = canonicalIds.slice(i, i + TRUTH_ID_CHUNK);
@@ -370,6 +370,31 @@ export async function GET(req: NextRequest) {
       for (const r of truthRows ?? []) {
         truthByKey.set(canonicalBookingRowIdKey(r.id), r);
       }
+    }
+
+    /** Chunk errors or edge cases can leave rows without truth — tiny per-id reads always fit in URL limits. */
+    const truthKeysLoaded = new Set(truthByKey.keys());
+    const missingForTruth = canonicalIds.filter((kid) => !truthKeysLoaded.has(kid));
+    const SINGLE_TRUTH_CONCURRENCY = 8;
+    for (let i = 0; i < missingForTruth.length; i += SINGLE_TRUTH_CONCURRENCY) {
+      const slice = missingForTruth.slice(i, i + SINGLE_TRUTH_CONCURRENCY);
+      await Promise.all(
+        slice.map(async (kid) => {
+          const vars = idMatchVariantsForIn(kid);
+          if (vars.length === 0) return;
+          const { data: rows, error: oneErr } = await supabase
+            .from("service_bookings")
+            .select("id,status,updated_at")
+            .in("id", vars)
+            .limit(1);
+          if (oneErr) {
+            console.error("[api/bookings] truth pass single-id fallback failed", oneErr.message, kid);
+            return;
+          }
+          const row = rows?.[0];
+          if (row) truthByKey.set(canonicalBookingRowIdKey(row.id), row);
+        }),
+      );
     }
 
     bookingRows = bookingRows.map((b) => {

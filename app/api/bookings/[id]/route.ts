@@ -141,15 +141,22 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       const cancelAsRole =
         cancelAsRoleRaw === "buyer" || cancelAsRoleRaw === "seller" ? cancelAsRoleRaw : null;
 
+      const cancelIdVars = idMatchVariantsForIn(bookingId);
+      if (cancelIdVars.length === 0) {
+        return NextResponse.json({ error: "ID inválido" }, { status: 400 });
+      }
+
       const { data: booking, error: fetchErr } = await supabase
         .from("service_bookings")
         .select("id,buyer_id,seller_id,payment_status,status")
-        .eq("id", bookingId)
+        .in("id", cancelIdVars)
         .maybeSingle();
 
       if (fetchErr || !booking) {
         return NextResponse.json({ error: "Reserva no encontrada" }, { status: 404 });
       }
+
+      const rowId = String(booking.id);
 
       if (booking.payment_status !== "paid") {
         return NextResponse.json({ error: "Solo se pueden cancelar reservas pagadas" }, { status: 400 });
@@ -226,7 +233,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           cancel_note: cancelNote,
           updated_at: now,
         })
-        .eq("id", bookingId)
+        .eq("id", rowId)
         .eq("payment_status", "paid")
         .eq("status", fromStatus)
         .select("id,status")
@@ -240,7 +247,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       }
 
       await appendBookingEvent(supabase, {
-        bookingId,
+        bookingId: rowId,
         actorId: userId,
         eventType: "cancellation",
         fromStatus,
@@ -249,7 +256,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       });
 
       try {
-        await notifyBookingCancelledParty(supabase, bookingId, role, reasonCode);
+        await notifyBookingCancelledParty(supabase, rowId, role, reasonCode);
       } catch (e) {
         console.error("[bookings/:id] PATCH cancel WhatsApp failed (non-fatal)", e);
       }
@@ -266,15 +273,22 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
     const nextStatus = nextRaw as BookingLifecycleStatus;
 
+    const lifeIdVars = idMatchVariantsForIn(bookingId);
+    if (lifeIdVars.length === 0) {
+      return NextResponse.json({ error: "ID inválido" }, { status: 400 });
+    }
+
     const { data: booking, error: fetchErr } = await supabase
       .from("service_bookings")
       .select("id,buyer_id,seller_id,listing_id,payment_status,status,ticket_code")
-      .eq("id", bookingId)
+      .in("id", lifeIdVars)
       .maybeSingle();
 
     if (fetchErr || !booking) {
       return NextResponse.json({ error: "Reserva no encontrada" }, { status: 404 });
     }
+
+    const rowId = String(booking.id);
 
     const myPool = await expandUserAccountIdPool(supabase, userId);
     const sellerPoolBooking = await expandUserAccountIdPool(supabase, String(booking.seller_id));
@@ -289,7 +303,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (booking.status === "completed" && nextStatus === "completed") {
       let buyerPhaseWhatsApp: BuyerPhaseWhatsAppResult | undefined;
       try {
-        buyerPhaseWhatsApp = await notifyBuyerCompletedReviewPrompt(supabase, bookingId);
+        buyerPhaseWhatsApp = await notifyBuyerCompletedReviewPrompt(supabase, rowId);
       } catch (e) {
         console.error("[bookings/:id] PATCH re-notify review prompt failed (non-fatal)", e);
         buyerPhaseWhatsApp = { delivered: false, reason: "send_failed" };
@@ -313,7 +327,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const { data: updated, error: upErr } = await supabase
       .from("service_bookings")
       .update({ status: nextStatus, updated_at: now })
-      .eq("id", bookingId)
+      .eq("id", rowId)
       .eq("payment_status", "paid")
       .eq("status", fromStatus)
       .select("id,status")
@@ -327,7 +341,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
 
     await appendBookingEvent(supabase, {
-      bookingId,
+      bookingId: rowId,
       actorId: userId,
       eventType: "lifecycle_transition",
       fromStatus,
@@ -354,7 +368,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     if (nextStatus === "scheduled" || nextStatus === "in_progress") {
       try {
-        buyerPhaseWhatsApp = await notifyBuyerLifecyclePhase(supabase, bookingId, nextStatus);
+        buyerPhaseWhatsApp = await notifyBuyerLifecyclePhase(supabase, rowId, nextStatus);
       } catch (e) {
         console.error("[bookings/:id] PATCH phase WhatsApp failed (non-fatal)", e);
         buyerPhaseWhatsApp = { delivered: false, reason: "send_failed" };
@@ -363,7 +377,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     if (nextStatus === "completed") {
       try {
-        buyerPhaseWhatsApp = await notifyBuyerCompletedReviewPrompt(supabase, bookingId);
+        buyerPhaseWhatsApp = await notifyBuyerCompletedReviewPrompt(supabase, rowId);
       } catch (e) {
         console.error("[bookings/:id] PATCH review WhatsApp failed (non-fatal)", e);
         buyerPhaseWhatsApp = { delivered: false, reason: "send_failed" };
