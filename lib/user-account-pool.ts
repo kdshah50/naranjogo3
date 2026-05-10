@@ -10,23 +10,40 @@ export function phoneLookupVariants(phone: string | null | undefined): string[] 
   return [...new Set([raw, digits, `+${digits}`].filter(Boolean))];
 }
 
+const MAX_ACCOUNT_POOL_PHONE_ITERS = 6;
+
 /**
- * JWT sub, `users.id` casing duplicates, and multiple `users` rows for one phone
- * (provider signup vs OTP) — all ids that represent the same person for messaging/listings.
+ * JWT sub, `users.id` casing duplicates, and **all** `users` rows linked by phone
+ * (including transitive: A–B share a phone, B–C share another → A,B,C merge).
+ * Fixes provider logged in as one row while listings/bookings use another `seller_id`.
  */
 export async function expandUserAccountIdPool(supabase: SupabaseClient, userId: string): Promise<string[]> {
   const pool = new Set<string>(idMatchVariantsForIn(userId));
-  const { data: me } = await supabase.from("users").select("id,phone").in("id", idMatchVariantsForIn(userId)).maybeSingle();
-  if (me) {
-    for (const v of idMatchVariantsForIn(me.id)) pool.add(v);
-    const pvars = phoneLookupVariants(me.phone);
-    if (pvars.length > 0) {
-      const { data: samePhone } = await supabase.from("users").select("id").in("phone", pvars);
+
+  for (let iter = 0; iter < MAX_ACCOUNT_POOL_PHONE_ITERS; iter++) {
+    const beforeSize = pool.size;
+    const idBatch = [...pool];
+    if (idBatch.length === 0) break;
+
+    const { data: rows } = await supabase.from("users").select("id,phone").in("id", idBatch);
+    const phoneFilters = new Set<string>();
+    for (const r of rows ?? []) {
+      for (const v of idMatchVariantsForIn(r.id)) pool.add(v);
+      for (const pv of phoneLookupVariants(r.phone)) {
+        if (pv) phoneFilters.add(pv);
+      }
+    }
+
+    if (phoneFilters.size > 0) {
+      const { data: samePhone } = await supabase.from("users").select("id").in("phone", [...phoneFilters]);
       for (const row of samePhone ?? []) {
         for (const v of idMatchVariantsForIn(row.id)) pool.add(v);
       }
     }
+
+    if (pool.size === beforeSize) break;
   }
+
   return [...pool].filter(Boolean);
 }
 

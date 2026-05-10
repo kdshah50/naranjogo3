@@ -89,6 +89,9 @@ function SellerBookingsInner() {
         ? "La búsqueda ya penaliza cancelaciones; las marcas cuentan para disputas y revisión manual del equipo."
         : "Search already penalizes cancellations; strikes count toward disputes and manual team review.",
     empty: es ? "Aún no hay reservas pagadas." : "No paid bookings yet.",
+    emptyHint: es
+      ? "Si el cliente ya pagó: entra con la misma cuenta con la que publicaste el servicio. En «Mi perfil» el mismo WhatsApp suele unir cuentas. También: /seller-bookings?ticket=NG-… (código del WhatsApp)."
+      : "If a client already paid: sign in with the same account you used to publish the service. The same WhatsApp in Profile usually links duplicate logins. Or open /seller-bookings?ticket=NG-… from your WhatsApp.",
     buyer: es ? "Cliente" : "Buyer",
     ref: es ? "ref" : "ref",
     fee: es ? "Tarifa plataforma" : "Platform fee",
@@ -489,7 +492,10 @@ function SellerBookingsInner() {
         )}
 
         {bookings.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-[#E5E0D8] p-8 text-center text-sm text-[#6B7280]">{t.empty}</div>
+          <div className="bg-white rounded-2xl border border-[#E5E0D8] p-8 text-center text-sm text-[#6B7280] space-y-3">
+            <p>{t.empty}</p>
+            <p className="text-[11px] text-[#57534E] leading-relaxed">{t.emptyHint}</p>
+          </div>
         ) : (
           <ul className="space-y-4">
             {bookings.map((b) => {
