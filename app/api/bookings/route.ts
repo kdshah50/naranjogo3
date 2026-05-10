@@ -5,6 +5,7 @@ import { SERVICE_BOOKING_LIST_COLUMNS } from "@/lib/booking-list-select";
 import { expandUserAccountIdPool, poolsOverlap } from "@/lib/user-account-pool";
 import { getSellerAccountBookingCounts } from "@/lib/seller-platform-stats";
 import { normalizeNgTicketQuery } from "@/lib/ng-ticket-normalize";
+import { enrichBookingListRows, loadReviewedBookingIdSet } from "@/lib/api-bookings-enrich";
 
 export const dynamic = "force-dynamic";
 
@@ -404,55 +405,8 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const bookingIdVariants = [...new Set(bookingRows.flatMap((b) => idMatchVariantsForIn(String(b.id))))];
-  const reviewedSet = new Set<string>();
-  if (bookingIdVariants.length > 0) {
-    const { data: revRows } = await supabase
-      .from("seller_reviews")
-      .select("booking_id")
-      .in("booking_id", bookingIdVariants);
-    for (const r of revRows ?? []) {
-      if (r.booking_id) reviewedSet.add(canonicalBookingRowIdKey(r.booking_id));
-    }
-  }
-
-  const enriched = await Promise.all(
-    bookingRows.map(async (b) => {
-      const listingIdVars = idMatchVariantsForIn(String(b.listing_id));
-      const { data: listing } = await supabase
-        .from("listings")
-        .select("title_es")
-        .in("id", listingIdVars)
-        .maybeSingle();
-
-      let buyer_name = "Comprador";
-      let seller_name = "Proveedor";
-      if (sellerMode) {
-        const buyerPoolRow = await expandUserAccountIdPool(supabase, String(b.buyer_id));
-        const { data: buyerRows } = await supabase
-          .from("users")
-          .select("display_name")
-          .in("id", buyerPoolRow)
-          .limit(1);
-        buyer_name = buyerRows?.[0]?.display_name?.trim() || "Comprador";
-      } else {
-        const sellerPoolRow = await expandUserAccountIdPool(supabase, String(b.seller_id));
-        const { data: sellerRows } = await supabase
-          .from("users")
-          .select("display_name")
-          .in("id", sellerPoolRow)
-          .limit(1);
-        seller_name = sellerRows?.[0]?.display_name?.trim() || "Proveedor";
-      }
-
-      return {
-        ...b,
-        has_review: reviewedSet.has(canonicalBookingRowIdKey(b.id)),
-        listing_title: listing?.title_es ?? "Servicio",
-        ...(sellerMode ? { buyer_name } : { seller_name }),
-      };
-    })
-  );
+  const reviewedSet = await loadReviewedBookingIdSet(supabase, bookingRows);
+  const enriched = await enrichBookingListRows(supabase, bookingRows, sellerMode, reviewedSet);
 
   return NextResponse.json(
     {
