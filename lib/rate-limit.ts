@@ -2,7 +2,7 @@ import "server-only";
 
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
-import { rateLimitMemory } from "@/lib/rate-limit-memory";
+import { clientIpFromHeaders, rateLimitMemory } from "@/lib/rate-limit-memory";
 
 const OTP_IP_LIMIT = 25;
 const OTP_IP_WINDOW_MS = 15 * 60 * 1000;
@@ -46,6 +46,50 @@ export async function rateLimitSendOtpByIp(ip: string): Promise<{ ok: boolean; r
   }
   return rateLimitMemory(`send-otp-ip:${ip}`, OTP_IP_LIMIT, OTP_IP_WINDOW_MS);
 }
+
+const ADMIN_PIN_IP_LIMIT = 30;
+const ADMIN_PIN_WINDOW_MS = 15 * 60 * 1000;
+
+let adminPinIpLimit: Ratelimit | null | undefined;
+
+function getAdminPinIpLimiter(): Ratelimit | null {
+  if (adminPinIpLimit !== undefined) return adminPinIpLimit;
+  const url = process.env.UPSTASH_REDIS_REST_URL?.trim();
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
+  if (!url || !token) {
+    adminPinIpLimit = null;
+    return null;
+  }
+  try {
+    const redis = new Redis({ url, token });
+    adminPinIpLimit = new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(ADMIN_PIN_IP_LIMIT, "15 m"),
+      prefix: "ratelimit/ng/admin-pin-ip",
+    });
+    return adminPinIpLimit;
+  } catch {
+    adminPinIpLimit = null;
+    return null;
+  }
+}
+
+/** Brute-force protection for /api/admin/verify-pin (IP-based). */
+export async function rateLimitAdminPinByIp(ip: string): Promise<{ ok: boolean; retryAfterMs?: number }> {
+  const key = ip.trim() || "unknown";
+  const rl = getAdminPinIpLimiter();
+  if (rl) {
+    const { success, reset } = await rl.limit(key);
+    if (!success) {
+      const retryAfterMs = typeof reset === "number" ? Math.max(0, reset - Date.now()) : ADMIN_PIN_WINDOW_MS;
+      return { ok: false, retryAfterMs };
+    }
+    return { ok: true };
+  }
+  return rateLimitMemory(`admin-pin-ip:${key}`, ADMIN_PIN_IP_LIMIT, ADMIN_PIN_WINDOW_MS);
+}
+
+export { clientIpFromHeaders };
 
 /** Listing creation: burst + daily cap per seller (abuse / duplicate farming). */
 const LISTING_CREATE_HOUR_LIMIT = 8;

@@ -53,13 +53,15 @@ This document describes **security controls implemented in this repository** and
 
 - Protected actions resolve identity via **`getUserIdFromRequest`**.
 - Listing writes: **owner** match on `seller_id`, or **admin** via **`ADMIN_PIN`** from server env (see `app/api/listings/[id]/route.ts`).
-- Admin PIN entry validated server-side: `app/api/admin/verify-pin/route.ts`.
+- Admin PIN entry validated server-side: `app/api/admin/verify-pin/route.ts` with **IP rate limiting** (`rateLimitAdminPinByIp` in `lib/rate-limit.ts`; Upstash when configured, else in-memory per instance).
 
 ### 4. Database (Supabase Postgres)
 
 - **RLS enabled** on core tables (`supabase/migrations/20260422120000_row_level_security.sql`).
 - **Public read policies** for catalog: active `listings` and restricted `users` rows tied to active sellers (`20260423120000_rls_public_read_listings_users.sql`).
+- **Column-level `GRANT SELECT` on `users` for `anon`/`authenticated`**: only a safe subset of columns (no phone, CURP, RFC, INE URLs, `referred_by`) — `20260425110000_users_anon_no_phone.sql`; `service_role` retains full access for server routes.
 - **PostgREST service role** (`lib/service-rest.ts`): used only on the server; bypasses RLS — **authorization must be enforced in application code**.
+- **Production boot check**: `instrumentation.ts` calls `assertProductionSecrets()` (`lib/env-production-guard.ts`) — rejects missing `SUPABASE_SERVICE_ROLE_KEY` / short JWT, weak `JWT_SECRET`, or any `NEXT_PUBLIC_*` service-role leak. Skips during `next build` (`NEXT_PHASE=phase-production-build`) or when `SKIP_PRODUCTION_ENV_GUARD=1` (never on real production).
 
 ### 5. Payments
 
@@ -102,7 +104,7 @@ Prioritize based on risk (fraud volume, regulatory requirements, publicity).
 | Topic | Location |
 |-------|----------|
 | JWT / session | `lib/auth-server.ts`, `lib/jwt-secret.ts` |
-| Service role REST / guidelines | `lib/service-rest.ts`, `docs/SERVICE_ROLE.md` |
+| Service role / prod env guard | `lib/auth-server.ts`, `lib/service-rest.ts`, `lib/env-production-guard.ts`, `instrumentation.ts`, `docs/SERVICE_ROLE.md` |
 | Security headers & CSP | `next.config.mjs`, `lib/csp.mjs` (`CSP_MODE`) |
 | Stripe webhook | `app/api/webhooks/stripe/route.ts` |
 | OTP send / verify | `app/api/auth/send-otp/route.ts`, `app/api/auth/verify-otp/route.ts` |
