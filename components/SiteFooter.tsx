@@ -9,6 +9,9 @@ export default function SiteFooter() {
           <TianguisWordmark variant="footer" />
           <span className="text-xs text-[#6B7280]">© {new Date().getFullYear()}</span>
         </span>
+        <Link href="/faq" className="hover:text-[#1B4332] font-medium">
+          FAQ
+        </Link>
         <Link href="/privacy" className="hover:text-[#1B4332] font-medium">
           Privacidad
         </Link>
