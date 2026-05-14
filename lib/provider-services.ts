@@ -44,6 +44,7 @@ export const PROVIDER_SERVICES = [
   { value: "yoga", es: "Yoga / Bienestar", en: "Yoga / Wellness" },
   { value: "diseno", es: "Diseño de interiores", en: "Interior Design" },
   { value: "espanol", es: "Clases de español", en: "Spanish Lessons" },
+  { value: "coaching_training", es: "Coaching y capacitación", en: "Coaching & Training" },
   { value: "chef", es: "Chef a domicilio", en: "Private Chef" },
   { value: "servicios_computo", es: "Servicios de cómputo / IT", en: "Computer / IT Services" },
   { value: "veterinaria", es: "Servicios veterinarios", en: "Veterinary Services" },
