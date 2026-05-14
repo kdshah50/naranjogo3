@@ -5,7 +5,7 @@ import FaqClient from "@/components/legal/FaqClient";
 export const metadata: Metadata = {
   title: "Preguntas frecuentes | Naranjogo",
   description:
-    "Cómo reservar servicios, pagar la tarifa de la plataforma o el servicio completo, chat con proveedores y precio acordado en Naranjogo.",
+    "Reservas, proveedores verificados (INE, RFC, niveles de confianza), trabajos completados, reseñas, mensajes en la app, privacidad y pagos con Stripe en Naranjogo.",
   robots: { index: true, follow: true },
 };
 

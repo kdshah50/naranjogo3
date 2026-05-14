@@ -7,13 +7,15 @@ import type { Lang } from "@/lib/i18n-lang";
 type FaqItem = { q: string; a: string };
 type FaqSection = { title: string; items: FaqItem[] };
 
-const COPY: Record<Lang, { back: string; pageTitle: string; intro: string; buyers: FaqSection; providers: FaqSection }> =
-  {
+const COPY: Record<
+  Lang,
+  { back: string; pageTitle: string; intro: string; buyers: FaqSection; providers: FaqSection; trust: FaqSection }
+> = {
     es: {
       back: "← Inicio",
       pageTitle: "Preguntas frecuentes",
       intro:
-        "Respuestas sobre cómo reservar servicios, pagar en la app y usar el chat con proveedores en Naranjogo (Tianguis).",
+        "Cómo funciona Naranjogo (Tianguis): reservas, pagos, confianza con proveedores verificados, mensajes en la app y privacidad.",
       buyers: {
         title: "Soy comprador o cliente",
         items: [
@@ -72,12 +74,41 @@ const COPY: Record<Lang, { back: string; pageTitle: string; intro: string; buyer
           },
         ],
       },
+      trust: {
+        title: "Confianza, verificación y privacidad",
+        items: [
+          {
+            q: "¿Qué es un proveedor verificado en Naranjogo?",
+            a: "Además de los anuncios que el equipo puede revisar antes de publicarse, los proveedores pueden sumar señales de identidad y confianza: verificación de INE o RFC cuando aplica, teléfono/WhatsApp verificado, e insignias de nivel (por ejemplo Bronce, Oro o Diamante). La ficha del servicio muestra estas señales para que compares con más contexto antes de reservar.",
+          },
+          {
+            q: "¿Qué significan los trabajos completados que aparecen en el anuncio?",
+            a: "Mostramos cuántas reservas se pagaron por la app en ese anuncio y cuántas el proveedor marcó como completadas, además de totales agregados de sus otros anuncios cuando aplica. Son métricas de actividad real en la plataforma, no números inventados.",
+          },
+          {
+            q: "¿Las reseñas son confiables?",
+            a: "Las reseñas visibles en fichas de servicios están ligadas a reservas pagadas y completadas por la app: no son comentarios anónimos de redes sociales. Eso ayuda a reflejar experiencias de clientes que sí usaron el flujo de Naranjogo.",
+          },
+          {
+            q: "¿Por qué pedir mensaje en la app antes de pagar?",
+            a: "Dejamos constancia de contacto y reducimos patrones típicos de fraude (por ejemplo solicitudes de pago o datos por canales externos sin contexto). El WhatsApp del proveedor se abre desde la app cuando el pago correspondiente se confirma en Stripe.",
+          },
+          {
+            q: "¿Comparten mis datos o los del vendedor?",
+            a: "Usamos la información para operar cuentas, mensajes en la app, pagos y obligaciones legales — no como listado público de teléfonos entre usuarios. Los detalles están en el aviso de privacidad. El flujo prioriza la reserva y la transacción con contexto, no exponer contactos sin el paso de pago donde aplica.",
+          },
+          {
+            q: "¿Qué más incluye la plataforma además del listado?",
+            a: "Pagos con Stripe (tarifa o servicio completo cuando el proveedor tiene Connect); garantía en reservas elegibles; descuentos por lealtad sobre la tarifa; carrito con Connect para productos; y panel de reservas y estados para proveedores. El producto sigue creciendo a partir de este modelo.",
+          },
+        ],
+      },
     },
     en: {
       back: "← Home",
       pageTitle: "Frequently asked questions",
       intro:
-        "How bookings, payments, and in-app chat work for services on Naranjogo (Tianguis).",
+        "How Naranjogo (Tianguis) works: bookings, payments, verified providers, in-app messaging, and privacy.",
       buyers: {
         title: "I’m a buyer / client",
         items: [
@@ -136,6 +167,35 @@ const COPY: Record<Lang, { back: string; pageTitle: string; intro: string; buyer
           },
         ],
       },
+      trust: {
+        title: "Trust, verification & privacy",
+        items: [
+          {
+            q: "What does “verified provider” mean on Naranjogo?",
+            a: "Beyond listings our team can review before they go live, providers can add identity and trust signals—such as INE or RFC checks where applicable, verified phone/WhatsApp, and tier badges (e.g. Bronze, Gold, Diamond). The listing shows these so you can compare providers with more context before booking.",
+          },
+          {
+            q: "What are the “completed jobs” numbers on a listing?",
+            a: "We show how many bookings were paid through the app on that ad and how many the provider marked completed, plus rolled-up totals across their other listings when relevant. These are real platform metrics—not vanity counters.",
+          },
+          {
+            q: "Can I trust the reviews?",
+            a: "Reviews on service listings are tied to paid, completed bookings on Naranjogo—not anonymous social comments. That better reflects clients who actually used the in-app flow.",
+          },
+          {
+            q: "Why require in-app messaging before paying?",
+            a: "It leaves a trace of contact and cuts common scam patterns (e.g. someone asking for money or personal data off-platform with no context). The provider’s WhatsApp opens from the app after the relevant payment confirms in Stripe.",
+          },
+          {
+            q: "Do you share my information—or the seller’s?",
+            a: "We use personal data to run accounts, in-app messages, payments, and legal obligations—not as a public phone book between users. See the privacy notice for specifics. The flow is built around bookings and transactions with context, not exposing contacts without the payment step where it applies.",
+          },
+          {
+            q: "What else does the platform offer beyond a directory?",
+            a: "Secure Stripe checkout for platform fees or full service payments (when the provider uses Connect); guarantee coverage on eligible bookings; loyalty savings on booking fees; a cart with Connect for goods; and seller tools for bookings and status. We’re continuing to build on this foundation.",
+          },
+        ],
+      },
     },
   };
 
@@ -184,6 +244,15 @@ export default function FaqClient() {
           <div className="space-y-3">
             {t.providers.items.map((item, i) => (
               <FaqDetails key={`p-${i}`} item={item} />
+            ))}
+          </div>
+        </section>
+
+        <section className="mb-10">
+          <h2 className="text-lg font-bold text-[#1C1917] mb-4">{t.trust.title}</h2>
+          <div className="space-y-3">
+            {t.trust.items.map((item, i) => (
+              <FaqDetails key={`t-${i}`} item={item} />
             ))}
           </div>
         </section>
