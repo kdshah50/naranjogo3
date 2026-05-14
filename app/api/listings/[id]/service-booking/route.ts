@@ -12,6 +12,15 @@ import {
 import { checkoutBlockedByExistingPaidRows } from "@/lib/booking-checkout-guard";
 import { canonicalBookingRowIdKey, mergeBookingListRowsPreferTruth } from "@/lib/booking-list-merge";
 import { poolsOverlap, expandUserAccountIdPool, userIsListingSellerAccount } from "@/lib/user-account-pool";
+import { loadSellerConnectId } from "@/lib/marketplace-cart-server";
+import {
+  computeCartPricing,
+  applyLoyaltyDiscountToCartPricing,
+  marketplaceApplicationFeeCents,
+} from "@/lib/marketplace-cart-pricing";
+import {
+  resolveServicePricingBaseMxnCents,
+} from "@/lib/service-booking-pricing";
 
 export const dynamic = "force-dynamic";
 
@@ -143,7 +152,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
     const { data: gate } = await supabase
       .from("listing_service_contact_gate")
-      .select("contacted_in_app")
+      .select("contacted_in_app,agreed_subtotal_mxn_cents,seller_set_agreed_price_at")
       .eq("listing_id", listingId)
       .in("buyer_id", myPool)
       .maybeSingle();
@@ -222,12 +231,23 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     const pendingBooking = pendingBookings?.[0] ?? null;
 
     const commPct = Number(listingPricing?.commission_pct ?? 10);
-    const base = effectiveListingPriceMxnCents({
+    const listingPricingRow = {
       price_mxn: Number(listingPricing?.price_mxn) || 0,
       package_session_count: listingPricing?.package_session_count,
       package_total_price_mxn: listingPricing?.package_total_price_mxn,
+    };
+    const listingBaseMxnCents = effectiveListingPriceMxnCents(listingPricingRow);
+    const gateForPricing = gate
+      ? {
+          agreed_subtotal_mxn_cents: gate.agreed_subtotal_mxn_cents as number | null,
+          seller_set_agreed_price_at: gate.seller_set_agreed_price_at as string | null,
+        }
+      : null;
+    const pricingBaseMxnCents = resolveServicePricingBaseMxnCents({
+      listing: listingPricingRow,
+      gate: gateForPricing,
     });
-    let commCents = computeCommissionCents(base, commPct);
+    let commCents = computeCommissionCents(pricingBaseMxnCents, commPct);
     if (!Number.isFinite(commCents) || commCents < MIN_COMMISSION_CENTS_MXN) {
       commCents = MIN_COMMISSION_CENTS_MXN;
     }
@@ -256,6 +276,51 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
           })
         : null;
 
+    const sellerConnectReady =
+      sellerId != null ? Boolean(await loadSellerConnectId(supabase, String(sellerId))) : false;
+
+    const agreedSubtotalMxnCents =
+      gateForPricing?.seller_set_agreed_price_at != null && gateForPricing?.agreed_subtotal_mxn_cents != null
+        ? Number(gateForPricing.agreed_subtotal_mxn_cents)
+        : null;
+    const usingAgreedPrice =
+      agreedSubtotalMxnCents != null &&
+      Number.isFinite(agreedSubtotalMxnCents) &&
+      pricingBaseMxnCents === Math.round(agreedSubtotalMxnCents);
+
+    let fullConnectPreview:
+      | {
+          subtotalCents: number;
+          commissionCents: number;
+          vatCents: number;
+          totalCents: number;
+          vatPercent: number;
+          applicationFeeCents: number;
+        }
+      | null = null;
+    if (sellerConnectReady && pricingBaseMxnCents > 0) {
+      let cartP = computeCartPricing([
+        {
+          listingId,
+          qty: 1,
+          unitPriceMxnCents: pricingBaseMxnCents,
+          commissionPct: commPct,
+          titleEs: String(listing.title_es ?? ""),
+        },
+      ]);
+      if (loyaltyDiscountPctApplied != null && loyaltyDiscountPctApplied > 0) {
+        cartP = applyLoyaltyDiscountToCartPricing(cartP, loyaltyDiscountPctApplied);
+      }
+      fullConnectPreview = {
+        subtotalCents: cartP.subtotalCents,
+        commissionCents: cartP.commissionCents,
+        vatCents: cartP.vatCents,
+        totalCents: cartP.totalCents,
+        vatPercent: cartP.vatPercent,
+        applicationFeeCents: marketplaceApplicationFeeCents(cartP),
+      };
+    }
+
     return NextResponse.json(
       {
         isService: isServicesCategory,
@@ -279,6 +344,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         packageTotalMxnCents: hasPackage ? listingPricing?.package_total_price_mxn : null,
         packageSavingsPctApprox: pkgSavings?.savingsPctApprox ?? null,
         packageSavingsMxnCents: pkgSavings?.savingsCents ?? null,
+        listingPricingBaseMxnCents: listingBaseMxnCents,
+        pricingBaseMxnCents,
+        agreedSubtotalMxnCents: agreedSubtotalMxnCents,
+        sellerAgreedPriceAt: gateForPricing?.seller_set_agreed_price_at ?? null,
+        usingAgreedPrice,
+        sellerConnectReady,
+        fullConnectPreview,
       },
       { headers: jsonNoStore },
     );

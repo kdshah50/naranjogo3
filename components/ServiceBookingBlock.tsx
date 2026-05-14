@@ -32,6 +32,20 @@ type BookingState = {
   /** Latest paid booking lifecycle (for polling + buyer UI). */
   paidBookingStatus?: string | null;
   ticketCode?: string | null;
+  listingPricingBaseMxnCents?: number;
+  pricingBaseMxnCents?: number;
+  agreedSubtotalMxnCents?: number | null;
+  sellerAgreedPriceAt?: string | null;
+  usingAgreedPrice?: boolean;
+  sellerConnectReady?: boolean;
+  fullConnectPreview?: {
+    subtotalCents: number;
+    commissionCents: number;
+    vatCents: number;
+    totalCents: number;
+    vatPercent: number;
+    applicationFeeCents: number;
+  } | null;
 };
 
 function formatMXN(cents: number): string {
@@ -101,6 +115,8 @@ export default function ServiceBookingBlock({
   } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const prevContacted = useRef(false);
+  /** Buyer checkout: default tarifa sola; optional pago completo si el proveedor tiene Connect. */
+  const [checkoutMode, setCheckoutMode] = useState<"commission_only" | "full_connect">("commission_only");
 
   const load = useCallback(async () => {
     setMsg("");
@@ -154,10 +170,17 @@ export default function ServiceBookingBlock({
     window.addEventListener("tianguis:listing-contact", onContact);
     window.addEventListener("tianguis:booking-paid", onPaid);
     window.addEventListener("tianguis:booking-lifecycle", onLifecycle);
+    const onAgreed = (ev: Event) => {
+      const d = (ev as CustomEvent<{ listingId?: string }>).detail;
+      if (d?.listingId && String(d.listingId) !== String(listingId)) return;
+      void load();
+    };
+    window.addEventListener("tianguis:agreed-price-updated", onAgreed);
     return () => {
       window.removeEventListener("tianguis:listing-contact", onContact);
       window.removeEventListener("tianguis:booking-paid", onPaid);
       window.removeEventListener("tianguis:booking-lifecycle", onLifecycle);
+      window.removeEventListener("tianguis:agreed-price-updated", onAgreed);
     };
   }, [load, listingId]);
 
@@ -197,6 +220,12 @@ export default function ServiceBookingBlock({
     booking?.paidBookingStatus,
   ]);
 
+  useEffect(() => {
+    if (!booking?.sellerConnectReady || !booking?.fullConnectPreview) {
+      setCheckoutMode("commission_only");
+    }
+  }, [booking?.sellerConnectReady, booking?.fullConnectPreview]);
+
   /** Server uses merged account (phone) to detect seller; client id match is fallback. */
   const iAmSellerOnThisListing = Boolean(booking?.isSeller) || Boolean(sellerId && meId && sameUserId(meId, sellerId));
 
@@ -229,13 +258,18 @@ export default function ServiceBookingBlock({
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ listingId, note: note.trim() || undefined }),
+        body: JSON.stringify({
+          listingId,
+          note: note.trim() || undefined,
+          checkoutMode,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
         const detail = typeof (data as { detail?: string }).detail === "string" ? (data as { detail: string }).detail : "";
+        const serverMsg = typeof (data as { message?: string }).message === "string" ? (data as { message: string }).message : "";
         const err = (data as { error?: string }).error ?? "Error al crear pago";
-        throw new Error(detail ? `${err} ${detail}` : err);
+        throw new Error(serverMsg || (detail ? `${err} ${detail}` : err));
       }
       if (data.url) {
         window.location.href = data.url;
@@ -604,6 +638,76 @@ export default function ServiceBookingBlock({
             </p>
           </div>
 
+          {booking.usingAgreedPrice &&
+            booking.agreedSubtotalMxnCents != null &&
+            booking.agreedSubtotalMxnCents > 0 && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 leading-relaxed">
+                {listingLang === "en" ? (
+                  <>
+                    <strong>Agreed job total:</strong> {formatMXN(booking.agreedSubtotalMxnCents)} (set by your provider).
+                    Platform fee is calculated on this amount.
+                  </>
+                ) : (
+                  <>
+                    <strong>Precio acordado del trabajo:</strong> {formatMXN(booking.agreedSubtotalMxnCents)} (fijado por tu
+                    proveedor). La tarifa de Naranjogo se calcula sobre este monto.
+                  </>
+                )}
+              </div>
+            )}
+
+          {booking.sellerConnectReady && booking.fullConnectPreview && (
+            <div className="rounded-xl border border-[#E5E0D8] bg-white p-3 space-y-2">
+              <p className="text-[11px] font-semibold text-[#374151]">
+                {listingLang === "en" ? "How do you want to pay?" : "¿Cómo quieres pagar?"}
+              </p>
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="checkout-mode"
+                  className="mt-1"
+                  checked={checkoutMode === "commission_only"}
+                  onChange={() => setCheckoutMode("commission_only")}
+                />
+                <span className="text-xs text-[#374151] leading-snug">
+                  {listingLang === "en" ? (
+                    <>
+                      <strong>Platform fee only</strong> — same as before. You coordinate the service price directly with
+                      the provider (cash, transfer, etc.).
+                    </>
+                  ) : (
+                    <>
+                      <strong>Solo tarifa de plataforma</strong> — como antes. El precio del servicio lo liquidas directo
+                      con el proveedor (efectivo, transferencia, etc.).
+                    </>
+                  )}
+                </span>
+              </label>
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="checkout-mode"
+                  className="mt-1"
+                  checked={checkoutMode === "full_connect"}
+                  onChange={() => setCheckoutMode("full_connect")}
+                />
+                <span className="text-xs text-[#374151] leading-snug">
+                  {listingLang === "en" ? (
+                    <>
+                      <strong>Pay the full service in the app</strong> — service subtotal + platform fee + VAT (IVA), via
+                      Stripe Connect to your provider when they have payouts enabled.
+                    </>
+                  ) : (
+                    <>
+                      <strong>Pagar el servicio completo en la app</strong> — subtotal del servicio + comisión + IVA, vía
+                      Stripe Connect al proveedor cuando tiene cobros activos.
+                    </>
+                  )}
+                </span>
+              </label>
+            </div>
+          )}
+
           <div>
             <label className="block text-[11px] font-medium text-[#374151] mb-1">{noteCopy.label}</label>
             <p className="text-[10px] text-[#6B7280] mb-2 leading-snug">{noteCopy.hint}</p>
@@ -648,32 +752,62 @@ export default function ServiceBookingBlock({
               </div>
             )}
 
-          <div className="bg-[#F4F0EB] rounded-xl p-3 flex items-center justify-between gap-2">
-            <div className="min-w-0">
-              <p className="text-xs text-[#6B7280]">
-                {listingLang === "en" ? "Platform fee" : "Tarifa"}{" "}
-                {isService ? (listingLang === "en" ? "(service)" : "de servicio") : listingLang === "en" ? "(connection)" : "de conexión"}{" "}
-                ({booking.commissionPct}%)
+          {checkoutMode === "full_connect" && booking.fullConnectPreview ? (
+            <div className="bg-[#F4F0EB] rounded-xl p-3 space-y-2">
+              <p className="text-xs font-semibold text-[#1C1917]">
+                {listingLang === "en" ? "Checkout total (Stripe)" : "Total en Stripe"}
               </p>
-              <div className="flex flex-wrap items-baseline gap-2 mt-0.5">
-                {booking.commissionBeforeLoyaltyCents != null &&
-                  booking.commissionBeforeLoyaltyCents > booking.commissionAmountCents && (
-                    <p className="text-sm text-[#9CA3AF] line-through decoration-[#9CA3AF]">
-                      {formatMXN(booking.commissionBeforeLoyaltyCents)}
-                    </p>
-                  )}
-                <p className="text-lg font-bold text-[#1C1917]">{formatMXN(booking.commissionAmountCents)}</p>
+              <div className="text-xs text-[#374151] space-y-1">
+                <div className="flex justify-between gap-2">
+                  <span className="text-[#6B7280]">{listingLang === "en" ? "Service" : "Servicio"}</span>
+                  <span className="font-tabular-nums">{formatMXN(booking.fullConnectPreview.subtotalCents)}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-[#6B7280]">
+                    {listingLang === "en" ? "Platform fee" : "Tarifa plataforma"} ({booking.commissionPct}%)
+                  </span>
+                  <span className="font-tabular-nums">{formatMXN(booking.fullConnectPreview.commissionCents)}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-[#6B7280]">
+                    IVA ({booking.fullConnectPreview.vatPercent}%)
+                  </span>
+                  <span className="font-tabular-nums">{formatMXN(booking.fullConnectPreview.vatCents)}</span>
+                </div>
+                <div className="flex justify-between gap-2 pt-1 border-t border-[#E5E0D8] font-bold text-[#1C1917]">
+                  <span>{listingLang === "en" ? "You pay" : "Pagas"}</span>
+                  <span className="font-tabular-nums text-base">{formatMXN(booking.fullConnectPreview.totalCents)}</span>
+                </div>
               </div>
-              {booking.loyaltyDiscountCents != null && booking.loyaltyDiscountCents > 0 && (
-                <p className="text-[11px] text-emerald-700 font-semibold mt-1">
-                  {listingLang === "en"
-                    ? `You save ${formatMXN(booking.loyaltyDiscountCents)} on the fee.`
-                    : `Ahorras ${formatMXN(booking.loyaltyDiscountCents)} en la tarifa.`}
-                </p>
-              )}
             </div>
-            <span className="text-xs text-[#6B7280] shrink-0">MXN</span>
-          </div>
+          ) : (
+            <div className="bg-[#F4F0EB] rounded-xl p-3 flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-xs text-[#6B7280]">
+                  {listingLang === "en" ? "Platform fee" : "Tarifa"}{" "}
+                  {isService ? (listingLang === "en" ? "(service)" : "de servicio") : listingLang === "en" ? "(connection)" : "de conexión"}{" "}
+                  ({booking.commissionPct}%)
+                </p>
+                <div className="flex flex-wrap items-baseline gap-2 mt-0.5">
+                  {booking.commissionBeforeLoyaltyCents != null &&
+                    booking.commissionBeforeLoyaltyCents > booking.commissionAmountCents && (
+                      <p className="text-sm text-[#9CA3AF] line-through decoration-[#9CA3AF]">
+                        {formatMXN(booking.commissionBeforeLoyaltyCents)}
+                      </p>
+                    )}
+                  <p className="text-lg font-bold text-[#1C1917]">{formatMXN(booking.commissionAmountCents)}</p>
+                </div>
+                {booking.loyaltyDiscountCents != null && booking.loyaltyDiscountCents > 0 && (
+                  <p className="text-[11px] text-emerald-700 font-semibold mt-1">
+                    {listingLang === "en"
+                      ? `You save ${formatMXN(booking.loyaltyDiscountCents)} on the fee.`
+                      : `Ahorras ${formatMXN(booking.loyaltyDiscountCents)} en la tarifa.`}
+                  </p>
+                )}
+              </div>
+              <span className="text-xs text-[#6B7280] shrink-0">MXN</span>
+            </div>
+          )}
 
           <button
             type="button"
@@ -685,13 +819,17 @@ export default function ServiceBookingBlock({
               ? listingLang === "en"
                 ? "Processing…"
                 : "Procesando…"
-              : isService
+              : checkoutMode === "full_connect" && booking.fullConnectPreview
                 ? listingLang === "en"
-                  ? `Pay ${formatMXN(booking.commissionAmountCents)}`
-                  : `Pagar ${formatMXN(booking.commissionAmountCents)}`
-                : listingLang === "en"
-                  ? `Pay ${formatMXN(booking.commissionAmountCents)} and open WhatsApp`
-                  : `Pagar ${formatMXN(booking.commissionAmountCents)} y abrir WhatsApp`}
+                  ? `Pay ${formatMXN(booking.fullConnectPreview.totalCents)} (full checkout)`
+                  : `Pagar ${formatMXN(booking.fullConnectPreview.totalCents)} (total)`
+                : isService
+                  ? listingLang === "en"
+                    ? `Pay ${formatMXN(booking.commissionAmountCents)}`
+                    : `Pagar ${formatMXN(booking.commissionAmountCents)}`
+                  : listingLang === "en"
+                    ? `Pay ${formatMXN(booking.commissionAmountCents)} and open WhatsApp`
+                    : `Pagar ${formatMXN(booking.commissionAmountCents)} y abrir WhatsApp`}
           </button>
 
           <p className="text-center text-xs text-[#6B7280]">

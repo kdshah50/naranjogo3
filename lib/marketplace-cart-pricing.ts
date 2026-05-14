@@ -76,3 +76,23 @@ export function computeCartPricing(lines: CartLineInput[]): CartPricingBreakdown
 export function marketplaceApplicationFeeCents(pricing: CartPricingBreakdown): number {
   return pricing.commissionCents + pricing.vatCents;
 }
+
+/** Reduce platform commission by loyalty %, floor at MIN_COMMISSION; recompute IVA and total. */
+export function applyLoyaltyDiscountToCartPricing(
+  pricing: CartPricingBreakdown,
+  discountPct: number
+): CartPricingBreakdown {
+  if (!Number.isFinite(discountPct) || discountPct <= 0) return pricing;
+  if (pricing.subtotalCents <= 0) return pricing;
+  const rawDisc = Math.round((pricing.commissionCents * discountPct) / 100);
+  const newCommission = Math.max(pricing.commissionCents - rawDisc, MIN_COMMISSION_CENTS_MXN);
+  const taxableCents = pricing.subtotalCents + newCommission;
+  const vatCents = Math.round((taxableCents * pricing.vatPercent) / 100);
+  const totalCents = pricing.subtotalCents + newCommission + vatCents;
+  return {
+    ...pricing,
+    commissionCents: newCommission,
+    vatCents,
+    totalCents,
+  };
+}
