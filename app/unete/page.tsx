@@ -17,6 +17,11 @@ import {
   PROVIDER_LANGUAGE_OPTIONS,
   SERVICE_LOCATION_OPTIONS,
   providerServiceLabels,
+  COACHING_TRAINING_SERVICE,
+  COACHING_TRAINING_FOCUS,
+  COACHING_TRAINING_DELIVERY,
+  coachingFocusLabels,
+  coachingDeliveryLabels,
 } from "@/lib/provider-services";
 import { useAppLang, useAppLangActions } from "@/hooks/use-app-lang";
 
@@ -94,6 +99,11 @@ const T = {
     availabilityTo:         "a",
     availabilityNotes:      "Notas adicionales (opcional)",
     availabilityNotesPh:    "Ej. Cierro en días festivos, avisar con 24 h de anticipación…",
+    coachingFocus:          "Áreas de capacitación (elige las que apliquen)",
+    coachingFocusHint:      "Agile, SAFe, IA, ingeniería de software — puedes marcar varias.",
+    coachingDelivery:       "Modalidad: virtual y/o presencial",
+    coachingDeliveryHint:   "Indica si ofreces sesiones en línea, en sitio con el cliente, o ambas.",
+    coachingStep2Error:     "Para Coaching y capacitación: elige al menos un área y una modalidad.",
   },
   en: {
     title:        "List your service on Naranjogo",
@@ -159,6 +169,11 @@ const T = {
     availabilityTo:         "To",
     availabilityNotes:      "Additional notes (optional)",
     availabilityNotesPh:    "e.g. Closed on holidays, please give 24 h notice…",
+    coachingFocus:          "Training specialties (select all that apply)",
+    coachingFocusHint:      "Agile, SAFe, AI, software engineering — you can pick several.",
+    coachingDelivery:       "Delivery: virtual and/or on-site",
+    coachingDeliveryHint:   "Offer online sessions, in-person, or both.",
+    coachingStep2Error:     "For Coaching & training: pick at least one specialty and one delivery mode.",
   },
 };
 
@@ -200,6 +215,8 @@ function UnetePageInner() {
     payment_methods: ["efectivo", "whatsapp"] as string[],
     acceptTerms: false,
     acceptPricing: false,
+    coaching_focus: [] as string[],
+    coaching_delivery: [] as string[],
   });
 
   const t = T[lang];
@@ -407,6 +424,8 @@ function UnetePageInner() {
                     ...f,
                     service: v,
                     alternate_services: f.alternate_services.filter(x => x !== v),
+                    coaching_focus: v === COACHING_TRAINING_SERVICE && f.service === COACHING_TRAINING_SERVICE ? f.coaching_focus : [],
+                    coaching_delivery: v === COACHING_TRAINING_SERVICE && f.service === COACHING_TRAINING_SERVICE ? f.coaching_delivery : [],
                   }));
                 }}
                   className="w-full border border-[#E5E0D8] rounded-xl px-4 py-3 text-sm outline-none focus:border-[#1B4332] transition-colors bg-white">
@@ -444,6 +463,74 @@ function UnetePageInner() {
                   ))}
                 </div>
               </div>
+
+              {form.service === COACHING_TRAINING_SERVICE && (
+                <>
+                  <div className="rounded-2xl border border-[#A7F3D0] bg-[#ECFDF5] p-4 space-y-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-[#065F46] mb-1">{t.coachingFocus}</label>
+                      <p className="text-xs text-[#047857] mb-2 leading-snug">{t.coachingFocusHint}</p>
+                      <div className="flex flex-col gap-2">
+                        {COACHING_TRAINING_FOCUS.map((opt) => {
+                          const checked = form.coaching_focus.includes(opt.value);
+                          return (
+                            <label
+                              key={opt.value}
+                              className={`flex items-center gap-3 px-3 py-2 rounded-xl border cursor-pointer transition-colors ${
+                                checked ? "border-[#1B4332] bg-white" : "border-[#E5E0D8] bg-white/80"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => {
+                                  const next = checked
+                                    ? form.coaching_focus.filter((x) => x !== opt.value)
+                                    : [...form.coaching_focus, opt.value];
+                                  set("coaching_focus", next);
+                                }}
+                                className="accent-[#1B4332] w-4 h-4 flex-shrink-0"
+                              />
+                              <span className="text-sm text-[#1C1917]">{opt[lang]}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-[#065F46] mb-1">{t.coachingDelivery}</label>
+                      <p className="text-xs text-[#047857] mb-2 leading-snug">{t.coachingDeliveryHint}</p>
+                      <div className="flex flex-col gap-2">
+                        {COACHING_TRAINING_DELIVERY.map((opt) => {
+                          const checked = form.coaching_delivery.includes(opt.value);
+                          return (
+                            <label
+                              key={opt.value}
+                              className={`flex items-center gap-3 px-3 py-2 rounded-xl border cursor-pointer transition-colors ${
+                                checked ? "border-[#1B4332] bg-white" : "border-[#E5E0D8] bg-white/80"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => {
+                                  const next = checked
+                                    ? form.coaching_delivery.filter((x) => x !== opt.value)
+                                    : [...form.coaching_delivery, opt.value];
+                                  set("coaching_delivery", next);
+                                }}
+                                className="accent-[#1B4332] w-4 h-4 flex-shrink-0"
+                              />
+                              <span className="text-sm text-[#1C1917]">{opt[lang]}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+
               <div>
                 <label className="block text-xs font-semibold text-[#6B7280] mb-2">{t.alternateServices}</label>
                 <p className="text-xs text-[#A8A095] mb-2">{t.alternateHint}</p>
@@ -625,6 +712,12 @@ function UnetePageInner() {
                   })}
                 </div>
               </div>
+              {form.service === COACHING_TRAINING_SERVICE &&
+                (form.coaching_focus.length === 0 || form.coaching_delivery.length === 0) && (
+                  <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                    {t.coachingStep2Error}
+                  </p>
+                )}
               <div className="flex gap-3">
                 <button onClick={() => setStep(1)}
                   className="flex-none border border-[#E5E0D8] text-[#6B7280] font-medium py-3 px-5 rounded-xl text-sm hover:border-[#1B4332] transition-colors">
@@ -634,6 +727,8 @@ function UnetePageInner() {
                   disabled={
                     !form.service || !form.description || !form.price
                     || !form.provider_languages || !form.service_location
+                    || (form.service === COACHING_TRAINING_SERVICE
+                      && (form.coaching_focus.length === 0 || form.coaching_delivery.length === 0))
                   }
                   className="flex-1 bg-[#1B4332] text-white font-semibold py-3 rounded-xl text-sm disabled:opacity-40 hover:bg-[#2D6A4F] transition-colors">
                   {t.next}
@@ -710,6 +805,14 @@ function UnetePageInner() {
                   [t.name,     form.name],
                   ["WhatsApp", form.whatsapp],
                   [t.service,  SERVICES.find(s => s.value === form.service)?.[lang] ?? form.service],
+                  ...(form.service === COACHING_TRAINING_SERVICE
+                    ? ([
+                        [
+                          t.coachingFocus,
+                          `${coachingFocusLabels(form.coaching_focus, lang)} · ${coachingDeliveryLabels(form.coaching_delivery, lang)}`,
+                        ],
+                      ] as [string, string][])
+                    : []),
                   [t.providerLanguages, PROVIDER_LANGUAGE_OPTIONS.find(o => o.value === form.provider_languages)?.[lang] ?? "—"],
                   [t.serviceLocation, SERVICE_LOCATION_OPTIONS.find(o => o.value === form.service_location)?.[lang] ?? "—"],
                   ...(form.alternate_services.length

@@ -22,6 +22,50 @@ export const SERVICE_LOCATION_OPTIONS: {
   { value: "on_site_only", es: "Solo a domicilio / en tu ubicación (on-site)", en: "On-site at the client's location only" },
 ];
 
+/** Primary `PROVIDER_SERVICES` slug for coaching & training signup extras. */
+export const COACHING_TRAINING_SERVICE = "coaching_training";
+
+/** Specialties shown when primary service is coaching & training (Únete). */
+export const COACHING_TRAINING_FOCUS = [
+  { value: "agile", es: "Agile", en: "Agile" },
+  { value: "safe", es: "SAFe", en: "SAFe" },
+  { value: "ai", es: "IA / AI", en: "AI" },
+  { value: "engineering", es: "Ingeniería de software", en: "Software engineering" },
+] as const;
+
+/** Delivery modes (virtual / on-site); independent of generic “shop vs client site” location. */
+export const COACHING_TRAINING_DELIVERY = [
+  { value: "virtual", es: "En línea (virtual)", en: "Online (virtual)" },
+  { value: "onsite", es: "Presencial (en sitio)", en: "On-site" },
+] as const;
+
+const COACHING_FOCUS_ALLOWED = new Set<string>(COACHING_TRAINING_FOCUS.map((x) => x.value));
+const COACHING_DELIVERY_ALLOWED = new Set<string>(COACHING_TRAINING_DELIVERY.map((x) => x.value));
+
+export function coachingFocusLabels(slugs: string[], lang: "es" | "en"): string {
+  const labels = slugs
+    .map((v) => COACHING_TRAINING_FOCUS.find((s) => s.value === v)?.[lang])
+    .filter(Boolean) as string[];
+  return labels.join(", ");
+}
+
+export function coachingDeliveryLabels(slugs: string[], lang: "es" | "en"): string {
+  const labels = slugs
+    .map((v) => COACHING_TRAINING_DELIVERY.find((s) => s.value === v)?.[lang])
+    .filter(Boolean) as string[];
+  return labels.join(", ");
+}
+
+export function sanitizeCoachingTrainingFocusSlugs(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return [...new Set(raw.filter((x): x is string => typeof x === "string" && COACHING_FOCUS_ALLOWED.has(x)))];
+}
+
+export function sanitizeCoachingTrainingDeliverySlugs(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return [...new Set(raw.filter((x): x is string => typeof x === "string" && COACHING_DELIVERY_ALLOWED.has(x)))];
+}
+
 export const PROVIDER_SERVICES = [
   { value: "plomero", es: "Plomero", en: "Plumber" },
   { value: "electricista", es: "Electricista", en: "Electrician" },
@@ -77,6 +121,8 @@ export function providerMetaFooters(opts: {
   provider_languages?: string;
   service_location?: string;
   alternate_slugs?: string[];
+  coaching_focus_slugs?: string[];
+  coaching_delivery_slugs?: string[];
 }): { es: string; en: string } {
   const langOpt = PROVIDER_LANGUAGE_OPTIONS.find((o) => o.value === opts.provider_languages);
   const locOpt = SERVICE_LOCATION_OPTIONS.find((o) => o.value === opts.service_location);
@@ -84,11 +130,20 @@ export function providerMetaFooters(opts: {
   const altEs = slugs.length ? providerServiceLabels(slugs, "es") : "";
   const altEn = slugs.length ? providerServiceLabels(slugs, "en") : "";
 
+  const focus = opts.coaching_focus_slugs ?? [];
+  const delivery = opts.coaching_delivery_slugs ?? [];
+  const focusEs = focus.length ? coachingFocusLabels(focus, "es") : "";
+  const focusEn = focus.length ? coachingFocusLabels(focus, "en") : "";
+  const delEs = delivery.length ? coachingDeliveryLabels(delivery, "es") : "";
+  const delEn = delivery.length ? coachingDeliveryLabels(delivery, "en") : "";
+
   const esParts = [
     "---",
     "Perfil de proveedor",
     langOpt ? `Idiomas: ${langOpt.es}` : null,
     locOpt ? `Ubicación del servicio: ${locOpt.es}` : null,
+    focusEs ? `Capacitación — especialidades: ${focusEs}` : null,
+    delEs ? `Capacitación — modalidad: ${delEs}` : null,
     altEs ? `Otros servicios: ${altEs}` : null,
   ].filter((x): x is string => !!x);
 
@@ -97,6 +152,8 @@ export function providerMetaFooters(opts: {
     "Provider profile",
     langOpt ? `Languages: ${langOpt.en}` : null,
     locOpt ? `Service location: ${locOpt.en}` : null,
+    focusEn ? `Training — specialties: ${focusEn}` : null,
+    delEn ? `Training — delivery: ${delEn}` : null,
     altEn ? `Additional services: ${altEn}` : null,
   ].filter((x): x is string => !!x);
 

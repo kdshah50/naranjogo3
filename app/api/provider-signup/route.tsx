@@ -8,6 +8,11 @@ import {
   PROVIDER_LANGUAGE_OPTIONS,
   SERVICE_LOCATION_OPTIONS,
   sanitizeAlternateServiceSlugs,
+  sanitizeCoachingTrainingFocusSlugs,
+  sanitizeCoachingTrainingDeliverySlugs,
+  coachingFocusLabels,
+  coachingDeliveryLabels,
+  COACHING_TRAINING_SERVICE,
 } from "@/lib/provider-services";
 import { rateLimitListingCreateByUser } from "@/lib/rate-limit";
 
@@ -29,6 +34,7 @@ async function notifyAdmin(form: any) {
       ...(form.provider_languages_es ? [`🗣 ${form.provider_languages_es}`] : []),
       ...(form.service_location_es ? [`📌 ${form.service_location_es}`] : []),
       ...(form.alternate_services_es ? [`➕ ${form.alternate_services_es}`] : []),
+      ...(form.coaching_training_detail_es ? [`🎓 ${form.coaching_training_detail_es}`] : []),
       ...(form.curp ? [`🪪 CURP: ${form.curp}`] : []),
       ...(form.rfc ? [`📋 RFC: ${form.rfc}`] : []),
       ``,
@@ -80,6 +86,26 @@ export async function POST(req: NextRequest) {
       .slice(0, 2000);
 
     const alternate_services = sanitizeAlternateServiceSlugs(alternateRaw, String(service ?? ""));
+    const serviceStr = String(service ?? "");
+    let coaching_focus: string[] = [];
+    let coaching_delivery: string[] = [];
+    if (serviceStr === COACHING_TRAINING_SERVICE) {
+      coaching_focus = sanitizeCoachingTrainingFocusSlugs(
+        (body as { coaching_focus?: unknown }).coaching_focus,
+      );
+      coaching_delivery = sanitizeCoachingTrainingDeliverySlugs(
+        (body as { coaching_delivery?: unknown }).coaching_delivery,
+      );
+      if (coaching_focus.length === 0 || coaching_delivery.length === 0) {
+        return NextResponse.json(
+          {
+            error:
+              "Para Coaching y capacitación elige al menos un área (Agile, SAFe, IA, ingeniería) y una modalidad (virtual y/o presencial).",
+          },
+          { status: 400 },
+        );
+      }
+    }
     const langOk =
       provider_languages === "bilingual" ||
       provider_languages === "spanish_only" ||
@@ -186,6 +212,8 @@ export async function POST(req: NextRequest) {
       provider_languages,
       service_location,
       alternate_slugs: alternate_services,
+      coaching_focus_slugs: serviceStr === COACHING_TRAINING_SERVICE ? coaching_focus : undefined,
+      coaching_delivery_slugs: serviceStr === COACHING_TRAINING_SERVICE ? coaching_delivery : undefined,
     });
 
     const listing = {
@@ -249,6 +277,13 @@ export async function POST(req: NextRequest) {
       SERVICE_LOCATION_OPTIONS.find((o) => o.value === service_location)?.es ?? "";
     const alternate_services_es =
       alternate_services.length > 0 ? providerServiceLabels(alternate_services, "es") : "";
+    const coaching_training_detail_es =
+      serviceStr === COACHING_TRAINING_SERVICE && (coaching_focus.length > 0 || coaching_delivery.length > 0)
+        ? `Capacitación: ${coachingFocusLabels(coaching_focus, "es")} · Modalidad: ${coachingDeliveryLabels(
+            coaching_delivery,
+            "es",
+          )}`
+        : "";
 
     notifyAdmin({
       name,
@@ -264,6 +299,7 @@ export async function POST(req: NextRequest) {
       provider_languages_es,
       service_location_es,
       alternate_services_es,
+      coaching_training_detail_es,
     }).catch(() => {});
 
     return NextResponse.json({ ok: true });
