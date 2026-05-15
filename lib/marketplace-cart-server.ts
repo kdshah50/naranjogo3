@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { idMatchVariantsForIn } from "@/lib/auth-server";
+import { idMatchVariantsForIn } from "@/lib/user-id-variants";
 import { isServicesListing } from "@/lib/listing-category";
 import type { CartLineInput } from "@/lib/marketplace-cart-pricing";
 import { computeCartPricing } from "@/lib/marketplace-cart-pricing";

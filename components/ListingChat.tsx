@@ -37,6 +37,8 @@ export default function ListingChat({
   const [role, setRole] = useState<"buyer" | "seller" | null>(null);
   const [threads, setThreads] = useState<Thread[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  /** Seller: buyer_id for the open thread — stable; do not tie agreed-price fetch to `threads` poll refreshes. */
+  const [agreedPriceBuyerId, setAgreedPriceBuyerId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [myUserId, setMyUserId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -70,6 +72,7 @@ export default function ListingChat({
       // Avoid stale thread/messages from another anuncio (SPA navigation) or a buyer id from another listing
       setLoading(true);
       setSelectedId(null);
+      setAgreedPriceBuyerId(null);
       setMessages([]);
       setThreads([]);
       conversationListingIdRef.current = null;
@@ -104,21 +107,29 @@ export default function ListingChat({
   }, [listingId]);
 
   const loadConversation = useCallback(
-    async (conversationId: string) => {
+    async (conversationId: string, buyerIdHint?: string | null) => {
       setSelectedId(conversationId);
       setError("");
+      if (buyerIdHint != null && String(buyerIdHint).trim() !== "") {
+        setAgreedPriceBuyerId(String(buyerIdHint));
+      } else {
+        setAgreedPriceBuyerId(null);
+      }
       try {
         const res = await fetch(`/api/conversations/${conversationId}`, { credentials: "same-origin" });
         if (!res.ok) {
           const d = await res.json().catch(() => ({}));
           setError((d as { error?: string }).error ?? "No se pudo cargar");
           setSelectedId(null);
+          setAgreedPriceBuyerId(null);
           conversationListingIdRef.current = null;
           return;
         }
         const data = await res.json();
         setMessages(data.messages ?? []);
-        const conv = data.conversation as { listing_id?: string } | undefined;
+        const conv = data.conversation as { listing_id?: string; buyer_id?: string } | undefined;
+        const bid = conv?.buyer_id;
+        if (bid) setAgreedPriceBuyerId(String(bid));
         const apiListingId = conv?.listing_id?.trim().toLowerCase() ?? "";
         if (apiListingId && apiListingId === listingId.trim().toLowerCase()) {
           conversationListingIdRef.current = listingId;
@@ -128,6 +139,7 @@ export default function ListingChat({
       } catch {
         setError("Error de conexión");
         setSelectedId(null);
+        setAgreedPriceBuyerId(null);
         conversationListingIdRef.current = null;
       }
     },
@@ -182,7 +194,7 @@ export default function ListingChat({
     if (role !== "seller" || threads.length === 0) return;
     if (selectedId) return;
     if (initialConversationId) return;
-    void loadConversation(threads[0].conversationId);
+    void loadConversation(threads[0].conversationId, threads[0].buyer_id);
   }, [role, threads, selectedId, initialConversationId, loadConversation]);
 
   useEffect(() => {
@@ -220,20 +232,24 @@ export default function ListingChat({
   }, [role, listingId, loadListingScope]);
 
   useEffect(() => {
-    if (role !== "seller" || !selectedId) {
+    if (role !== "seller") {
       setAgreedPesos("");
       setAgreedErr("");
+      setAgreedLoading(false);
+      setAgreedPriceBuyerId(null);
       return;
     }
-    const t = threads.find((x) => x.conversationId === selectedId);
-    if (!t) return;
+    if (!agreedPriceBuyerId) {
+      setAgreedLoading(false);
+      return;
+    }
     let cancelled = false;
     setAgreedLoading(true);
     setAgreedErr("");
     void (async () => {
       try {
         const r = await fetch(
-          `/api/listings/${encodeURIComponent(listingId)}/service-booking/agreed-price?buyerId=${encodeURIComponent(t.buyer_id)}`,
+          `/api/listings/${encodeURIComponent(listingId)}/service-booking/agreed-price?buyerId=${encodeURIComponent(agreedPriceBuyerId)}`,
           { credentials: "same-origin" }
         );
         const d = await r.json().catch(() => ({}));
@@ -257,7 +273,7 @@ export default function ListingChat({
     return () => {
       cancelled = true;
     };
-  }, [role, selectedId, listingId, threads]);
+  }, [role, listingId, agreedPriceBuyerId]);
 
   // Poll thread list for new buyers/messages (seller only)
   useEffect(() => {
@@ -333,17 +349,15 @@ export default function ListingChat({
   };
 
   const saveAgreedPrice = async (clear: boolean) => {
-    if (role !== "seller" || !selectedId) return;
-    const t = threads.find((x) => x.conversationId === selectedId);
-    if (!t) return;
+    if (role !== "seller" || !agreedPriceBuyerId) return;
     setAgreedSaving(true);
     setAgreedErr("");
     try {
       const pesos = parseFloat(String(agreedPesos).trim().replace(/,/g, "."));
       const cents = Math.round(pesos * 100);
       const body = clear
-        ? { buyerId: t.buyer_id, agreedSubtotalMxnCents: null as number | null }
-        : { buyerId: t.buyer_id, agreedSubtotalMxnCents: cents };
+        ? { buyerId: agreedPriceBuyerId, agreedSubtotalMxnCents: null as number | null }
+        : { buyerId: agreedPriceBuyerId, agreedSubtotalMxnCents: cents };
       if (!clear) {
         if (!Number.isFinite(pesos) || cents < 100) {
           throw new Error(lang === "en" ? "Enter a valid amount (at least $1 MXN)." : "Monto inválido (mín. $1 MXN).");
@@ -420,7 +434,7 @@ export default function ListingChat({
                 <button
                   key={t.conversationId}
                   type="button"
-                  onClick={() => void loadConversation(t.conversationId)}
+                  onClick={() => void loadConversation(t.conversationId, t.buyer_id)}
                   className={`w-full text-left px-4 py-2.5 text-sm transition-colors flex items-center gap-3 ${
                     isActive ? "bg-[#ECFDF5] border-l-4 border-[#059669]" : "hover:bg-[#F4F0EB] border-l-4 border-transparent"
                   }`}
@@ -482,14 +496,14 @@ export default function ListingChat({
                 inputMode="decimal"
                 value={agreedPesos}
                 onChange={(e) => setAgreedPesos(e.target.value)}
-                disabled={agreedLoading || agreedSaving}
+                disabled={!agreedPriceBuyerId || agreedSaving}
                 placeholder={lang === "en" ? "e.g. 850" : "ej. 850"}
                 className="w-full rounded-lg border border-amber-200 px-2 py-1.5 text-sm text-[#1C1917] outline-none focus:border-[#B45309]"
               />
             </label>
             <button
               type="button"
-              disabled={agreedLoading || agreedSaving}
+              disabled={!agreedPriceBuyerId || agreedLoading || agreedSaving}
               onClick={() => void saveAgreedPrice(false)}
               className="px-3 py-1.5 rounded-lg bg-[#B45309] text-white text-[11px] font-semibold disabled:opacity-40"
             >
@@ -497,7 +511,7 @@ export default function ListingChat({
             </button>
             <button
               type="button"
-              disabled={agreedLoading || agreedSaving}
+              disabled={!agreedPriceBuyerId || agreedLoading || agreedSaving}
               onClick={() => void saveAgreedPrice(true)}
               className="px-3 py-1.5 rounded-lg border border-amber-300 text-[#78350F] text-[11px] font-semibold disabled:opacity-40"
             >
@@ -505,7 +519,9 @@ export default function ListingChat({
             </button>
           </div>
           {agreedLoading ? (
-            <p className="text-[#A16207]">{lang === "en" ? "Loading…" : "Cargando…"}</p>
+            <p className="text-[#A16207]">{lang === "en" ? "Loading agreed total…" : "Cargando precio acordado…"}</p>
+          ) : !agreedPriceBuyerId && selectedId ? (
+            <p className="text-[#A16207]">{lang === "en" ? "Loading thread…" : "Cargando conversación…"}</p>
           ) : null}
           {agreedErr ? <p className="text-red-600">{agreedErr}</p> : null}
         </div>
