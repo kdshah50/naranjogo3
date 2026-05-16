@@ -45,12 +45,19 @@ export async function POST(req: NextRequest) {
     });
 
     if (!result.ok) {
-      return NextResponse.json({ error: result.error }, { status: result.status });
+      const body: Record<string, unknown> = { error: result.error };
+      if (result.detail) body.detail = result.detail;
+      return NextResponse.json(body, { status: result.status });
     }
 
     return NextResponse.json({ url: result.url, sessionId: result.sessionId });
   } catch (e) {
     console.error("[rides/wallet/topup] POST", e);
-    return NextResponse.json({ error: "No se pudo iniciar la carga" }, { status: 500 });
+    const err = e as { message?: string; code?: string; type?: string };
+    const detail = [err?.type, err?.code, err?.message].filter(Boolean).join(" | ");
+    return NextResponse.json(
+      { error: "No se pudo iniciar la carga", detail: detail || String(e) },
+      { status: 500 }
+    );
   }
 }

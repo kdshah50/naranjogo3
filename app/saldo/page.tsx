@@ -41,6 +41,7 @@ function SaldoPageInner() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busyAmount, setBusyAmount] = useState<number | null>(null);
   const [topupError, setTopupError] = useState<string | null>(null);
+  const [topupDetail, setTopupDetail] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,6 +66,7 @@ function SaldoPageInner() {
   async function startTopup(amountMxn: number) {
     setBusyAmount(amountMxn);
     setTopupError(null);
+    setTopupDetail(null);
     try {
       const res = await fetch("/api/rides/wallet/topup", {
         method: "POST",
@@ -75,6 +77,7 @@ function SaldoPageInner() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.url) {
         setTopupError(data?.error ?? "No se pudo iniciar la carga");
+        setTopupDetail(typeof data?.detail === "string" ? data.detail : null);
         setBusyAmount(null);
         return;
       }
@@ -145,7 +148,14 @@ function SaldoPageInner() {
             ))}
           </div>
           {topupError && (
-            <p className="mt-3 text-sm text-red-600">{topupError}</p>
+            <div className="mt-3 space-y-1">
+              <p className="text-sm text-red-600">{topupError}</p>
+              {topupDetail && (
+                <p className="break-words font-mono text-xs text-red-500">
+                  {topupDetail}
+                </p>
+              )}
+            </div>
           )}
         </section>
 

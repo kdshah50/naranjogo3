@@ -29,7 +29,7 @@ export type CreateWalletTopupArgs = {
 
 export type CreateWalletTopupResult =
   | { ok: true; url: string; sessionId: string }
-  | { ok: false; status: number; error: string };
+  | { ok: false; status: number; error: string; detail?: string };
 
 export async function createWalletTopupCheckoutSession(
   args: CreateWalletTopupArgs
@@ -105,6 +105,13 @@ export async function createWalletTopupCheckoutSession(
     return { ok: true, url: session.url, sessionId: session.id };
   } catch (e) {
     console.error("[wallet-oxxo] create session", e);
-    return { ok: false, status: 500, error: "No se pudo crear sesión de pago" };
+    const err = e as { message?: string; code?: string; type?: string };
+    const detail = [err?.type, err?.code, err?.message].filter(Boolean).join(" | ");
+    return {
+      ok: false,
+      status: 500,
+      error: "No se pudo crear sesión de pago",
+      detail: detail || String(e),
+    };
   }
 }
