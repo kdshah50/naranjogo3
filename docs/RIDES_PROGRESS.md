@@ -18,8 +18,8 @@ A running diary of every step we've taken to build the rides + AI agents vertica
 | Supabase project | Production (single project; new tables added are isolated/empty) |
 | Feature flag (`RIDES_ENABLED`) | `false` in Production, `true` in Preview + Development |
 | Current phase | **Phase 0 — Wallet + OXXO top-up** |
-| Latest step completed | **Step 5 ✓ verified** (GET `/api/rides/wallet` returns balance) |
-| Next step | Step 6 (Stripe Checkout Session for OXXO top-up) |
+| Latest step completed | **Step 6 (card-only mode)** — wallet top-up via Stripe Checkout (card only; OXXO blocked by Stripe-MX account requirement) |
+| Next step | Step 7 — Stripe webhook → credit wallet on `checkout.session.completed` |
 
 ---
 
@@ -156,20 +156,31 @@ If you come back days/weeks later and want to continue:
 
 ## What's coming next
 
-### Step 6 — OXXO top-up flow
+### Step 6 — Top-up flow (DONE, card-only mode)
 
-Lets users actually load money into their wallet. Will create:
-- `lib/rides/wallet-oxxo.ts` — Stripe OXXO PaymentIntent creator
-- `app/api/rides/wallet/topup/route.ts` — POST endpoint that creates a voucher
-- Additive branch in `app/api/webhooks/stripe/route.ts` — credits wallet when Stripe confirms OXXO payment
+Users can now load money into their wallet via Stripe Checkout. Currently **card-only** because OXXO requires a Stripe account based in Mexico (Stripe restriction — confirmed at https://docs.stripe.com/payments/oxxo).
 
-### Step 7 — Simple UI page
+Files involved:
+- `lib/rides/wallet-oxxo.ts` — Stripe Checkout Session creator (reads `WALLET_TOPUP_OXXO_ENABLED`)
+- `app/api/rides/wallet/topup/route.ts` — POST endpoint that creates the session
+- `app/saldo/page.tsx` — UI page with preset top-up amounts
 
-A `/saldo` page in your app where users see their balance and click "Cargar saldo" to load money.
+**To re-enable OXXO later** (when MX Stripe account is provisioned):
+1. Create a Stripe account with Country = Mexico at https://dashboard.stripe.com/register
+2. Swap these Vercel env vars to the MX account's keys (in **all three** environments: Production, Preview, Development):
+   - `STRIPE_SECRET_KEY`
+   - `STRIPE_WEBHOOK_SECRET`
+   - `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`
+3. Add a new env var `WALLET_TOPUP_OXXO_ENABLED=true`
+4. Redeploy. No code change needed.
+
+### Step 7 — Stripe webhook → credit wallet (NEXT)
+
+When Stripe confirms a top-up payment, our webhook needs to read `metadata.purpose === 'wallet_topup'` from the Checkout Session and credit the user's wallet via the idempotent `creditWallet()` helper. Will add an additive branch in `app/api/webhooks/stripe/route.ts`.
 
 ### Step 8 — Soft test end-to-end
 
-In Stripe test mode, simulate an OXXO payment, verify wallet gets credited, view in the UI.
+In Stripe test mode, run a card top-up with test card `4242 4242 4242 4242`, verify the webhook fires, wallet ledger gets a `topup_credit` entry, and `/saldo` shows the new balance.
 
 ### After Phase 0
 
@@ -207,4 +218,4 @@ Production (`main` + `naranjogo.com.mx`) is **never at risk** from any of these 
 
 ---
 
-*Last updated: Step 5 verified ✓. Update this file after every step.*
+*Last updated: Step 6 shipped in card-only mode (OXXO deferred until MX Stripe account is ready). Update this file after every step.*

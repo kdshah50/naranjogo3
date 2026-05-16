@@ -25,7 +25,10 @@ export async function GET(req: NextRequest) {
     const supabase = createAdminSupabase();
     const wallet = await getWalletForUser(supabase, userId, { ledgerLimit: 20 });
 
-    return NextResponse.json({ wallet });
+    const oxxoEnabled =
+      String(process.env.WALLET_TOPUP_OXXO_ENABLED ?? "").trim().toLowerCase() === "true";
+
+    return NextResponse.json({ wallet, topup: { oxxo: oxxoEnabled, card: true } });
   } catch (e) {
     console.error("[rides/wallet] GET", e);
     return NextResponse.json({ error: "No se pudo cargar el saldo" }, { status: 500 });

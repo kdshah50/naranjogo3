@@ -42,6 +42,7 @@ function SaldoPageInner() {
   const [busyAmount, setBusyAmount] = useState<number | null>(null);
   const [topupError, setTopupError] = useState<string | null>(null);
   const [topupDetail, setTopupDetail] = useState<string | null>(null);
+  const [oxxoEnabled, setOxxoEnabled] = useState<boolean>(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -54,6 +55,7 @@ function SaldoPageInner() {
           return;
         }
         setWallet(data.wallet ?? null);
+        setOxxoEnabled(Boolean(data?.topup?.oxxo));
       })
       .catch(() => {
         if (!cancelled) setLoadError("Error de red al cargar el saldo");
@@ -100,7 +102,9 @@ function SaldoPageInner() {
 
         {topupResult === "success" && (
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-            Recibimos tu solicitud. Si pagas en OXXO, el saldo aparecerá cuando se confirme el pago.
+            {oxxoEnabled
+              ? "Recibimos tu solicitud. Si pagas en OXXO, el saldo aparecerá cuando se confirme el pago."
+              : "Recibimos tu pago. Tu saldo se actualizará en unos segundos."}
           </div>
         )}
         {topupResult === "cancel" && (
@@ -132,7 +136,9 @@ function SaldoPageInner() {
         <section className="rounded-2xl border border-[#E5E0D8] bg-white p-6 shadow-sm">
           <h2 className="text-base font-semibold text-[#1B4332]">Cargar saldo</h2>
           <p className="mt-1 text-xs text-[#5C5345]">
-            Paga en cualquier OXXO o con tarjeta. El saldo se acredita al confirmarse el pago.
+            {oxxoEnabled
+              ? "Paga en cualquier OXXO o con tarjeta. El saldo se acredita al confirmarse el pago."
+              : "Paga con tarjeta. El saldo se acredita al confirmarse el pago."}
           </p>
           <div className="mt-4 space-y-2">
             {PRESET_AMOUNTS_MXN.map((amt) => (

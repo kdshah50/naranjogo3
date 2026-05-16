@@ -2,18 +2,28 @@ import "server-only";
 import { getStripe } from "@/lib/stripe";
 
 /**
- * Wallet top-up via Stripe Checkout (OXXO + card).
+ * Wallet top-up via Stripe Checkout.
  *
- * Creates a Stripe Checkout Session in MXN that the buyer pays at any OXXO
- * store (cash voucher) or with a card. When Stripe confirms the payment,
- * our webhook (added in Step 7) credits the buyer's wallet ledger.
+ * Currently configured for CARD ONLY because OXXO requires a Stripe account
+ * based in Mexico (Stripe restriction). To re-enable OXXO when the MX Stripe
+ * account is provisioned:
+ *   1. Set WALLET_TOPUP_OXXO_ENABLED=true in Vercel env (Preview + Production)
+ *   2. Swap STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET / NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+ *      to the Mexican Stripe account keys.
+ * No code change required.
+ *
+ * When OXXO is on, Stripe Checkout shows both methods (cash voucher + card).
+ * Wallet is credited later by the Stripe webhook on payment confirmation.
  *
  * The Session is tagged with metadata.purpose='wallet_topup' so the existing
- * Stripe webhook handler can distinguish it from service-booking checkouts
- * without ambiguity.
+ * Stripe webhook handler can distinguish it from service-booking checkouts.
  *
  * See: docs/RIDES_AI_PLAN.md §9 (Wallet + OXXO funding).
  */
+
+function isOxxoEnabled(): boolean {
+  return String(process.env.WALLET_TOPUP_OXXO_ENABLED ?? "").trim().toLowerCase() === "true";
+}
 
 /** Minimum top-up: 50 MXN. Below this, OXXO trip isn't worth the user's time. */
 export const MIN_TOPUP_MXN_CENTS = 5_000;
@@ -56,11 +66,15 @@ export async function createWalletTopupCheckoutSession(
   }
 
   const stripe = getStripe();
+  const oxxoOn = isOxxoEnabled();
+  const paymentMethodTypes: Array<"oxxo" | "card"> = oxxoOn
+    ? ["oxxo", "card"]
+    : ["card"];
 
   try {
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
-      payment_method_types: ["oxxo", "card"],
+      payment_method_types: paymentMethodTypes,
       currency: "mxn",
       line_items: [
         {
@@ -76,9 +90,13 @@ export async function createWalletTopupCheckoutSession(
           quantity: 1,
         },
       ],
-      payment_method_options: {
-        oxxo: { expires_after_days: 3 },
-      },
+      ...(oxxoOn
+        ? {
+            payment_method_options: {
+              oxxo: { expires_after_days: 3 },
+            },
+          }
+        : {}),
       // Metadata is duplicated on both the Session and PaymentIntent because
       // Stripe events vary in which object they expand — webhook can read it
       // from either path.
