@@ -93,8 +93,19 @@ export const PROVIDER_SERVICES = [
   { value: "servicios_computo", es: "Servicios de cómputo / IT", en: "Computer / IT Services" },
   { value: "veterinaria", es: "Servicios veterinarios", en: "Veterinary Services" },
   { value: "transporte_app", es: "Taxi / transporte por aplicación (tipo Uber / DiDi)", en: "Taxi / ride-hailing (Uber-style)" },
+  { value: "arreglos_de_ropa", es: "Arreglos de ropa / costurería", en: "Clothing Alterations / Tailoring" },
   { value: "otro", es: "Otro servicio", en: "Other service" },
 ] as const;
+
+/** Service slugs that publish a fixed-price menu of sub-items (Phase T1). Drives the
+ *  Únete menu-editor and the listing's `service_menu` jsonb column. Keep additive. */
+export const PROVIDER_SERVICES_WITH_MENU = new Set<string>([
+  "arreglos_de_ropa",
+]);
+
+export function providerServiceSupportsMenu(slug: string | null | undefined): boolean {
+  return typeof slug === "string" && PROVIDER_SERVICES_WITH_MENU.has(slug);
+}
 
 export function providerServiceLabels(slangs: string[], lang: "es" | "en"): string {
   const labels = slangs
