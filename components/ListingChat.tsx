@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { Lang } from "@/lib/i18n-lang";
+import type { ServiceMenu } from "@/lib/listing-service-menu";
+import { hasServiceMenu } from "@/lib/listing-service-menu";
+import ServiceMenuQuoteBuilder from "@/components/ServiceMenuQuoteBuilder";
 
 type Msg = { id: string; sender_id: string; body: string; created_at: string };
 
@@ -21,6 +24,7 @@ export default function ListingChat({
   fullListingHref,
   showFullListingLink,
   lang = "es",
+  serviceMenu = null,
 }: {
   listingId: string;
   initialConversationId?: string;
@@ -30,6 +34,8 @@ export default function ListingChat({
   fullListingHref?: string;
   showFullListingLink?: boolean;
   lang?: Lang;
+  /** Optional service menu for the listing — drives the seller's quote builder. */
+  serviceMenu?: ServiceMenu | null;
 }) {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -307,9 +313,9 @@ export default function ListingChat({
     return conversationId as string;
   };
 
-  const sendMessage = async () => {
-    const text = draft.trim();
-    if (!text || sending) return;
+  const postMessageBody = async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
     setSending(true);
     setError("");
     try {
@@ -329,22 +335,30 @@ export default function ListingChat({
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body: text }),
+        body: JSON.stringify({ body: trimmed }),
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         throw new Error((d as { error?: string }).error ?? "No se pudo enviar");
       }
       const { message } = await res.json();
-      setDraft("");
       setMessages((m) => [...m, message as Msg]);
       if (typeof window !== "undefined" && role !== "seller") {
         window.dispatchEvent(new CustomEvent("tianguis:listing-contact"));
       }
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Error");
     } finally {
       setSending(false);
+    }
+  };
+
+  const sendMessage = async () => {
+    const text = draft.trim();
+    if (!text || sending) return;
+    try {
+      await postMessageBody(text);
+      setDraft("");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Error");
     }
   };
 
@@ -524,6 +538,21 @@ export default function ListingChat({
             <p className="text-[#A16207]">{lang === "en" ? "Loading thread…" : "Cargando conversación…"}</p>
           ) : null}
           {agreedErr ? <p className="text-red-600">{agreedErr}</p> : null}
+          {hasServiceMenu(serviceMenu) && agreedPriceBuyerId && (
+            <ServiceMenuQuoteBuilder
+              menu={serviceMenu}
+              lang={lang === "en" ? "en" : "es"}
+              disabled={agreedSaving || agreedLoading}
+              onApplyTotal={(pesos) => setAgreedPesos(pesos)}
+              onInsertAsMessage={async (body) => {
+                try {
+                  await postMessageBody(body);
+                } catch (e: unknown) {
+                  setAgreedErr(e instanceof Error ? e.message : "Error");
+                }
+              }}
+            />
+          )}
         </div>
       )}
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServiceRoleRestHeaders, getSupabaseUrl } from "@/lib/service-rest";
 import { getUserIdFromRequest } from "@/lib/auth-server";
 import { rateLimitListingCreateByUser } from "@/lib/rate-limit";
+import { hasServiceMenu, parseServiceMenu } from "@/lib/listing-service-menu";
 
 const PRICE_FLOORS: Record<string, number> = {
   electronics:  50000,
@@ -73,6 +74,19 @@ export async function POST(req: NextRequest) {
     // (see provider-signup + /admin). Other categories publish immediately.
     const isVerified = category !== "services";
 
+    // Optional service menu (tailoring MVP). Validated; only stored when non-empty
+    // so non-menu service listings keep a NULL column and the existing flow is unaffected.
+    let serviceMenu: unknown = null;
+    if (body.service_menu != null) {
+      const parsed = parseServiceMenu(body.service_menu);
+      if (!parsed.ok) {
+        return NextResponse.json({ error: parsed.error }, { status: 400 });
+      }
+      if (hasServiceMenu(parsed.menu)) {
+        serviceMenu = parsed.menu;
+      }
+    }
+
     // Always bind listing to the signed-in user — never trust client seller_id (old clients sent a demo uuid).
     const listing = {
       seller_id:          userId,
@@ -96,6 +110,7 @@ export async function POST(req: NextRequest) {
                             ? body.payment_methods
                             : ["efectivo", "whatsapp"],
       expires_at:         new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(),
+      ...(serviceMenu ? { service_menu: serviceMenu } : {}),
     };
 
     const h = getServiceRoleRestHeaders();

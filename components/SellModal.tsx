@@ -2,6 +2,11 @@
 import Image from "next/image";
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import {
+  MAX_SERVICE_MENU_ITEMS,
+  tailoringStarterMenu,
+  type ServiceMenuItem,
+} from "@/lib/listing-service-menu";
 
 const MAX_PHOTOS = 10;
 
@@ -39,6 +44,12 @@ export default function SellModal({ onClose }: { onClose: () => void }) {
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState("");
+  /**
+   * Optional service menu (tailoring MVP). Rows of {name, pesos} the seller
+   * authors when category === "services". Empty rows are dropped on publish.
+   * Pesos are stored as strings (user input); the API converts to centavos.
+   */
+  const [menuRows, setMenuRows] = useState<Array<{ name: string; pesos: string }>>([]);
   const photosRef = useRef(photos);
   photosRef.current = photos;
 
@@ -113,6 +124,40 @@ export default function SellModal({ onClose }: { onClose: () => void }) {
     }
   };
 
+  const addMenuRow = () => {
+    setMenuRows((rows) =>
+      rows.length >= MAX_SERVICE_MENU_ITEMS ? rows : [...rows, { name: "", pesos: "" }]
+    );
+  };
+  const removeMenuRow = (idx: number) => {
+    setMenuRows((rows) => rows.filter((_, i) => i !== idx));
+  };
+  const updateMenuRow = (idx: number, patch: Partial<{ name: string; pesos: string }>) => {
+    setMenuRows((rows) => rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  };
+  const loadTailoringTemplate = () => {
+    const tpl = tailoringStarterMenu();
+    setMenuRows(
+      tpl.items.map((it: ServiceMenuItem) => ({
+        name: it.name_es,
+        pesos: String(it.price_mxn_cents / 100),
+      }))
+    );
+  };
+
+  const buildServiceMenuPayload = (): { items: { name_es: string; price_mxn: number }[] } | null => {
+    if (category !== "services") return null;
+    const cleaned = menuRows
+      .map((r) => ({
+        name_es: r.name.trim(),
+        pesos: Number(String(r.pesos).trim().replace(/,/g, ".")),
+      }))
+      .filter((r) => r.name_es.length > 0 && Number.isFinite(r.pesos) && r.pesos > 0)
+      .map((r) => ({ name_es: r.name_es, price_mxn: r.pesos }));
+    if (cleaned.length === 0) return null;
+    return { items: cleaned };
+  };
+
   // ── Publish ───────────────────────────────────────────────────────────────
   const handlePublish = async () => {
     if (!title || !price) return;
@@ -141,6 +186,7 @@ export default function SellModal({ onClose }: { onClose: () => void }) {
         if (url) photoUrls.push(url);
       }
 
+      const serviceMenuPayload = buildServiceMenuPayload();
       const res = await fetch("/api/listings", {
         method: "POST",
         credentials: "same-origin",
@@ -159,6 +205,7 @@ export default function SellModal({ onClose }: { onClose: () => void }) {
           negotiable: true,
           photo_urls: photoUrls,
           expires_at: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(),
+          ...(serviceMenuPayload ? { service_menu: serviceMenuPayload } : {}),
         }),
       });
       if (res.ok) {
@@ -408,6 +455,78 @@ export default function SellModal({ onClose }: { onClose: () => void }) {
                   ))}
                 </div>
               </div>
+
+              {/* Optional service menu — only shown for services. Used by tailoring / arreglos de ropa
+                  and any service offering with a fixed-price menu of sub-items. */}
+              {category === "services" && (
+                <div className="rounded-xl border border-[#E5E0D8] bg-[#FFFBEB] p-3">
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <p className="text-xs font-bold text-[#78350F]">
+                      MENÚ DE SERVICIOS · OPCIONAL
+                    </p>
+                    <button
+                      type="button"
+                      onClick={loadTailoringTemplate}
+                      className="text-[10px] font-semibold text-[#1B4332] underline"
+                    >
+                      Cargar plantilla de costurería
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-[#92400E] mb-2">
+                    Si ofreces precios fijos por servicio (ej. dobladillo $50, botón $15), agrégalos
+                    aquí. El comprador verá la lista pública y tú podrás armar un presupuesto desde
+                    el chat. Déjalo vacío si tu servicio no tiene menú.
+                  </p>
+                  {menuRows.length > 0 && (
+                    <div className="space-y-2 mb-2">
+                      {menuRows.map((row, i) => (
+                        <div key={i} className="flex gap-2 items-center">
+                          <input
+                            type="text"
+                            value={row.name}
+                            onChange={(e) => updateMenuRow(i, { name: e.target.value })}
+                            placeholder="Nombre (ej. Dobladillo de pantalón)"
+                            className="flex-1 min-w-0 rounded-lg border border-[#E5E0D8] px-2.5 py-1.5 text-xs outline-none focus:border-[#1B4332]"
+                            maxLength={80}
+                          />
+                          <div className="relative w-24 shrink-0">
+                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[#6B7280] text-xs">
+                              $
+                            </span>
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              value={row.pesos}
+                              onChange={(e) => updateMenuRow(i, { pesos: e.target.value })}
+                              placeholder="0"
+                              className="w-full rounded-lg border border-[#E5E0D8] pl-5 pr-2 py-1.5 text-xs outline-none focus:border-[#1B4332]"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeMenuRow(i)}
+                            className="px-2 py-1 text-[#9F1239] text-xs font-bold"
+                            aria-label="Eliminar"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={addMenuRow}
+                    disabled={menuRows.length >= MAX_SERVICE_MENU_ITEMS}
+                    className="w-full rounded-lg border border-dashed border-[#D4A017] py-1.5 text-xs font-semibold text-[#78350F] disabled:opacity-40"
+                  >
+                    + Agregar servicio ({menuRows.length}/{MAX_SERVICE_MENU_ITEMS})
+                  </button>
+                  <p className="mt-2 text-[10px] text-[#92400E] italic">
+                    El precio puede ajustarse al revisar la prenda físicamente.
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="flex gap-3 mt-6">

@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import ListingChat from "@/components/ListingChat";
 import ServiceBookingBlock from "@/components/ServiceBookingBlock";
+import ServiceMenuPublic from "@/components/ServiceMenuPublic";
+import type { ServiceMenu } from "@/lib/listing-service-menu";
 import WhatsAppCTA from "@/components/WhatsAppCTA";
 import SellerReviews, { RatingSummary } from "@/components/SellerReviews";
 import ReportButton from "@/components/ReportButton";
@@ -199,6 +201,12 @@ export default async function ListingPage({
               </p>
             </div>
           )}
+        {isServiceListing && (
+          <ServiceMenuPublic
+            menu={(listing as { service_menu?: ServiceMenu | null }).service_menu ?? null}
+            lang={listingLang}
+          />
+        )}
         {isServiceListing && sellerId && (
           <ListingTrustStrip
             lang={listingLang}
@@ -320,6 +328,11 @@ export default async function ListingPage({
             fullListingHref={listingBasePath}
             showFullListingLink={Boolean(searchParams?.chat)}
             lang={listingLang}
+            serviceMenu={
+              isServiceListing
+                ? (listing as { service_menu?: ServiceMenu | null }).service_menu ?? null
+                : null
+            }
           />
           <div id="booking-section" className="scroll-mt-28">
             <ServiceBookingBlock

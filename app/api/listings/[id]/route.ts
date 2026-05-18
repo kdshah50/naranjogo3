@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminSupabase, getUserIdFromRequest, isSameUserId } from "@/lib/auth-server";
 import { getAdminPin, isAdminPinConfigured } from "@/lib/admin-pin";
 import { getServiceRoleRestHeaders, getSupabaseUrl } from "@/lib/service-rest";
+import { hasServiceMenu, parseServiceMenu } from "@/lib/listing-service-menu";
 
 const hJson = () => ({ ...getServiceRoleRestHeaders(), "Content-Type": "application/json" as const });
 
@@ -118,6 +119,21 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (!auth.ok) return auth.res;
 
     const payload = auth.asAdmin ? stripPinOnly(body) : sanitizeOwnerPatchBody(body);
+
+    // Normalize / validate the service menu. Empty menu (no items) is stored as NULL
+    // so the column reverts to "no menu published" state.
+    if ("service_menu" in payload) {
+      if (payload.service_menu === null) {
+        payload.service_menu = null;
+      } else {
+        const parsed = parseServiceMenu(payload.service_menu);
+        if (!parsed.ok) {
+          return NextResponse.json({ error: parsed.error }, { status: 400 });
+        }
+        payload.service_menu = hasServiceMenu(parsed.menu) ? parsed.menu : null;
+      }
+    }
+
     if (Object.keys(payload).length === 0) {
       return NextResponse.json({ error: "Sin campos para actualizar" }, { status: 400 });
     }
