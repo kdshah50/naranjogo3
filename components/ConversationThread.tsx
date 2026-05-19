@@ -3,8 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Lang } from "@/lib/i18n-lang";
 import { formatDateTimeShort } from "@/lib/locale-format";
+import {
+  hasServiceMenu,
+  type ServiceMenu,
+} from "@/lib/listing-service-menu";
+import ServiceMenuQuoteBuilder from "@/components/ServiceMenuQuoteBuilder";
 
 type Msg = { id: string; sender_id: string; body: string; created_at: string };
+type ConvRole = "buyer" | "seller" | null;
 
 const UI = {
   es: {
@@ -16,6 +22,15 @@ const UI = {
     seller: "Vendedor",
     placeholder: "Escribe un mensaje…",
     send: "Enviar",
+    agreedTitle: "Precio acordado del trabajo (este comprador)",
+    agreedHelp:
+      "Opcional: total del trabajo en MXN. Si no lo pones, se usa el precio del anuncio o paquete. El comprador paga la tarifa de Naranjogo sobre este monto, o el servicio completo si activaste cobros con Stripe.",
+    agreedPh: "ej. 850",
+    agreedSave: "Guardar",
+    agreedClear: "Quitar",
+    agreedSaved: "Guardado",
+    agreedLoading: "Cargando precio acordado…",
+    invalidAmount: "Monto inválido (mín. $1 MXN).",
   },
   en: {
     loadErr: "Could not load",
@@ -26,6 +41,15 @@ const UI = {
     seller: "Seller",
     placeholder: "Type a message…",
     send: "Send",
+    agreedTitle: "Agreed job total (this buyer)",
+    agreedHelp:
+      "Optional: total for this job in MXN. If empty, the listing or package price is used. Buyer pays the Naranjogo fee on this amount, or the full service in-app if you enabled Stripe payouts.",
+    agreedPh: "e.g. 850",
+    agreedSave: "Save",
+    agreedClear: "Clear",
+    agreedSaved: "Saved",
+    agreedLoading: "Loading agreed total…",
+    invalidAmount: "Enter a valid amount (at least $1 MXN).",
   },
 } as const;
 
@@ -44,10 +68,19 @@ export default function ConversationThread({
   const [error, setError] = useState("");
   const [title, setTitle] = useState("");
   const [otherName, setOtherName] = useState("");
-  const [role, setRole] = useState<"buyer" | "seller" | null>(null);
+  const [role, setRole] = useState<ConvRole>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  /** Listing context (loaded once via /api/conversations/:id) — for the seller quote builder. */
+  const [listingId, setListingId] = useState<string | null>(null);
+  const [buyerId, setBuyerId] = useState<string | null>(null);
+  const [serviceMenu, setServiceMenu] = useState<ServiceMenu | null>(null);
+  /** Seller agreed price (pesos string) — same semantics as ListingChat. */
+  const [agreedPesos, setAgreedPesos] = useState("");
+  const [agreedLoading, setAgreedLoading] = useState(false);
+  const [agreedSaving, setAgreedSaving] = useState(false);
+  const [agreedErr, setAgreedErr] = useState("");
   const messagesScrollRef = useRef<HTMLDivElement | null>(null);
 
   const load = useCallback(async () => {
@@ -65,6 +98,15 @@ export default function ConversationThread({
     setTitle(data.listing?.title_es ?? strings.conversation);
     setRole(data.role ?? null);
     setOtherName(data.other_name ?? "");
+    const listingFromApi = data.listing as
+      | { id?: string; service_menu?: ServiceMenu | null; category_id?: string | null }
+      | undefined;
+    const isServices =
+      String(listingFromApi?.category_id ?? "").trim().toLowerCase() === "services";
+    setListingId(listingFromApi?.id ? String(listingFromApi.id) : null);
+    setServiceMenu(isServices ? (listingFromApi?.service_menu ?? null) : null);
+    const convFromApi = data.conversation as { buyer_id?: string } | undefined;
+    setBuyerId(convFromApi?.buyer_id ? String(convFromApi.buyer_id) : null);
     setLoading(false);
   }, [conversationId, lang]);
 
@@ -107,9 +149,50 @@ export default function ConversationThread({
     return () => clearInterval(poll);
   }, [conversationId]);
 
-  const send = async () => {
-    const text = draft.trim();
-    if (!text || sending) return;
+  // Seller: load existing agreed price for this listing+buyer pair.
+  useEffect(() => {
+    if (role !== "seller" || !listingId || !buyerId) {
+      setAgreedPesos("");
+      setAgreedErr("");
+      setAgreedLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setAgreedLoading(true);
+    setAgreedErr("");
+    void (async () => {
+      try {
+        const r = await fetch(
+          `/api/listings/${encodeURIComponent(listingId)}/service-booking/agreed-price?buyerId=${encodeURIComponent(buyerId)}`,
+          { credentials: "same-origin" }
+        );
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          if (!cancelled) {
+            setAgreedErr((d as { error?: string }).error ?? "No se pudo cargar precio acordado");
+          }
+          return;
+        }
+        const cents = (d as { agreedSubtotalMxnCents?: number | null }).agreedSubtotalMxnCents;
+        if (!cancelled) {
+          setAgreedPesos(
+            cents != null && Number.isFinite(Number(cents)) ? String(Number(cents) / 100) : "",
+          );
+        }
+      } catch {
+        if (!cancelled) setAgreedErr("Error de red");
+      } finally {
+        if (!cancelled) setAgreedLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [role, listingId, buyerId]);
+
+  const postBody = async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
     setSending(true);
     setError("");
     try {
@@ -117,28 +200,78 @@ export default function ConversationThread({
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body: text }),
+        body: JSON.stringify({ body: trimmed }),
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         throw new Error((d as { error?: string }).error ?? u.sendErr);
       }
       const { message } = await res.json();
-      setDraft("");
       setMessages((m) => [...m, message as Msg]);
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("tianguis:listing-contact"));
       }
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Error");
     } finally {
       setSending(false);
+    }
+  };
+
+  const send = async () => {
+    const text = draft.trim();
+    if (!text || sending) return;
+    try {
+      await postBody(text);
+      setDraft("");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Error");
+    }
+  };
+
+  const saveAgreedPrice = async (clear: boolean) => {
+    if (role !== "seller" || !listingId || !buyerId) return;
+    setAgreedSaving(true);
+    setAgreedErr("");
+    try {
+      const pesos = parseFloat(String(agreedPesos).trim().replace(/,/g, "."));
+      const cents = Math.round(pesos * 100);
+      if (!clear) {
+        if (!Number.isFinite(pesos) || cents < 100) {
+          throw new Error(u.invalidAmount);
+        }
+      }
+      const body = clear
+        ? { buyerId, agreedSubtotalMxnCents: null as number | null }
+        : { buyerId, agreedSubtotalMxnCents: cents };
+      const r = await fetch(
+        `/api/listings/${encodeURIComponent(listingId)}/service-booking/agreed-price`,
+        {
+          method: "PATCH",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      );
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error((d as { error?: string }).error ?? "No se pudo guardar");
+      if (clear) setAgreedPesos("");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("tianguis:agreed-price-updated", { detail: { listingId } }),
+        );
+      }
+    } catch (e: unknown) {
+      setAgreedErr(e instanceof Error ? e.message : "Error");
+    } finally {
+      setAgreedSaving(false);
     }
   };
 
   if (loading) {
     return <div className="text-sm text-[#6B7280] py-8 text-center">{u.loading}</div>;
   }
+
+  const showQuoteSection = role === "seller" && listingId && buyerId;
+  const showQuoteBuilder = showQuoteSection && hasServiceMenu(serviceMenu);
 
   return (
     <div className="rounded-xl border border-[#E5E0D8] bg-white overflow-hidden">
@@ -150,6 +283,63 @@ export default function ConversationThread({
           </p>
         )}
       </div>
+
+      {showQuoteSection && (
+        <div className="px-4 py-3 border-b border-[#E5E0D8] bg-[#FFFBEB] text-xs space-y-2">
+          <p className="font-semibold text-[#78350F]">{u.agreedTitle}</p>
+          <p className="text-[#92400E] leading-snug">{u.agreedHelp}</p>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="flex-1 min-w-[120px]">
+              <span className="sr-only">MXN</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={agreedPesos}
+                onChange={(e) => setAgreedPesos(e.target.value)}
+                disabled={agreedSaving}
+                placeholder={u.agreedPh}
+                className="w-full rounded-lg border border-amber-200 px-2 py-1.5 text-sm text-[#1C1917] outline-none focus:border-[#B45309]"
+              />
+            </label>
+            <button
+              type="button"
+              disabled={agreedLoading || agreedSaving}
+              onClick={() => void saveAgreedPrice(false)}
+              className="px-3 py-1.5 rounded-lg bg-[#B45309] text-white text-[11px] font-semibold disabled:opacity-40"
+            >
+              {agreedSaving ? "…" : u.agreedSave}
+            </button>
+            <button
+              type="button"
+              disabled={agreedLoading || agreedSaving}
+              onClick={() => void saveAgreedPrice(true)}
+              className="px-3 py-1.5 rounded-lg border border-amber-300 text-[#78350F] text-[11px] font-semibold disabled:opacity-40"
+            >
+              {u.agreedClear}
+            </button>
+          </div>
+          {agreedLoading && (
+            <p className="text-[#A16207]">{u.agreedLoading}</p>
+          )}
+          {agreedErr && <p className="text-red-600">{agreedErr}</p>}
+          {showQuoteBuilder && (
+            <ServiceMenuQuoteBuilder
+              menu={serviceMenu}
+              lang={lang === "en" ? "en" : "es"}
+              disabled={agreedSaving || agreedLoading}
+              onApplyTotal={(pesos) => setAgreedPesos(pesos)}
+              onInsertAsMessage={async (body) => {
+                try {
+                  await postBody(body);
+                } catch (e: unknown) {
+                  setAgreedErr(e instanceof Error ? e.message : "Error");
+                }
+              }}
+            />
+          )}
+        </div>
+      )}
+
       <div
         ref={messagesScrollRef}
         className="max-h-[50vh] overflow-y-auto overflow-x-hidden px-4 py-3 space-y-2 min-h-[120px] overscroll-y-contain"

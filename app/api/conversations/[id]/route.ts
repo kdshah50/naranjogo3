@@ -43,7 +43,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
     const { data: listing } = await supabase
       .from("listings")
-      .select("id,title_es,seller_id")
+      .select("id,title_es,seller_id,category_id,service_menu")
       .in("id", idMatchVariantsForIn(conv.listing_id))
       .maybeSingle();
 
