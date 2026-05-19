@@ -1,5 +1,6 @@
 "use client";
 import { useMemo, useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { ALL_COLONIA_KEYS, COLONIAS as COLONIAS_MAP } from "@/lib/colonias";
 import {
   buildAvailabilitySummaryString,
@@ -214,14 +215,22 @@ export default function UnetePage() {
 function UnetePageInner() {
   const lang = useAppLang();
   const { setLang } = useAppLangActions();
+  const sp = useSearchParams();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState("");
   const [termsError, setTermsError] = useState(false);
 
+  // ?service=<slug> pre-selects the primary service (e.g. /arreglos-de-ropa landing
+  // links here as /unete?service=arreglos_de_ropa). Unknown / missing slug → empty.
+  const initialServiceFromUrl = sp?.get("service") ?? "";
+  const initialService = SERVICES.some((s) => s.value === initialServiceFromUrl)
+    ? initialServiceFromUrl
+    : "";
+
   const [form, setForm] = useState({
-    name: "", whatsapp: "", service: "",
+    name: "", whatsapp: "", service: initialService,
     description: "", price: "", curp: "", rfc: "",
     city: "San Miguel de Allende",
     colonia: "",

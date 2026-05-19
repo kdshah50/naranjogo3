@@ -25,6 +25,14 @@ export default function TrustBar() {
           ✓ Registra tu servicio gratis → Join us
         </a>
       </div>
+      <div className="max-w-5xl mx-auto mt-4 text-center sm:text-right">
+        <a
+          href="/arreglos-de-ropa"
+          className="text-xs text-white/70 hover:text-white underline underline-offset-2"
+        >
+          ¿Costurera o sastre? Conoce el programa de arreglos de ropa →
+        </a>
+      </div>
     </div>
   );
 }
