@@ -16,6 +16,7 @@ import {
   getMarketplaceVatPercent,
 } from "@/lib/marketplace-cart-pricing";
 import { resolveServicePricingBaseMxnCents } from "@/lib/service-booking-pricing";
+import { isEscrowEnabled } from "@/lib/payouts-escrow";
 
 export const dynamic = "force-dynamic";
 /** Allow Stripe + retries to finish on Vercel (requires Hobby 10s default or Pro for 60s). */
@@ -214,6 +215,12 @@ export async function POST(req: NextRequest) {
       const applicationFeeCents = marketplaceApplicationFeeCents(cartP);
       const vatPct = getMarketplaceVatPercent();
 
+      // Escrow mode: the platform holds the full charge; we release the
+      // seller's subtotal via stripe.transfers.create when the booking is
+      // marked Completed. See lib/payouts-escrow.ts. Default (flag off) =
+      // existing instantaneous destination charge with application_fee.
+      const useEscrow = isEscrowEnabled();
+
       insertPayload = {
         listing_id: listingId,
         buyer_id: userId,
@@ -229,9 +236,45 @@ export async function POST(req: NextRequest) {
         note,
         payment_status: "pending",
         package_session_count: pkgCount,
+        ...(useEscrow
+          ? {
+              payout_status: "pending",
+              payout_amount_mxn_cents: cartP.subtotalCents,
+            }
+          : {}),
       };
 
-      const itemDesc = `Servicio — pago al proveedor vía Stripe Connect (${String(listing.title_es ?? "")})`;
+      const itemDesc = useEscrow
+        ? `Servicio (en custodia hasta entregar) — ${String(listing.title_es ?? "")}`
+        : `Servicio — pago al proveedor vía Stripe Connect (${String(listing.title_es ?? "")})`;
+
+      // In escrow mode the PaymentIntent does NOT carry transfer_data —
+      // funds settle to the platform balance. `on_behalf_of` keeps the
+      // Connect account as merchant of record (good for tax docs) while
+      // we hold the money. `application_fee_amount` is omitted because
+      // there's no automatic split.
+      type SessionCreateArgs = NonNullable<Parameters<typeof stripe.checkout.sessions.create>[0]>;
+      type PiData = NonNullable<SessionCreateArgs["payment_intent_data"]>;
+      const piData: PiData = useEscrow
+        ? {
+            on_behalf_of: connectId!,
+            metadata: {
+              booking_checkout: "service_full_connect_escrow",
+              booking_id: "",
+              buyer_id: userId,
+              seller_id: String(listing.seller_id),
+            },
+          }
+        : {
+            application_fee_amount: applicationFeeCents,
+            transfer_data: { destination: connectId! },
+            metadata: {
+              booking_checkout: "service_full_connect",
+              booking_id: "",
+              buyer_id: userId,
+              seller_id: String(listing.seller_id),
+            },
+          };
 
       sessionParams = {
         mode: "payment",
@@ -271,22 +314,13 @@ export async function POST(req: NextRequest) {
             quantity: 1,
           },
         ],
-        payment_intent_data: {
-          application_fee_amount: applicationFeeCents,
-          transfer_data: { destination: connectId! },
-          metadata: {
-            booking_checkout: "service_full_connect",
-            booking_id: "",
-            buyer_id: userId,
-            seller_id: String(listing.seller_id),
-          },
-        },
+        payment_intent_data: piData,
         metadata: {
           booking_id: "",
           listing_id: listingId,
           buyer_id: userId,
           seller_id: listing.seller_id,
-          checkout_mode: "full_connect",
+          checkout_mode: useEscrow ? "full_connect_escrow" : "full_connect",
         },
         success_url: `${APP_URL}/booking/success?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${APP_URL}/listing/${listingId}?booking_cancelled=1`,

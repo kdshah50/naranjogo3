@@ -13,6 +13,13 @@ import { notifyBuyerLifecyclePhase, type BuyerPhaseWhatsAppResult } from "@/lib/
 import { appendBookingEvent, BookingLifecycleStatus, canTransitionLifecycle } from "@/lib/booking-lifecycle";
 import { appendListingChatBookingLifecycleNotice, type BookingChatLifecyclePhase } from "@/lib/listing-chat-booking-notices";
 import { getPublicAppUrl } from "@/lib/app-url";
+import {
+  isEscrowEnabled,
+  loadBookingForPayout,
+  markPayoutEligibleOnCompletion,
+  refundOnCancellation,
+  releasePayout,
+} from "@/lib/payouts-escrow";
 
 export const dynamic = "force-dynamic";
 
@@ -261,7 +268,21 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         console.error("[bookings/:id] PATCH cancel WhatsApp failed (non-fatal)", e);
       }
 
-      return NextResponse.json({ ok: true, status: "cancelled" });
+      // Escrow: refund the buyer if we still hold the money (no transfer yet).
+      let refundResult: { action: string; reason?: string } | undefined;
+      if (isEscrowEnabled()) {
+        try {
+          const payoutRow = await loadBookingForPayout(supabase, rowId);
+          if (payoutRow) {
+            const r = await refundOnCancellation(supabase, payoutRow);
+            refundResult = r.ok ? { action: r.action } : { action: "failed", reason: r.reason };
+          }
+        } catch (e) {
+          console.error("[bookings/:id] PATCH escrow refund (non-fatal)", e);
+        }
+      }
+
+      return NextResponse.json({ ok: true, status: "cancelled", refundResult });
     }
 
     const allowed: BookingLifecycleStatus[] = ["scheduled", "in_progress", "completed"];
@@ -375,6 +396,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       }
     }
 
+    let payoutResult: { released: boolean; scheduled: boolean; reason?: string } | undefined;
+
     if (nextStatus === "completed") {
       try {
         buyerPhaseWhatsApp = await notifyBuyerCompletedReviewPrompt(supabase, rowId);
@@ -382,9 +405,32 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         console.error("[bookings/:id] PATCH review WhatsApp failed (non-fatal)", e);
         buyerPhaseWhatsApp = { delivered: false, reason: "send_failed" };
       }
+
+      // Escrow: release the seller's share (immediately or schedule) — feature-flagged.
+      if (isEscrowEnabled()) {
+        try {
+          const payoutRow = await loadBookingForPayout(supabase, rowId);
+          if (payoutRow) {
+            const eligibility = await markPayoutEligibleOnCompletion(supabase, payoutRow);
+            if (eligibility === "released_now") {
+              const refreshed = await loadBookingForPayout(supabase, rowId);
+              if (refreshed) {
+                const r = await releasePayout(supabase, refreshed);
+                payoutResult = r.ok
+                  ? { released: true, scheduled: false }
+                  : { released: false, scheduled: false, reason: r.reason };
+              }
+            } else if (eligibility === "scheduled") {
+              payoutResult = { released: false, scheduled: true };
+            }
+          }
+        } catch (e) {
+          console.error("[bookings/:id] PATCH escrow release (non-fatal)", e);
+        }
+      }
     }
 
-    return NextResponse.json({ ok: true, status: nextStatus, buyerPhaseWhatsApp });
+    return NextResponse.json({ ok: true, status: nextStatus, buyerPhaseWhatsApp, payoutResult });
   } catch (e) {
     console.error("[bookings/:id] PATCH", e);
     return NextResponse.json({ error: "Error del servidor" }, { status: 500 });
