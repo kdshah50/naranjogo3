@@ -13,6 +13,7 @@ import { notifyBuyerLifecyclePhase, type BuyerPhaseWhatsAppResult } from "@/lib/
 import { appendBookingEvent, BookingLifecycleStatus, canTransitionLifecycle } from "@/lib/booking-lifecycle";
 import { appendListingChatBookingLifecycleNotice, type BookingChatLifecyclePhase } from "@/lib/listing-chat-booking-notices";
 import { getPublicAppUrl } from "@/lib/app-url";
+import { sellerCanManagePaidBookingRow } from "@/lib/seller-booking-access";
 
 export const dynamic = "force-dynamic";
 
@@ -148,7 +149,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
       const { data: booking, error: fetchErr } = await supabase
         .from("service_bookings")
-        .select("id,buyer_id,seller_id,payment_status,status")
+        .select("id,buyer_id,seller_id,listing_id,payment_status,status")
         .in("id", cancelIdVars)
         .maybeSingle();
 
@@ -167,9 +168,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       }
 
       const myPool = await expandUserAccountIdPool(supabase, userId);
-      const sellerPoolBooking = await expandUserAccountIdPool(supabase, String(booking.seller_id));
+      const poolVariants = [...new Set(myPool.flatMap((id) => idMatchVariantsForIn(id)))];
       const buyerPoolBooking = await expandUserAccountIdPool(supabase, String(booking.buyer_id));
-      const isSeller = poolsOverlap(myPool, sellerPoolBooking);
+      const isSeller = await sellerCanManagePaidBookingRow(supabase, poolVariants, booking);
       const isBuyer = poolsOverlap(myPool, buyerPoolBooking);
 
       if (!isSeller && !isBuyer) {
@@ -291,9 +292,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const rowId = String(booking.id);
 
     const myPool = await expandUserAccountIdPool(supabase, userId);
-    const sellerPoolBooking = await expandUserAccountIdPool(supabase, String(booking.seller_id));
-    if (!poolsOverlap(myPool, sellerPoolBooking)) {
-      return NextResponse.json({ error: "Solo el proveedor puede actualizar el estado" }, { status: 403 });
+    const poolVariants = [...new Set(myPool.flatMap((id) => idMatchVariantsForIn(id)))];
+    if (!(await sellerCanManagePaidBookingRow(supabase, poolVariants, booking))) {
+      return NextResponse.json(
+        {
+          error: "Solo el proveedor del anuncio puede actualizar el estado",
+          code: "seller_not_listing_owner",
+        },
+        { status: 403 }
+      );
     }
 
     if (booking.payment_status !== "paid") {

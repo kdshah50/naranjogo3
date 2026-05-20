@@ -6,6 +6,7 @@ import { expandUserAccountIdPool, poolsOverlap } from "@/lib/user-account-pool";
 import { getSellerAccountBookingCounts } from "@/lib/seller-platform-stats";
 import { normalizeNgTicketQuery } from "@/lib/ng-ticket-normalize";
 import { enrichBookingListRows, loadReviewedBookingIdSet } from "@/lib/api-bookings-enrich";
+import { sellerCanManagePaidBookingRow } from "@/lib/seller-booking-access";
 
 export const dynamic = "force-dynamic";
 
@@ -39,23 +40,6 @@ async function listingIdsOwnedBySellerPool(
 }
 function uuidPoolForIn(ids: string[]): string[] {
   return [...new Set(ids.flatMap((id) => idMatchVariantsForIn(id)))];
-}
-
-async function sellerCanSeePaidBookingRow(
-  supabase: ReturnType<typeof createAdminSupabase>,
-  sellerPoolVariants: string[],
-  row: BookingRow
-): Promise<boolean> {
-  const sellerIdStr = String(row.seller_id ?? "");
-  const sidVars = idMatchVariantsForIn(sellerIdStr);
-  if (sidVars.some((v) => sellerPoolVariants.includes(v))) return true;
-
-  const listVars = idMatchVariantsForIn(String(row.listing_id ?? ""));
-  if (listVars.length === 0) return false;
-  const { data: listingRows } = await supabase.from("listings").select("seller_id").in("id", listVars).limit(1);
-  const ls = listingRows?.[0]?.seller_id != null ? String(listingRows[0].seller_id) : "";
-  if (!ls) return false;
-  return idMatchVariantsForIn(ls).some((v) => sellerPoolVariants.includes(v));
 }
 
 /** Same overlap rule as listing-stitched buyer rows (JWT pool vs booking.buyer_id account pool). */
@@ -242,7 +226,7 @@ export async function GET(req: NextRequest) {
       if (statusFilter === "paid") qTk = qTk.eq("payment_status", "paid");
       const { data: byTicketRow } = await qTk.maybeSingle();
       const tr = byTicketRow as BookingRow | null;
-      if (tr?.id != null && (await sellerCanSeePaidBookingRow(supabase, poolVariants, tr))) {
+      if (tr?.id != null && (await sellerCanManagePaidBookingRow(supabase, poolVariants, tr))) {
         const key = canonicalBookingRowIdKey(tr.id);
         const prevMap = merged.get(key);
         if (!prevMap) merged.set(key, tr);

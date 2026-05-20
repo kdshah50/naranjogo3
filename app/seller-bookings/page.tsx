@@ -339,9 +339,13 @@ function SellerBookingsInner() {
       });
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
+        status?: string;
         buyerPhaseWhatsApp?: { delivered: boolean; reason?: string };
       };
-      if (!res.ok) throw new Error(data.error ?? "Error");
+      if (!res.ok) {
+        const err = data.error ?? "Error";
+        throw new Error(res.status === 403 ? `${err} (inicia sesión con la cuenta del anuncio)` : err);
+      }
 
       let feedback: string;
       if (status === "completed") {
@@ -378,11 +382,10 @@ function SellerBookingsInner() {
       }
 
       setMsg((m) => ({ ...m, [rowKey]: feedback }));
+      const savedStatus = typeof data.status === "string" ? data.status : status;
       setBookings((prev) =>
         prev.map((b) =>
-          canonicalBookingRowIdKey(b.id) === rowKey
-            ? { ...b, status: status === "completed" ? "completed" : status }
-            : b
+          canonicalBookingRowIdKey(b.id) === rowKey ? { ...b, status: savedStatus } : b
         )
       );
       const listingIdForEvent = bookings.find((b) => canonicalBookingRowIdKey(b.id) === rowKey)?.listing_id;
@@ -395,9 +398,10 @@ function SellerBookingsInner() {
       }
       void load({ cacheBust: true });
     } catch (e) {
+      const errText = e instanceof Error ? e.message : "Error";
       setMsg((m) => ({
         ...m,
-        [rowKey]: e instanceof Error ? e.message : "Error",
+        [rowKey]: `⚠️ ${errText}`,
       }));
     } finally {
       setBusyId(null);
@@ -626,7 +630,7 @@ function SellerBookingsInner() {
                     <p
                       className={`text-xs mt-2 ${
                         (msg[rowKey] ?? msg[b.id]).startsWith("⚠️")
-                          ? "text-amber-800"
+                          ? "text-red-800 font-semibold"
                           : (msg[rowKey] ?? msg[b.id]).startsWith("✓")
                             ? "text-emerald-600"
                             : "text-red-600"
