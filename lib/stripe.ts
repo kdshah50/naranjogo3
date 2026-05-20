@@ -28,7 +28,7 @@ export const MIN_COMMISSION_CENTS_MXN = 1000;
 
 /** Checkout Session / webhook may return PaymentIntent as id string or expanded object. */
 export function stripePaymentIntentId(
-  pi: string | Stripe.PaymentIntent | null | undefined
+  pi: string | Stripe.PaymentIntent | { id: string } | null | undefined
 ): string | null {
   if (pi == null) return null;
   if (typeof pi === "string") return pi;
