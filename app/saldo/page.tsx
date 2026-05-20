@@ -36,6 +36,7 @@ export default function SaldoPage() {
 function SaldoPageInner() {
   const params = useSearchParams();
   const topupResult = params.get("topup");
+  const sessionId = params.get("session_id");
 
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -43,27 +44,56 @@ function SaldoPageInner() {
   const [topupError, setTopupError] = useState<string | null>(null);
   const [topupDetail, setTopupDetail] = useState<string | null>(null);
   const [oxxoEnabled, setOxxoEnabled] = useState<boolean>(false);
+  const [syncingTopup, setSyncingTopup] = useState(false);
+
+  const loadWallet = async () => {
+    const r = await fetch("/api/rides/wallet", { credentials: "include", cache: "no-store" });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      setLoadError(data?.error ?? "No se pudo cargar el saldo");
+      return null;
+    }
+    setLoadError(null);
+    setWallet(data.wallet ?? null);
+    setOxxoEnabled(Boolean(data?.topup?.oxxo));
+    return data.wallet as Wallet | null;
+  };
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/rides/wallet", { credentials: "include" })
-      .then(async (r) => {
-        const data = await r.json().catch(() => ({}));
-        if (cancelled) return;
-        if (!r.ok) {
-          setLoadError(data?.error ?? "No se pudo cargar el saldo");
-          return;
+
+    void (async () => {
+      if (topupResult === "success" && sessionId?.startsWith("cs_")) {
+        setSyncingTopup(true);
+        try {
+          await fetch(
+            `/api/rides/wallet/verify-session?session_id=${encodeURIComponent(sessionId)}`,
+            { credentials: "include", cache: "no-store" },
+          );
+        } catch {
+          /* webhook may still credit; poll below */
+        } finally {
+          if (!cancelled) setSyncingTopup(false);
         }
-        setWallet(data.wallet ?? null);
-        setOxxoEnabled(Boolean(data?.topup?.oxxo));
-      })
-      .catch(() => {
-        if (!cancelled) setLoadError("Error de red al cargar el saldo");
-      });
+      }
+
+      let w = await loadWallet();
+      if (cancelled) return;
+
+      if (topupResult === "success" && (!w || w.balance_mxn_cents <= 0)) {
+        for (let i = 0; i < 8; i++) {
+          await new Promise((r) => setTimeout(r, 2000));
+          if (cancelled) return;
+          w = await loadWallet();
+          if (w && w.balance_mxn_cents > 0) break;
+        }
+      }
+    })();
+
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [topupResult, sessionId]);
 
   async function startTopup(amountMxn: number) {
     setBusyAmount(amountMxn);
@@ -118,7 +148,7 @@ function SaldoPageInner() {
           {loadError ? (
             <p className="mt-2 text-sm text-red-600">{loadError}</p>
           ) : !wallet ? (
-            <p className="mt-2 text-sm text-[#8A8170]">Cargando…</p>
+            <p className="mt-2 text-sm text-[#8A8170]">{syncingTopup ? "Confirmando pago…" : "Cargando…"}</p>
           ) : (
             <>
               <p className="mt-1 text-4xl font-bold text-[#1B4332]">

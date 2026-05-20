@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     const result = await createWalletTopupCheckoutSession({
       userId,
       amountMxnCents,
-      successUrl: `${origin}/saldo?topup=success`,
+      successUrl: `${origin}/saldo?topup=success&session_id={CHECKOUT_SESSION_ID}`,
       cancelUrl: `${origin}/saldo?topup=cancel`,
     });
 
