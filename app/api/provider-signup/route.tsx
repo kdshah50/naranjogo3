@@ -5,6 +5,7 @@ import { normalizeCurpForStorage, normalizeRfcForStorage } from "@/lib/mx-tax-id
 import {
   providerMetaFooters,
   providerServiceLabels,
+  providerServiceSupportsMenu,
   PROVIDER_LANGUAGE_OPTIONS,
   SERVICE_LOCATION_OPTIONS,
   sanitizeAlternateServiceSlugs,
@@ -14,6 +15,7 @@ import {
   coachingDeliveryLabels,
   COACHING_TRAINING_SERVICE,
 } from "@/lib/provider-services";
+import { hasServiceMenu, parseServiceMenu } from "@/lib/listing-service-menu";
 import { rateLimitListingCreateByUser } from "@/lib/rate-limit";
 
 const ADMIN_WHATSAPP = process.env.ADMIN_WHATSAPP_NUMBER ?? "";
@@ -79,7 +81,21 @@ export async function POST(req: NextRequest) {
       curp, rfc, payment_methods,
       provider_languages, service_location,
       alternate_services: alternateRaw,
+      service_menu: serviceMenuRaw,
     } = body;
+
+    // Validate optional service_menu. Only honored for services that support a menu
+    // (e.g. tailoring). Empty / invalid input falls back to NULL — never blocks signup.
+    let serviceMenuToStore: unknown = null;
+    if (
+      serviceMenuRaw != null &&
+      providerServiceSupportsMenu(String(service ?? ""))
+    ) {
+      const parsedMenu = parseServiceMenu(serviceMenuRaw);
+      if (parsedMenu.ok && hasServiceMenu(parsedMenu.menu)) {
+        serviceMenuToStore = parsedMenu.menu;
+      }
+    }
 
     const availability_summary = String((body as { availability_summary?: string }).availability_summary ?? "")
       .trim()
@@ -240,6 +256,7 @@ export async function POST(req: NextRequest) {
                             : ["efectivo", "whatsapp"],
       expires_at:         new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
       ...(availability_summary ? { availability_summary } : {}),
+      ...(serviceMenuToStore ? { service_menu: serviceMenuToStore } : {}),
     };
 
     const listingRes = await fetch(`${SUPA_URL}/rest/v1/listings`, {

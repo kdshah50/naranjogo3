@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAppLang } from "@/hooks/use-app-lang";
 import { formatCurrencyMXN } from "@/lib/locale-format";
-import { canonicalBookingRowIdKey, mergeBookingListAvoidStatusRegression } from "@/lib/booking-list-merge";
+import { canonicalBookingRowIdKey } from "@/lib/booking-list-merge";
 import { normalizeNgTicketQuery } from "@/lib/ng-ticket-normalize";
 import type { Lang } from "@/lib/i18n-lang";
 
@@ -178,7 +178,7 @@ function SellerBookingsInner() {
 
   const load = useCallback(async (opts?: { cacheBust?: boolean }) => {
     const q = new URLSearchParams({ seller: "1", status: "paid" });
-    if (opts?.cacheBust) q.set("_cb", String(Date.now()));
+    q.set("_cb", String(Date.now()));
     const tk = normalizeNgTicketQuery(ticketHint) ?? undefined;
     if (tk) q.set("ticket", tk);
     const res = await fetch(`/api/bookings?${q}`, { credentials: "same-origin", cache: "no-store" });
@@ -216,7 +216,8 @@ function SellerBookingsInner() {
       };
     };
     const list = Array.isArray(data.bookings) ? data.bookings : [];
-    setBookings((prev) => mergeBookingListAvoidStatusRegression(prev, list));
+    /** Trust server + API truth pass; client regression merge kept stale "scheduling pending". */
+    setBookings(list);
     if (
       data.sellerStats &&
       typeof data.sellerStats.sellerCompletedPaid === "number" &&
@@ -313,7 +314,7 @@ function SellerBookingsInner() {
     };
     document.addEventListener("visibilitychange", onVis);
     const poll = window.setInterval(() => {
-      if (document.visibilityState === "visible") void load();
+      if (document.visibilityState === "visible") void load({ cacheBust: true });
     }, 8_000);
     return () => {
       document.removeEventListener("visibilitychange", onVis);
@@ -339,9 +340,13 @@ function SellerBookingsInner() {
       });
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
+        status?: string;
         buyerPhaseWhatsApp?: { delivered: boolean; reason?: string };
       };
-      if (!res.ok) throw new Error(data.error ?? "Error");
+      if (!res.ok) {
+        const err = data.error ?? "Error";
+        throw new Error(res.status === 403 ? `${err} (inicia sesión con la cuenta del anuncio)` : err);
+      }
 
       let feedback: string;
       if (status === "completed") {
@@ -378,11 +383,10 @@ function SellerBookingsInner() {
       }
 
       setMsg((m) => ({ ...m, [rowKey]: feedback }));
+      const savedStatus = typeof data.status === "string" ? data.status : status;
       setBookings((prev) =>
         prev.map((b) =>
-          canonicalBookingRowIdKey(b.id) === rowKey
-            ? { ...b, status: status === "completed" ? "completed" : status }
-            : b
+          canonicalBookingRowIdKey(b.id) === rowKey ? { ...b, status: savedStatus } : b
         )
       );
       const listingIdForEvent = bookings.find((b) => canonicalBookingRowIdKey(b.id) === rowKey)?.listing_id;
@@ -395,9 +399,10 @@ function SellerBookingsInner() {
       }
       void load({ cacheBust: true });
     } catch (e) {
+      const errText = e instanceof Error ? e.message : "Error";
       setMsg((m) => ({
         ...m,
-        [rowKey]: e instanceof Error ? e.message : "Error",
+        [rowKey]: `⚠️ ${errText}`,
       }));
     } finally {
       setBusyId(null);
@@ -626,7 +631,7 @@ function SellerBookingsInner() {
                     <p
                       className={`text-xs mt-2 ${
                         (msg[rowKey] ?? msg[b.id]).startsWith("⚠️")
-                          ? "text-amber-800"
+                          ? "text-red-800 font-semibold"
                           : (msg[rowKey] ?? msg[b.id]).startsWith("✓")
                             ? "text-emerald-600"
                             : "text-red-600"

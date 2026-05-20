@@ -1,5 +1,6 @@
 "use client";
 import { useMemo, useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { ALL_COLONIA_KEYS, COLONIAS as COLONIAS_MAP } from "@/lib/colonias";
 import {
   buildAvailabilitySummaryString,
@@ -17,12 +18,18 @@ import {
   PROVIDER_LANGUAGE_OPTIONS,
   SERVICE_LOCATION_OPTIONS,
   providerServiceLabels,
+  providerServiceSupportsMenu,
   COACHING_TRAINING_SERVICE,
   COACHING_TRAINING_FOCUS,
   COACHING_TRAINING_DELIVERY,
   coachingFocusLabels,
   coachingDeliveryLabels,
 } from "@/lib/provider-services";
+import {
+  MAX_SERVICE_MENU_ITEMS,
+  tailoringStarterMenu,
+  type ServiceMenuItem,
+} from "@/lib/listing-service-menu";
 import { useAppLang, useAppLangActions } from "@/hooks/use-app-lang";
 
 const COLONIAS_LIST = ALL_COLONIA_KEYS.map(key => ({
@@ -104,6 +111,13 @@ const T = {
     coachingDelivery:       "Modalidad: virtual y/o presencial",
     coachingDeliveryHint:   "Indica si ofreces sesiones en línea, en sitio con el cliente, o ambas.",
     coachingStep2Error:     "Para Coaching y capacitación: elige al menos un área y una modalidad.",
+    menuTitle:              "Menú de servicios (precios fijos)",
+    menuHint:               "Lista los arreglos comunes con su precio. Los compradores los verán publicados y podrás armar un presupuesto desde el chat.",
+    menuTemplateBtn:        "Cargar plantilla sugerida (20 servicios)",
+    menuAddRow:             "+ Agregar servicio",
+    menuRowNamePh:          "Nombre (ej. Dobladillo de pantalón)",
+    menuDisclaimer:         "El precio puede ajustarse al revisar la prenda físicamente.",
+    menuEmpty:              "Sin servicios — toca «Cargar plantilla» o «+ Agregar servicio» para empezar.",
   },
   en: {
     title:        "List your service on Naranjogo",
@@ -174,6 +188,13 @@ const T = {
     coachingDelivery:       "Delivery: virtual and/or on-site",
     coachingDeliveryHint:   "Offer online sessions, in-person, or both.",
     coachingStep2Error:     "For Coaching & training: pick at least one specialty and one delivery mode.",
+    menuTitle:              "Service menu (fixed prices)",
+    menuHint:               "List common alterations with their price. Buyers will see the published menu and you can build a quote from chat.",
+    menuTemplateBtn:        "Load suggested template (20 services)",
+    menuAddRow:             "+ Add service",
+    menuRowNamePh:          "Name (e.g. Pants hem)",
+    menuDisclaimer:         "Price may change after physical inspection of the garment.",
+    menuEmpty:              "No services yet — tap 'Load template' or '+ Add service' to begin.",
   },
 };
 
@@ -194,14 +215,22 @@ export default function UnetePage() {
 function UnetePageInner() {
   const lang = useAppLang();
   const { setLang } = useAppLangActions();
+  const sp = useSearchParams();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState("");
   const [termsError, setTermsError] = useState(false);
 
+  // ?service=<slug> pre-selects the primary service (e.g. /arreglos-de-ropa landing
+  // links here as /unete?service=arreglos_de_ropa). Unknown / missing slug → empty.
+  const initialServiceFromUrl = sp?.get("service") ?? "";
+  const initialService = SERVICES.some((s) => s.value === initialServiceFromUrl)
+    ? initialServiceFromUrl
+    : "";
+
   const [form, setForm] = useState({
-    name: "", whatsapp: "", service: "",
+    name: "", whatsapp: "", service: initialService,
     description: "", price: "", curp: "", rfc: "",
     city: "San Miguel de Allende",
     colonia: "",
@@ -217,6 +246,9 @@ function UnetePageInner() {
     acceptPricing: false,
     coaching_focus: [] as string[],
     coaching_delivery: [] as string[],
+    /** Service menu rows for slugs in PROVIDER_SERVICES_WITH_MENU (e.g. tailoring).
+     *  Empty when the chosen service has no menu — submitted as null. */
+    service_menu_rows: [] as Array<{ name: string; pesos: string }>,
   });
 
   const t = T[lang];
@@ -249,7 +281,26 @@ function UnetePageInner() {
     setError("");
     try {
       const selectedService = SERVICES.find((s) => s.value === form.service);
-      const { weekly_hours: _wh, availability_mode: _am, availability_notes: _an, ...signupFields } = form;
+      const {
+        weekly_hours: _wh,
+        availability_mode: _am,
+        availability_notes: _an,
+        service_menu_rows: rawMenuRows,
+        ...signupFields
+      } = form;
+
+      // Build service_menu payload only when the chosen service supports a menu and rows exist.
+      const menuEligible = providerServiceSupportsMenu(form.service);
+      const cleanedMenu = menuEligible
+        ? rawMenuRows
+            .map((r) => ({
+              name_es: r.name.trim(),
+              pesos: Number(String(r.pesos).trim().replace(/,/g, ".")),
+            }))
+            .filter((r) => r.name_es.length > 0 && Number.isFinite(r.pesos) && r.pesos > 0)
+            .map((r) => ({ name_es: r.name_es, price_mxn: r.pesos }))
+        : [];
+      const service_menu = cleanedMenu.length > 0 ? { items: cleanedMenu } : null;
 
       const res = await fetch("/api/provider-signup", {
         method: "POST",
@@ -262,6 +313,7 @@ function UnetePageInner() {
           accepted_terms: true,
           accepted_pricing: true,
           accepted_at: new Date().toISOString(),
+          ...(service_menu ? { service_menu } : {}),
         }),
       });
       if (!res.ok) {
@@ -463,6 +515,101 @@ function UnetePageInner() {
                   ))}
                 </div>
               </div>
+
+              {providerServiceSupportsMenu(form.service) && (
+                <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="block text-sm font-semibold text-[#78350F]">
+                      {t.menuTitle}
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const tpl = tailoringStarterMenu();
+                        set(
+                          "service_menu_rows",
+                          tpl.items.map((it: ServiceMenuItem) => ({
+                            name: lang === "en" && it.name_en ? it.name_en : it.name_es,
+                            pesos: String(it.price_mxn_cents / 100),
+                          })),
+                        );
+                      }}
+                      className="text-[11px] font-semibold text-[#1B4332] underline"
+                    >
+                      {t.menuTemplateBtn}
+                    </button>
+                  </div>
+                  <p className="text-xs text-[#92400E]">{t.menuHint}</p>
+
+                  {form.service_menu_rows.length === 0 ? (
+                    <p className="text-xs italic text-[#A16207]">{t.menuEmpty}</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {form.service_menu_rows.map((row, i) => (
+                        <div key={i} className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={row.name}
+                            onChange={(e) => {
+                              const next = [...form.service_menu_rows];
+                              next[i] = { ...next[i], name: e.target.value };
+                              set("service_menu_rows", next);
+                            }}
+                            placeholder={t.menuRowNamePh}
+                            maxLength={80}
+                            className="flex-1 min-w-0 rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-[#B45309]"
+                          />
+                          <div className="relative w-24 shrink-0">
+                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[#92400E] text-xs">
+                              $
+                            </span>
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              value={row.pesos}
+                              onChange={(e) => {
+                                const next = [...form.service_menu_rows];
+                                next[i] = { ...next[i], pesos: e.target.value };
+                                set("service_menu_rows", next);
+                              }}
+                              placeholder="0"
+                              className="w-full rounded-lg border border-amber-200 bg-white pl-5 pr-2 py-1.5 text-xs outline-none focus:border-[#B45309]"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = form.service_menu_rows.filter((_, idx) => idx !== i);
+                              set("service_menu_rows", next);
+                            }}
+                            className="px-2 py-1 text-[#9F1239] text-xs font-bold"
+                            aria-label="✕"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (form.service_menu_rows.length >= MAX_SERVICE_MENU_ITEMS) return;
+                      set("service_menu_rows", [
+                        ...form.service_menu_rows,
+                        { name: "", pesos: "" },
+                      ]);
+                    }}
+                    disabled={form.service_menu_rows.length >= MAX_SERVICE_MENU_ITEMS}
+                    className="w-full rounded-lg border border-dashed border-[#D4A017] py-1.5 text-xs font-semibold text-[#78350F] disabled:opacity-40"
+                  >
+                    {t.menuAddRow} ({form.service_menu_rows.length}/{MAX_SERVICE_MENU_ITEMS})
+                  </button>
+
+                  <p className="mt-1 text-[10px] italic text-[#92400E]">{t.menuDisclaimer}</p>
+                </div>
+              )}
 
               {form.service === COACHING_TRAINING_SERVICE && (
                 <>
