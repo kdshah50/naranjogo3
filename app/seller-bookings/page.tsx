@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAppLang } from "@/hooks/use-app-lang";
 import { formatCurrencyMXN } from "@/lib/locale-format";
-import { canonicalBookingRowIdKey, mergeBookingListAvoidStatusRegression } from "@/lib/booking-list-merge";
+import { canonicalBookingRowIdKey } from "@/lib/booking-list-merge";
 import { normalizeNgTicketQuery } from "@/lib/ng-ticket-normalize";
 import type { Lang } from "@/lib/i18n-lang";
 
@@ -178,7 +178,7 @@ function SellerBookingsInner() {
 
   const load = useCallback(async (opts?: { cacheBust?: boolean }) => {
     const q = new URLSearchParams({ seller: "1", status: "paid" });
-    if (opts?.cacheBust) q.set("_cb", String(Date.now()));
+    q.set("_cb", String(Date.now()));
     const tk = normalizeNgTicketQuery(ticketHint) ?? undefined;
     if (tk) q.set("ticket", tk);
     const res = await fetch(`/api/bookings?${q}`, { credentials: "same-origin", cache: "no-store" });
@@ -216,7 +216,8 @@ function SellerBookingsInner() {
       };
     };
     const list = Array.isArray(data.bookings) ? data.bookings : [];
-    setBookings((prev) => mergeBookingListAvoidStatusRegression(prev, list));
+    /** Trust server + API truth pass; client regression merge kept stale "scheduling pending". */
+    setBookings(list);
     if (
       data.sellerStats &&
       typeof data.sellerStats.sellerCompletedPaid === "number" &&
@@ -313,7 +314,7 @@ function SellerBookingsInner() {
     };
     document.addEventListener("visibilitychange", onVis);
     const poll = window.setInterval(() => {
-      if (document.visibilityState === "visible") void load();
+      if (document.visibilityState === "visible") void load({ cacheBust: true });
     }, 8_000);
     return () => {
       document.removeEventListener("visibilitychange", onVis);
