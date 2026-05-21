@@ -5,6 +5,7 @@ import { generateTicketCodeCandidate } from "@/lib/booking-lifecycle";
 import { pickBestDriver } from "@/lib/rides/dispatch";
 import { locationFromColoniaKey } from "@/lib/rides/ride-locations";
 import { estimateFare, type RideLocation } from "@/lib/rides/ride-pricing";
+import { holdWalletForRide } from "@/lib/rides/wallet-hold";
 import { getWalletForUser } from "@/lib/rides/wallet-server";
 
 export type RideBookingStatus =
@@ -38,6 +39,12 @@ export type RideBookingRow = {
   duration_s: number | null;
   ticket_code: string | null;
   matched_at: string | null;
+  trip_started_at?: string | null;
+  trip_ended_at?: string | null;
+  final_total_mxn_cents?: number | null;
+  commission_mxn_cents?: number | null;
+  tip_mxn_cents?: number | null;
+  cancel_reason?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -97,7 +104,7 @@ export type CreateRideRequestResult =
   | { ok: false; error: string; code?: "insufficient_balance" | "no_drivers" };
 
 /**
- * Balance check only — wallet hold/capture is Phase 4.
+ * Validates buyer has enough spendable saldo; hold is placed at match (Phase 4).
  */
 export async function createRideRequest(
   supabase: SupabaseClient,
@@ -191,7 +198,7 @@ export async function getRideById(
 
 export type MatchRideResult =
   | { ok: true; ride: RideBookingRow; driverUserId: string }
-  | { ok: false; error: string; code?: "no_drivers" | "invalid_state" };
+  | { ok: false; error: string; code?: "no_drivers" | "invalid_state" | "insufficient_balance" };
 
 export async function matchRideToDriver(
   supabase: SupabaseClient,
@@ -276,6 +283,45 @@ export async function matchRideToDriver(
     fromStatus: "requested",
     toStatus: "matched",
     meta: { driver_user_id: driverUserId, listing_id: listingId, ticket_code: ticketCode },
+  });
+
+  const hold = await holdWalletForRide(supabase, {
+    userId: String(updated.buyer_id).trim().toLowerCase(),
+    rideBookingId: ride.id,
+    holdAmountMxnCents: Math.round(Number(updated.hold_amount_mxn_cents)),
+    meta: { ticket_code: ticketCode },
+  });
+  if (!hold.ok) {
+    await supabase
+      .from("ride_bookings")
+      .update({
+        driver_id: null,
+        listing_id: null,
+        status: "requested",
+        ticket_code: null,
+        matched_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", ride.id);
+    await appendRideEvent(supabase, {
+      rideId: ride.id,
+      eventType: "match_rolled_back",
+      meta: { reason: hold.error, code: hold.code },
+    });
+    return {
+      ok: false,
+      error: hold.error || "No se pudo reservar saldo del pasajero",
+      code: hold.code === "insufficient_balance" ? "insufficient_balance" : undefined,
+    };
+  }
+
+  await appendRideEvent(supabase, {
+    rideId: ride.id,
+    eventType: "wallet_hold_placed",
+    meta: {
+      hold_amount_mxn_cents: Math.round(Number(updated.hold_amount_mxn_cents)),
+      ledger_id: hold.ledgerId,
+    },
   });
 
   return { ok: true, ride: updated as RideBookingRow, driverUserId: String(driverUserId) };

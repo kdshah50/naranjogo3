@@ -17,11 +17,10 @@ A running diary of every step we've taken to build the rides + AI agents vertica
 | Preview URL (testing ground) | Vercel deployment for branch `rides-setup` |
 | Supabase project | Production (single project; new tables added are isolated/empty until used) |
 | Feature flag (`RIDES_ENABLED`) | `false` in Production, `true` in Preview + Development |
-| Current phase | **Phase 2 + 3 foundation** — ready for combined preview test |
-| Phase 0 (wallet) | **Complete** — card top-up, verify-session fallback, `/saldo` UI |
-| Phase 1 (driver onboarding) | **Complete** — tested on preview; admin approval via SQL |
-| Latest step completed | **Phase 2 + 3 code** — bookings, dispatch, `/viaje`, Twilio inbound |
-| Next step | Run `20260522120000_rides_bookings_foundation.sql` → test per [`RIDES_PHASE23_TEST.md`](./RIDES_PHASE23_TEST.md) |
+| Current phase | **Phase 4** — trip lifecycle + wallet hold/capture (ready for preview test) |
+| Phase 2 + 3 | **Complete** — bookings, dispatch, `/viaje`, Twilio inbound |
+| Latest step completed | **Phase 4 code** — hold/capture, lifecycle APIs, `/conductor/viajes` |
+| Next step | Run Phase 4 migration → full golden ride test per [`RIDES_PHASE4_TEST.md`](./RIDES_PHASE4_TEST.md) |
 
 ---
 
@@ -47,7 +46,7 @@ A running diary of every step we've taken to build the rides + AI agents vertica
 | Check current branch | `git branch --show-current` |
 | Switch to rides branch | `git checkout rides-setup` |
 | Driver validator tests | `npm run test:driver-onboarding` |
-| Ride pricing / parser tests | `npm run test:ride-pricing` |
+| Ride lifecycle tests | `npm run test:ride-lifecycle` |
 | Push (triggers Vercel preview rebuild) | `git push` |
 
 ---
@@ -117,14 +116,29 @@ Example message: `taxi de centro a guadalupe`
 | Unit tests | `npm run test:ride-pricing` |
 | Test checklist | [`docs/RIDES_PHASE23_TEST.md`](./RIDES_PHASE23_TEST.md) |
 
-**Note:** Wallet *hold/capture* is balance-check only until Phase 4.
+**Note:** Wallet hold is placed at **match**; capture at **complete**. See Phase 4 below.
 
 ---
 
-## After Phase 2 + 3
+## Phase 4 — Trip lifecycle + wallet (FOUNDATION — test with 2+3)
 
-- Phase 4 — Trip lifecycle (accept/arrive/start/complete) + real wallet hold/capture
-- Phase 5 — Support agent + disputes
+| Piece | File(s) |
+|---|---|
+| Driver online migration | `supabase/migrations/20260523120000_rides_phase4_driver_online.sql` |
+| Wallet hold/release/capture | `lib/rides/wallet-hold.ts` |
+| Lifecycle state machine | `lib/rides/ride-lifecycle.ts`, `lib/rides/ride-trip-server.ts` |
+| Lifecycle APIs | `/api/rides/[id]/accept|arrive|start|complete|cancel|tip|dispute` |
+| Driver panel | `/conductor/viajes` — online toggle + trip actions |
+| Active rides | `GET /api/rides/active`, `GET /api/rides/drivers/me/trips` |
+| Online + GPS | `POST /api/rides/drivers/me/online` |
+| Unit tests | `npm run test:ride-lifecycle` |
+| Test checklist | [`docs/RIDES_PHASE4_TEST.md`](./RIDES_PHASE4_TEST.md) |
+
+---
+
+## After Phase 4
+
+- Phase 5 — Support agent + dispute queue
 - See `docs/RIDES_AI_PLAN.md` §12
 
 ---

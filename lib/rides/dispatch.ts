@@ -45,16 +45,31 @@ export async function findNearbyDrivers(
   const limit = Math.min(Math.max(args.limit ?? 5, 1), 20);
   const maxDistanceM = args.maxDistanceM ?? 8000;
 
-  const { data: profiles, error: pErr } = await supabase
-    .from("driver_profiles")
-    .select(
-      "user_id,vehicle_make,vehicle_model,vehicle_color,service_colonias,is_active_driver"
-    )
-    .eq("is_active_driver", true);
+  async function loadProfiles(onlineOnly: boolean) {
+    let q = supabase
+      .from("driver_profiles")
+      .select(
+        "user_id,vehicle_make,vehicle_model,vehicle_color,service_colonias,is_active_driver,is_online"
+      )
+      .eq("is_active_driver", true);
+    if (onlineOnly) q = q.eq("is_online", true);
+    return q;
+  }
 
+  let { data: profiles, error: pErr } = await loadProfiles(true);
   if (pErr) {
     console.error("[rides/dispatch] driver_profiles", pErr);
     return [];
+  }
+  // Fallback for preview/testing when no driver has toggled online yet.
+  if (!profiles?.length) {
+    const fallback = await loadProfiles(false);
+    profiles = fallback.data;
+    pErr = fallback.error;
+    if (pErr) {
+      console.error("[rides/dispatch] driver_profiles fallback", pErr);
+      return [];
+    }
   }
 
   if (!profiles?.length) return [];

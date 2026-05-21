@@ -57,17 +57,34 @@ function ViajePageInner() {
   const [ride, setRide] = useState<RideRow | null>(null);
   const [requestError, setRequestError] = useState<string | null>(null);
   const [requesting, setRequesting] = useState(false);
+  const [actionBusy, setActionBusy] = useState(false);
+  const [tipMxn, setTipMxn] = useState(20);
 
   const [authError, setAuthError] = useState<string | null>(null);
+
+  const refreshActiveRide = useCallback(async () => {
+    const r = await fetch("/api/rides/active", { credentials: "include", cache: "no-store" });
+    if (!r.ok) return;
+    const data = await r.json().catch(() => ({}));
+    const active = (data.as_buyer?.[0] as RideRow | undefined) ?? null;
+    if (active) setRide(active);
+  }, []);
 
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
       .then((r) => r.json())
       .then((d) => {
         if (!d?.user?.id) setAuthError("Inicia sesión para pedir un viaje.");
+        else refreshActiveRide();
       })
       .catch(() => setAuthError("No se pudo verificar la sesión."));
-  }, []);
+  }, [refreshActiveRide]);
+
+  useEffect(() => {
+    if (!ride || ride.status === "completed" || ride.status === "cancelled") return;
+    const t = setInterval(refreshActiveRide, 6000);
+    return () => clearInterval(t);
+  }, [ride, refreshActiveRide]);
 
   const canSubmit = useMemo(
     () => pickupColonia !== dropoffColonia && !authError,
@@ -137,8 +154,53 @@ function ViajePageInner() {
       }
       setRide(data.ride ?? null);
       if (data.estimate) setEstimate(data.estimate);
+      await refreshActiveRide();
     } finally {
       setRequesting(false);
+    }
+  };
+
+  const cancelRide = async () => {
+    if (!ride) return;
+    setActionBusy(true);
+    setRequestError(null);
+    try {
+      const r = await fetch(`/api/rides/${ride.id}/cancel`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "buyer_cancel" }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setRequestError(data?.error ?? "No se pudo cancelar");
+        return;
+      }
+      setRide(data.ride ?? null);
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const addTip = async () => {
+    if (!ride) return;
+    setActionBusy(true);
+    setRequestError(null);
+    try {
+      const r = await fetch(`/api/rides/${ride.id}/tip`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tip_mxn: tipMxn }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setRequestError(data?.error ?? "No se pudo enviar propina");
+        return;
+      }
+      setRide(data.ride ?? null);
+    } finally {
+      setActionBusy(false);
     }
   };
 
@@ -275,6 +337,38 @@ function ViajePageInner() {
             )}
             {!ride.driver_id && ride.status === "requested" && (
               <p className="mt-2 text-sm text-amber-800">Buscando conductor…</p>
+            )}
+            {["requested", "matched", "accepted", "arrived"].includes(ride.status) && (
+              <button
+                type="button"
+                disabled={actionBusy}
+                onClick={cancelRide}
+                className="mt-3 rounded-full border border-red-700 px-4 py-2 text-sm text-red-800 disabled:opacity-50"
+              >
+                Cancelar viaje
+              </button>
+            )}
+            {ride.status === "completed" && (
+              <div className="mt-4 flex flex-wrap items-end gap-2">
+                <label className="text-sm">
+                  Propina (MXN)
+                  <input
+                    type="number"
+                    min={1}
+                    className="ml-2 w-20 rounded border px-2 py-1"
+                    value={tipMxn}
+                    onChange={(e) => setTipMxn(Number(e.target.value))}
+                  />
+                </label>
+                <button
+                  type="button"
+                  disabled={actionBusy}
+                  onClick={addTip}
+                  className="rounded-full bg-[#1B4332] px-4 py-2 text-sm text-white disabled:opacity-50"
+                >
+                  Enviar propina
+                </button>
+              </div>
             )}
             <p className="mt-3 text-xs text-[#1B4332]/60">ID: {ride.id}</p>
           </section>

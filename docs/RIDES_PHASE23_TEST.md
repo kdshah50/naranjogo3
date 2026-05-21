@@ -14,7 +14,7 @@ Run on Vercel preview (`rides-setup`) with `RIDES_ENABLED=true`.
    -- driver must serve pickup colonia in service_colonias
    SELECT user_id, is_active_driver, service_colonias FROM driver_profiles WHERE is_active_driver = true;
    ```
-4. **Buyer saldo** — load via `/saldo` (hold is balance *check* only until Phase 4).
+4. **Buyer saldo** — load via `/saldo`; at match, hold moves balance → `held`.
 
 ## Phase 3 — Web (`/viaje`)
 
@@ -59,9 +59,9 @@ curl -s -X POST "$PREVIEW/api/rides/drivers/nearby" \
 npm run test:ride-pricing
 ```
 
-## Not in this phase yet
+## Not in Phase 2+3 (see Phase 4)
 
-- Wallet hold/capture (Phase 4)
-- Driver accept/arrive/start/complete screens
+- Wallet hold/capture → [`RIDES_PHASE4_TEST.md`](./RIDES_PHASE4_TEST.md)
+- Driver accept/arrive/start/complete → `/conductor/viajes`
 - Meta Cloud API templates (Twilio sandbox is enough for first test)
 - Mapbox Matrix / live GPS
