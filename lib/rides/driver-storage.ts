@@ -8,7 +8,18 @@ export const MAX_DRIVER_DOC_BYTES = 2 * 1024 * 1024; // 2 MB
 export const MAX_DRIVER_DOC_MB = MAX_DRIVER_DOC_BYTES / 1024 / 1024;
 
 const MAX_SIZE = MAX_DRIVER_DOC_BYTES;
-const ALLOWED = ["image/jpeg", "image/png", "image/webp"] as const;
+const ALLOWED = ["image/jpeg", "image/jpg", "image/png", "image/webp"] as const;
+
+function normalizeDriverDocMime(type: string, fileName: string): string | null {
+  const t = type.trim().toLowerCase();
+  if (t === "image/jpg" || t === "image/jpeg") return "image/jpeg";
+  if (t === "image/png" || t === "image/webp") return t;
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".webp")) return "image/webp";
+  return null;
+}
 
 export type DriverDocKind = "license" | "vehicle_card" | "insurance";
 
@@ -21,17 +32,19 @@ export async function uploadDriverDoc(
   if (file.size > MAX_SIZE) {
     return { ok: false, error: `Archivo demasiado grande (máx. ${MAX_DRIVER_DOC_MB} MB por foto)` };
   }
-  if (!ALLOWED.includes(file.type as (typeof ALLOWED)[number])) {
+  const contentType = normalizeDriverDocMime(file.type, file.name);
+  if (!contentType) {
     return { ok: false, error: "Solo JPEG, PNG o WebP" };
   }
 
-  const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
+  const ext =
+    contentType === "image/png" ? "png" : contentType === "image/webp" ? "webp" : "jpg";
   const objectPath = `${userId}/${kind}-${Date.now()}.${ext}`;
   const buf = Buffer.from(await file.arrayBuffer());
 
   const { error } = await supabase.storage
     .from(DRIVER_DOCS_BUCKET)
-    .upload(objectPath, buf, { contentType: file.type, upsert: false });
+    .upload(objectPath, buf, { contentType, upsert: false });
 
   if (error) {
     console.error("[driver-storage] upload", kind, error);
@@ -39,13 +52,16 @@ export async function uploadDriverDoc(
     const missingBucket =
       detail.toLowerCase().includes("bucket") &&
       (detail.toLowerCase().includes("not found") || detail.includes("404"));
+    const mimeBlocked = detail.toLowerCase().includes("mime type");
     return {
       ok: false,
       error: missingBucket
         ? "Falta el bucket driver-docs en Supabase. Ejecuta la migración 20260521120000_driver_docs_storage_bucket.sql en SQL Editor."
-        : detail
-          ? `No se pudo subir el archivo: ${detail}`
-          : "No se pudo subir el archivo — verifica el bucket driver-docs en Supabase Storage.",
+        : mimeBlocked
+          ? "El bucket driver-docs no permite JPEG. En Supabase SQL Editor ejecuta: UPDATE storage.buckets SET allowed_mime_types = ARRAY['image/jpeg','image/jpg','image/png','image/webp']::text[] WHERE id = 'driver-docs';"
+          : detail
+            ? `No se pudo subir el archivo: ${detail}`
+            : "No se pudo subir el archivo — verifica el bucket driver-docs en Supabase Storage.",
     };
   }
 
