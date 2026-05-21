@@ -1,5 +1,7 @@
 import { COLONIAS, coloniaLabel } from "@/lib/colonias";
+import { canonicalizeAuthPhone, normalizeAuthPhone } from "@/lib/phone";
 import { getServiceRoleRestHeaders, getSupabaseUrl } from "@/lib/service-rest";
+import { phoneLookupVariants } from "@/lib/user-account-pool";
 import {
   type DriverSignupInput,
 } from "@/lib/rides/driver-validators";
@@ -28,27 +30,26 @@ export async function findOrCreateUserByPhone(args: {
 }): Promise<{ ok: true; userId: string } | { ok: false; error: unknown }> {
   const SUPA_URL = getSupabaseUrl();
   const h = { ...getServiceRoleRestHeaders(), "Content-Type": "application/json" as const };
-  const phone = args.phone.replace(/\s/g, "");
+  const phone = canonicalizeAuthPhone(normalizeAuthPhone(args.phone.replace(/\s/g, "")));
 
-  const userRes = await fetch(
-    `${SUPA_URL}/rest/v1/users?phone=eq.${encodeURIComponent(phone)}&select=id`,
-    { headers: h },
-  );
-  const existingUsers = userRes.ok ? await userRes.json() : [];
-
-  if (existingUsers.length > 0) {
-    const userId = existingUsers[0].id as string;
-    const patch: Record<string, string> = {};
-    if (args.curp) patch.curp = args.curp;
-    if (args.rfc) patch.rfc = args.rfc;
-    if (Object.keys(patch).length > 0) {
+  for (const phoneVariant of phoneLookupVariants(phone)) {
+    const userRes = await fetch(
+      `${SUPA_URL}/rest/v1/users?phone=eq.${encodeURIComponent(phoneVariant)}&select=id`,
+      { headers: h },
+    );
+    const existingUsers = userRes.ok ? await userRes.json() : [];
+    if (existingUsers.length > 0) {
+      const userId = existingUsers[0].id as string;
+      const patch: Record<string, string> = { phone };
+      if (args.curp) patch.curp = args.curp;
+      if (args.rfc) patch.rfc = args.rfc;
       await fetch(`${SUPA_URL}/rest/v1/users?id=eq.${userId}`, {
         method: "PATCH",
         headers: h,
         body: JSON.stringify(patch),
       }).catch(() => {});
+      return { ok: true, userId };
     }
-    return { ok: true, userId };
   }
 
   const userPayload: Record<string, unknown> = {

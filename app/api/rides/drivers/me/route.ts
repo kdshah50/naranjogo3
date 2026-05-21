@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminSupabase, getUserIdFromRequest, idMatchVariantsForIn } from "@/lib/auth-server";
+import { createAdminSupabase, getUserIdFromRequest } from "@/lib/auth-server";
 import { isRidesEnabled } from "@/lib/rides/flags";
 import { signedDriverDocUrl } from "@/lib/rides/driver-storage";
+import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 
 export const dynamic = "force-dynamic";
 
@@ -22,31 +23,34 @@ export async function GET(req: NextRequest) {
     }
 
     const supabase = createAdminSupabase();
-    const idVars = idMatchVariantsForIn(userId);
+    const idPool = await expandUserAccountIdPool(supabase, userId);
 
-    const { data: profile, error: pErr } = await supabase
+    const { data: profiles, error: pErr } = await supabase
       .from("driver_profiles")
       .select("*")
-      .in("user_id", idVars)
-      .maybeSingle();
+      .in("user_id", idPool)
+      .order("created_at", { ascending: false })
+      .limit(1);
 
     if (pErr) {
       console.error("[rides/drivers/me] profile", pErr);
       return NextResponse.json({ error: "No se pudo cargar el perfil" }, { status: 500 });
     }
 
+    const profile = profiles?.[0];
     if (!profile) {
       return NextResponse.json({ driver: null });
     }
 
-    const { data: listing } = await supabase
+    const { data: listings } = await supabase
       .from("listings")
       .select("id,title_es,status,is_verified,subcategory_kind")
-      .in("seller_id", idVars)
+      .in("seller_id", idPool)
       .eq("subcategory_kind", "ride")
       .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(1);
+
+    const listing = listings?.[0] ?? null;
 
     const [licenseUrl, vehicleCardUrl, insuranceUrl] = await Promise.all([
       signedDriverDocUrl(supabase, profile.license_photo_url as string),
