@@ -66,12 +66,23 @@ export async function POST(req: NextRequest) {
       body = (await req.json()) as Record<string, unknown>;
     }
 
-    const validated = validateDriverSignup(body);
+    const isMultipart = contentType.includes("multipart/form-data");
+    const validated = validateDriverSignup(body, { requirePhotos: !isMultipart });
     if (!validated.ok) {
       return NextResponse.json({ error: validated.error }, { status: 400 });
     }
 
-    const input = validated.data;
+    if (isMultipart && pendingFiles.size < 3) {
+      return NextResponse.json(
+        {
+          error:
+            "Sube las tres fotos requeridas (licencia, tarjeta de circulación, póliza).",
+        },
+        { status: 400 },
+      );
+    }
+
+    const input = { ...validated.data };
     const userResult = await findOrCreateUserByPhone({
       phone: input.whatsapp,
       displayName: input.name,
@@ -86,17 +97,14 @@ export async function POST(req: NextRequest) {
     const supabase = createAdminSupabase();
 
     if (pendingFiles.size > 0) {
-      const urlKeys: Record<DriverDocKind, keyof typeof input> = {
-        license: "license_photo_url",
-        vehicle_card: "vehicle_card_photo_url",
-        insurance: "insurance_photo_url",
-      };
       for (const [kind, file] of pendingFiles) {
         const up = await uploadDriverDoc(supabase, userId, kind, file);
         if (!up.ok) {
           return NextResponse.json({ error: up.error }, { status: 400 });
         }
-        input[urlKeys[kind] as keyof typeof input] = up.objectPath as never;
+        if (kind === "license") input.license_photo_url = up.objectPath;
+        else if (kind === "vehicle_card") input.vehicle_card_photo_url = up.objectPath;
+        else input.insurance_photo_url = up.objectPath;
       }
     }
 
@@ -125,7 +133,23 @@ export async function POST(req: NextRequest) {
       `${SUPA_URL}/rest/v1/driver_profiles?user_id=eq.${encodeURIComponent(userId)}&select=user_id`,
       { headers: h },
     );
-    const profiles = existingProfile.ok ? await existingProfile.json() : [];
+    if (!existingProfile.ok) {
+      const errText = await existingProfile.text().catch(() => "");
+      console.error("[driver-signup] driver_profiles lookup failed", existingProfile.status, errText);
+      const missingTable =
+        errText.includes("driver_profiles") &&
+        (errText.includes("does not exist") || errText.includes("PGRST205"));
+      return NextResponse.json(
+        {
+          error: missingTable
+            ? "Falta la tabla driver_profiles en Supabase — ejecuta la migración Phase 1."
+            : "No se pudo verificar el registro de conductor",
+          details: errText.slice(0, 300),
+        },
+        { status: 500 },
+      );
+    }
+    const profiles = await existingProfile.json();
     if (profiles.length > 0) {
       return NextResponse.json(
         { error: "Ya tienes un registro de conductor en revisión o activo." },
@@ -142,10 +166,14 @@ export async function POST(req: NextRequest) {
     if (!profileRes.ok) {
       const err = await profileRes.json().catch(() => ({}));
       console.error("[driver-signup] profile insert failed", err);
-      return NextResponse.json(
-        { error: "No se pudo guardar el perfil de conductor", details: err },
-        { status: 500 },
-      );
+      const msg =
+        typeof err === "object" &&
+        err &&
+        typeof (err as { message?: string }).message === "string" &&
+        (err as { message: string }).message.includes("driver_profiles")
+          ? "Falta la tabla driver_profiles en Supabase — ejecuta la migración Phase 1."
+          : "No se pudo guardar el perfil de conductor";
+      return NextResponse.json({ error: msg, details: err }, { status: 500 });
     }
 
     const listing = buildDriverListingPayload(revalidated.data, userId);
@@ -166,12 +194,15 @@ export async function POST(req: NextRequest) {
         method: "DELETE",
         headers: h,
       }).catch(() => {});
-      const msg =
+      const detailMsg =
         details &&
         typeof details === "object" &&
         typeof (details as { message?: string }).message === "string"
           ? (details as { message: string }).message
-          : "No se pudo crear el anuncio de conductor";
+          : "";
+      const msg = detailMsg.includes("subcategory_kind")
+        ? "Falta la columna listings.subcategory_kind — ejecuta la migración Phase 1 en Supabase."
+        : detailMsg || "No se pudo crear el anuncio de conductor";
       return NextResponse.json({ error: msg, details }, { status: 500 });
     }
 

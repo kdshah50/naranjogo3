@@ -93,7 +93,11 @@ export function sanitizeServiceColonias(raw: unknown, primaryColonia: string): s
   return [...keys];
 }
 
-export function validateDriverSignup(body: Record<string, unknown>): DriverSignupValidation {
+export function validateDriverSignup(
+  body: Record<string, unknown>,
+  opts?: { requirePhotos?: boolean },
+): DriverSignupValidation {
+  const requirePhotos = opts?.requirePhotos !== false;
   const name = String(body.name ?? "").trim();
   const whatsapp = String(body.whatsapp ?? "").replace(/\s/g, "");
   const license_number = normalizeLicenseNumber(String(body.license_number ?? ""));
@@ -142,7 +146,10 @@ export function validateDriverSignup(body: Record<string, unknown>): DriverSignu
   if (!insurance_expiry || !isFutureDate(insurance_expiry)) {
     return { ok: false, error: "El seguro debe tener una fecha de vencimiento futura válida" };
   }
-  if (!license_photo_url || !vehicle_card_photo_url || !insurance_photo_url) {
+  if (
+    requirePhotos &&
+    (!license_photo_url || !vehicle_card_photo_url || !insurance_photo_url)
+  ) {
     return { ok: false, error: "Sube las tres fotos requeridas (licencia, tarjeta de circulación, póliza)" };
   }
 

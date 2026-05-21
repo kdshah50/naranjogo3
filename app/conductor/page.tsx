@@ -111,7 +111,15 @@ function ConductorPageInner() {
       const res = await fetch("/api/driver-signup", { method: "POST", body: fd });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(typeof data.error === "string" ? data.error : "No se pudo enviar la solicitud");
+        const base =
+          typeof data.error === "string" ? data.error : "No se pudo enviar la solicitud";
+        const detail =
+          data.details &&
+          typeof data.details === "object" &&
+          typeof (data.details as { message?: string }).message === "string"
+            ? (data.details as { message: string }).message
+            : null;
+        setError(detail && !base.includes(detail) ? `${base} (${detail})` : base);
         return;
       }
       setDone(true);

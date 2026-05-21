@@ -107,7 +107,7 @@ export function buildDriverListingPayload(input: DriverSignupInput, sellerId: st
     shipping_available: false,
     negotiable: false,
     photo_urls: [],
-    payment_methods: ["naranjogo_wallet"],
+    payment_methods: ["efectivo", "whatsapp"],
     expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
   };
 }
