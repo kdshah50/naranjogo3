@@ -3,7 +3,7 @@
 import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
 import { ALL_COLONIA_KEYS, COLONIAS } from "@/lib/colonias";
-import { MAX_DRIVER_DOC_BYTES } from "@/lib/rides/driver-storage";
+import { MAX_DRIVER_DOC_BYTES, MAX_DRIVER_DOC_MB } from "@/lib/rides/driver-storage";
 import { formatDriverSignupClientError } from "@/lib/rides/format-api-error";
 
 const COLONIAS_LIST = ALL_COLONIA_KEYS.map((key) => ({
@@ -84,7 +84,7 @@ function ConductorPageInner() {
       ["Póliza", insurancePhoto],
     ] as const) {
       if (file.size > MAX_DRIVER_DOC_BYTES) {
-        setError(`${label}: máximo 1 MB por foto (la tuya pesa ${(file.size / 1024 / 1024).toFixed(1)} MB).`);
+        setError(`${label}: máximo ${MAX_DRIVER_DOC_MB} MB por foto (la tuya pesa ${(file.size / 1024 / 1024).toFixed(1)} MB).`);
         return;
       }
     }
@@ -95,32 +95,80 @@ function ConductorPageInner() {
 
     setBusy(true);
     try {
-      const fd = new FormData();
-      fd.append("name", name);
-      fd.append("whatsapp", whatsapp);
-      if (curp) fd.append("curp", curp);
-      if (rfc) fd.append("rfc", rfc);
-      fd.append("license_number", licenseNumber);
-      fd.append("license_expiry", licenseExpiry);
-      fd.append("vehicle_make", vehicleMake);
-      fd.append("vehicle_model", vehicleModel);
-      fd.append("vehicle_year", vehicleYear);
-      fd.append("vehicle_color", vehicleColor);
-      fd.append("vehicle_plates", vehiclePlates);
-      fd.append("insurance_provider", insuranceProvider);
-      fd.append("insurance_policy", insurancePolicy);
-      fd.append("insurance_expiry", insuranceExpiry);
-      fd.append("colonia", primaryColonia);
-      fd.append("service_colonias", JSON.stringify(serviceColonias));
-      if (description) fd.append("description", description);
-      fd.append("accepted_terms", "true");
-      fd.append("accepted_pricing", "true");
-      fd.append("accepted_at", new Date().toISOString());
-      fd.append("license_photo", licensePhoto);
-      fd.append("vehicle_card_photo", vehicleCardPhoto);
-      fd.append("insurance_photo", insurancePhoto);
+      const photoPaths: {
+        license_photo_url?: string;
+        vehicle_card_photo_url?: string;
+        insurance_photo_url?: string;
+      } = {};
 
-      const res = await fetch("/api/driver-signup", { method: "POST", body: fd });
+      const uploadOne = async (
+        kind: "license" | "vehicle_card" | "insurance",
+        file: File,
+      ): Promise<boolean> => {
+        const fd = new FormData();
+        fd.append("name", name);
+        fd.append("whatsapp", whatsapp);
+        if (curp) fd.append("curp", curp);
+        if (rfc) fd.append("rfc", rfc);
+        fd.append("kind", kind);
+        fd.append("file", file);
+
+        const res = await fetch("/api/rides/drivers/upload-doc", { method: "POST", body: fd });
+        const raw = await res.text();
+        let data: unknown = {};
+        try {
+          data = raw ? JSON.parse(raw) : {};
+        } catch {
+          data = { error: raw.slice(0, 200) };
+        }
+        if (!res.ok) {
+          setError(formatDriverSignupClientError(res.status, data));
+          return false;
+        }
+        const path = (data as { object_path?: string }).object_path;
+        if (!path) {
+          setError("No se pudo guardar la foto en el servidor.");
+          return false;
+        }
+        if (kind === "license") photoPaths.license_photo_url = path;
+        else if (kind === "vehicle_card") photoPaths.vehicle_card_photo_url = path;
+        else photoPaths.insurance_photo_url = path;
+        return true;
+      };
+
+      if (!(await uploadOne("license", licensePhoto))) return;
+      if (!(await uploadOne("vehicle_card", vehicleCardPhoto))) return;
+      if (!(await uploadOne("insurance", insurancePhoto))) return;
+
+      const payload = {
+        name,
+        whatsapp,
+        curp: curp || undefined,
+        rfc: rfc || undefined,
+        license_number: licenseNumber,
+        license_expiry: licenseExpiry,
+        vehicle_make: vehicleMake,
+        vehicle_model: vehicleModel,
+        vehicle_year: vehicleYear,
+        vehicle_color: vehicleColor,
+        vehicle_plates: vehiclePlates,
+        insurance_provider: insuranceProvider,
+        insurance_policy: insurancePolicy,
+        insurance_expiry: insuranceExpiry,
+        colonia: primaryColonia,
+        service_colonias: serviceColonias,
+        description: description || undefined,
+        accepted_terms: true,
+        accepted_pricing: true,
+        accepted_at: new Date().toISOString(),
+        ...photoPaths,
+      };
+
+      const res = await fetch("/api/driver-signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
       const raw = await res.text();
       let data: unknown = {};
       try {
@@ -289,7 +337,7 @@ function ConductorPageInner() {
             <>
               <h2 className="font-semibold text-lg">Documentos y términos</h2>
               <p className="text-sm text-gray-500">
-                JPEG, PNG o WebP — máximo 1 MB por foto (3 fotos en total).
+                JPEG, PNG o WebP — máximo {MAX_DRIVER_DOC_MB} MB por foto (se suben una por una).
               </p>
               <PhotoField label="Foto de licencia de conducir" file={licensePhoto} onChange={setLicensePhoto} />
               <PhotoField
@@ -421,7 +469,7 @@ function PhotoField({
       {file && (
         <p className={`text-xs mt-1 ${tooLarge ? "text-red-600" : "text-gray-500"}`}>
           {file.name} ({(file.size / 1024).toFixed(0)} KB)
-          {tooLarge ? " — demasiado grande, máx. 1 MB" : ""}
+          {tooLarge ? ` — demasiado grande, máx. ${MAX_DRIVER_DOC_MB} MB` : ""}
         </p>
       )}
     </label>

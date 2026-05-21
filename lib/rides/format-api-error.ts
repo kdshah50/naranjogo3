@@ -24,7 +24,7 @@ export function formatDriverSignupClientError(
     return "Viajes no está activo en este sitio. Abre el enlace preview de la rama rides-setup.";
   }
   if (status === 413) {
-    return "Las fotos son demasiado grandes en total. Usa imágenes más pequeñas (máx. 1 MB cada una).";
+    return `Las fotos son demasiado grandes. Usa imágenes de máximo 2 MB cada una.`;
   }
   if (status === 502 || status === 504) {
     return "El servidor tardó demasiado. Intenta con fotos más pequeñas.";
