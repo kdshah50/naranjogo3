@@ -11,7 +11,8 @@
     "test:messaging:smoke": "npx --yes tsx scripts/test-messaging.ts --smoke",
     "check:booking-notify": "npx --yes tsx scripts/check-booking-buyer-notify.ts",
     "test:full-connect": "tsx scripts/test-service-booking-full-connect.ts",
-    "test:driver-onboarding": "tsx scripts/test-driver-onboarding.ts"
+    "test:driver-onboarding": "tsx scripts/test-driver-onboarding.ts",
+    "test:ride-pricing": "tsx scripts/test-ride-pricing.ts"
   },
   "dependencies": {
     "@sentry/nextjs": "^8.55.1",

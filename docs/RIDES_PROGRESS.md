@@ -17,10 +17,11 @@ A running diary of every step we've taken to build the rides + AI agents vertica
 | Preview URL (testing ground) | Vercel deployment for branch `rides-setup` |
 | Supabase project | Production (single project; new tables added are isolated/empty until used) |
 | Feature flag (`RIDES_ENABLED`) | `false` in Production, `true` in Preview + Development |
-| Current phase | **Phase 1 — Driver onboarding** |
+| Current phase | **Phase 2 + 3 foundation** — ready for combined preview test |
 | Phase 0 (wallet) | **Complete** — card top-up, verify-session fallback, `/saldo` UI |
-| Latest step completed | **Phase 1 code** — `driver_profiles`, `/api/driver-signup`, `/conductor` UI |
-| Next step | Run migration in Supabase + create `driver-docs` storage bucket → test signup on preview |
+| Phase 1 (driver onboarding) | **Complete** — tested on preview; admin approval via SQL |
+| Latest step completed | **Phase 2 + 3 code** — bookings, dispatch, `/viaje`, Twilio inbound |
+| Next step | Run `20260522120000_rides_bookings_foundation.sql` → test per [`RIDES_PHASE23_TEST.md`](./RIDES_PHASE23_TEST.md) |
 
 ---
 
@@ -33,9 +34,9 @@ A running diary of every step we've taken to build the rides + AI agents vertica
    git branch --show-current        # should print: rides-setup
    git checkout rides-setup && git pull
    ```
-4. Tell the AI: "Continue rides Phase 1 testing" or "Continue rides from Step N"
+4. Tell the AI: "Continue rides Phase 2+3 testing" or follow [`RIDES_PHASE23_TEST.md`](./RIDES_PHASE23_TEST.md)
 
-**Do not merge to `main` until preview testing passes** — wallet + driver signup should both work on the preview URL first.
+**Do not merge to `main` until preview testing passes.**
 
 ---
 
@@ -45,7 +46,8 @@ A running diary of every step we've taken to build the rides + AI agents vertica
 |---|---|
 | Check current branch | `git branch --show-current` |
 | Switch to rides branch | `git checkout rides-setup` |
-| Validator unit tests | `npm run test:driver-onboarding` |
+| Driver validator tests | `npm run test:driver-onboarding` |
+| Ride pricing / parser tests | `npm run test:ride-pricing` |
 | Push (triggers Vercel preview rebuild) | `git push` |
 
 ---
@@ -64,54 +66,80 @@ OXXO deferred until Mexican Stripe account (`WALLET_TOPUP_OXXO_ENABLED=true`).
 
 ---
 
-## Phase 1 — Driver onboarding (IN PROGRESS)
-
-### What was built
+## Phase 1 — Driver onboarding (COMPLETE)
 
 | Piece | File(s) |
 |---|---|
-| DB migration | `supabase/migrations/20260520120000_rides_driver_profiles.sql` — `driver_profiles` + `listings.subcategory_kind` |
-| Validators + signup helpers | `lib/rides/driver-onboarding.ts` |
-| Document upload (private bucket) | `lib/rides/driver-storage.ts` |
-| Signup API | `POST /api/driver-signup` — JSON or multipart; gated by `RIDES_ENABLED` |
-| Driver status API | `GET /api/rides/drivers/me` — logged-in user profile + approval state |
-| Signup UI | `/conductor` — 4-step form with photo uploads |
-| Ride listing helper | `isRideListing()` in `lib/listing-category.ts` |
+| DB migration | `supabase/migrations/20260520120000_rides_driver_profiles.sql` |
+| Storage bucket | `supabase/migrations/20260521120000_driver_docs_storage_bucket.sql` |
+| Signup API + UI | `/api/driver-signup`, `/conductor` |
+| Driver status | `GET /api/rides/drivers/me` |
 | Unit tests | `npm run test:driver-onboarding` |
 
-**`/api/provider-signup` was not modified.**
+Admin approval (manual for now):
 
-### Before testing on preview
+```sql
+UPDATE listings SET is_verified = true WHERE subcategory_kind = 'ride' AND seller_id = '<user_id>';
+UPDATE driver_profiles SET is_active_driver = true WHERE user_id = '<user_id>';
+```
 
-1. **Run migration** in Supabase SQL Editor:
-   - Copy from `supabase/migrations/20260520120000_rides_driver_profiles.sql`
-2. **Create storage bucket** `driver-docs` (private) in Supabase → Storage
-3. Push branch → open preview URL → visit **`/conductor`**
-4. Submit test driver → verify rows in `driver_profiles` + `listings` (`subcategory_kind = 'ride'`, `is_verified = false`)
-5. **Admin approve** (manual, for now):
-   ```sql
-   UPDATE listings SET is_verified = true WHERE subcategory_kind = 'ride' AND seller_id = '<user_id>';
-   UPDATE driver_profiles SET is_active_driver = true WHERE user_id = '<user_id>';
-   ```
-6. Logged-in driver: `GET /api/rides/drivers/me` → `can_receive_rides: true`
+---
 
-### After Phase 1
+## Phase 2 — WhatsApp inbound (FOUNDATION — test tomorrow)
 
-- Phase 2 — WhatsApp Cloud API
-- Phase 3 — Booking Agent (LangGraph)
+| Piece | File(s) |
+|---|---|
+| Twilio inbound webhook | `POST /api/rides/whatsapp/inbound` |
+| Message parser | `lib/rides/whatsapp-inbound.ts` |
+| Flag | `RIDES_WHATSAPP_INBOUND_ENABLED=true` on preview |
+| Notifications | `lib/rides/ride-notify.ts` (buyer + driver Twilio) |
+
+Meta Cloud API templates deferred — Twilio sandbox is enough for first combined test.
+
+**Twilio setup:** point sandbox "When a message comes in" to  
+`https://YOUR-PREVIEW.vercel.app/api/rides/whatsapp/inbound`
+
+Example message: `taxi de centro a guadalupe`
+
+---
+
+## Phase 3 — Booking + dispatch (FOUNDATION — test tomorrow)
+
+| Piece | File(s) |
+|---|---|
+| DB migration | `supabase/migrations/20260522120000_rides_bookings_foundation.sql` |
+| Pricing | `lib/rides/ride-pricing.ts` |
+| Dispatch | `lib/rides/dispatch.ts` (colonia-centroid; Mapbox later) |
+| Bookings server | `lib/rides/ride-bookings-server.ts` |
+| APIs | `/api/rides/request`, `/api/rides/[id]`, `/api/rides/pricing/estimate`, `/api/rides/drivers/nearby`, `/api/rides/[id]/match` |
+| Test UI | `/viaje` |
+| ride-ai skeleton | `ride-ai/` (optional for tomorrow — Next.js path is enough) |
+| Unit tests | `npm run test:ride-pricing` |
+| Test checklist | [`docs/RIDES_PHASE23_TEST.md`](./RIDES_PHASE23_TEST.md) |
+
+**Note:** Wallet *hold/capture* is balance-check only until Phase 4.
+
+---
+
+## After Phase 2 + 3
+
+- Phase 4 — Trip lifecycle (accept/arrive/start/complete) + real wallet hold/capture
+- Phase 5 — Support agent + disputes
 - See `docs/RIDES_AI_PLAN.md` §12
 
 ---
 
 ## Rollback plan
 
-Production stays safe: `RIDES_ENABLED=false` on main even after merge. To drop Phase 1 tables only:
+Production stays safe: `RIDES_ENABLED=false` on main even after merge.
+
+Phase 3 only:
 
 ```sql
-DROP TABLE IF EXISTS public.driver_profiles;
-ALTER TABLE public.listings DROP COLUMN IF EXISTS subcategory_kind;
+DROP TABLE IF EXISTS public.ride_events;
+DROP TABLE IF EXISTS public.ride_bookings;
 ```
 
 ---
 
-*Last updated: Phase 1 driver onboarding code added; testing on preview before merge to main.*
+*Last updated: Phase 2 + 3 foundation on `rides-setup`; combined preview test ready.*

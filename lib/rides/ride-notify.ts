@@ -1,0 +1,91 @@
+import "server-only";
+
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { formatMxnFromCents } from "@/lib/rides/ride-pricing";
+import type { RideBookingRow } from "@/lib/rides/ride-bookings-server";
+import { sendWhatsAppToE164Digits, isTwilioWhatsAppConfigured } from "@/lib/twilio";
+import { canonicalizeAuthPhone, normalizeAuthPhone } from "@/lib/phone";
+import { phoneLookupVariants } from "@/lib/user-account-pool";
+
+export async function findUserPhoneById(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<string | null> {
+  const { data } = await supabase.from("users").select("phone").eq("id", userId).maybeSingle();
+  const phone = data?.phone ? String(data.phone) : "";
+  if (!phone) return null;
+  return canonicalizeAuthPhone(normalizeAuthPhone(phone));
+}
+
+export async function notifyBuyerRideCreated(
+  supabase: SupabaseClient,
+  args: { ride: RideBookingRow; matched: boolean }
+): Promise<void> {
+  if (!isTwilioWhatsAppConfigured()) return;
+
+  const phone = await findUserPhoneById(supabase, args.ride.buyer_id);
+  if (!phone) return;
+
+  const fare = formatMxnFromCents(args.ride.estimated_total_mxn_cents);
+  const hold = formatMxnFromCents(args.ride.hold_amount_mxn_cents);
+  let msg =
+    `🚕 *Solicitud de viaje recibida*\n` +
+    `Origen: ${args.ride.pickup_address}\n` +
+    `Destino: ${args.ride.dropoff_address}\n` +
+    `Tarifa estimada: *${fare}* (reserva ${hold})\n`;
+
+  if (args.matched && args.ride.ticket_code) {
+    msg +=
+      `\nConductor asignado. Tu código de viaje: *${args.ride.ticket_code}*\n` +
+      `Muéstralo al conductor al subir.`;
+  } else if (!args.matched) {
+    msg += `\nBuscando conductor… Te avisaremos cuando haya match.`;
+  }
+
+  await sendWhatsAppToE164Digits(phone, msg);
+}
+
+export async function notifyDriverRideMatched(
+  supabase: SupabaseClient,
+  args: { ride: RideBookingRow; driverUserId: string }
+): Promise<void> {
+  if (!isTwilioWhatsAppConfigured()) return;
+
+  const phone = await findUserPhoneById(supabase, args.driverUserId);
+  if (!phone) return;
+
+  const fare = formatMxnFromCents(args.ride.estimated_total_mxn_cents);
+  const msg =
+    `🚕 *Nuevo viaje asignado*\n` +
+    `Recoger: ${args.ride.pickup_address}\n` +
+    `Destino: ${args.ride.dropoff_address}\n` +
+    `Tarifa est.: *${fare}*\n` +
+    `Ticket: *${args.ride.ticket_code ?? "—"}*\n` +
+    `Abre NaranjoGo para aceptar el viaje.`;
+
+  await sendWhatsAppToE164Digits(phone, msg);
+}
+
+export function extractTwilioPhone(fromField: string): string {
+  const raw = String(fromField ?? "").replace(/^whatsapp:/i, "").trim();
+  return canonicalizeAuthPhone(normalizeAuthPhone(raw));
+}
+
+export async function findUserIdByPhone(
+  supabase: SupabaseClient,
+  phoneDigits: string
+): Promise<string | null> {
+  for (const variant of phoneLookupVariants(phoneDigits)) {
+    const { data } = await supabase.from("users").select("id").eq("phone", variant).limit(1);
+    if (data?.[0]?.id) return String(data[0].id).toLowerCase();
+  }
+  return null;
+}
+
+export function twimlMessage(body: string): string {
+  const escaped = body
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  return `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escaped}</Message></Response>`;
+}
