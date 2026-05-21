@@ -20,7 +20,7 @@ A running diary of every step we've taken to build the rides + AI agents vertica
 | Current phase | **Phase 4** — trip lifecycle + wallet hold/capture (ready for preview test) |
 | Phase 2 + 3 | **Complete** — bookings, dispatch, `/viaje`, Twilio inbound |
 | Latest step completed | **Phase 4 code** — hold/capture, lifecycle APIs, `/conductor/viajes` |
-| Next step | Run Phase 4 migration → full golden ride test per [`RIDES_PHASE4_TEST.md`](./RIDES_PHASE4_TEST.md) |
+| Next step | **[`RIDES_FULL_MANUAL_TEST.docx`](./RIDES_FULL_MANUAL_TEST.docx)** — all phases 0–4 step-by-step (Word) |
 
 ---
 
@@ -33,7 +33,7 @@ A running diary of every step we've taken to build the rides + AI agents vertica
    git branch --show-current        # should print: rides-setup
    git checkout rides-setup && git pull
    ```
-4. Tell the AI: "Continue rides Phase 2+3 testing" or follow [`RIDES_PHASE23_TEST.md`](./RIDES_PHASE23_TEST.md)
+4. Follow **[`RIDES_FULL_MANUAL_TEST.docx`](./RIDES_FULL_MANUAL_TEST.docx)** or [`RIDES_FULL_MANUAL_TEST.md`](./RIDES_FULL_MANUAL_TEST.md)
 
 **Do not merge to `main` until preview testing passes.**
 
