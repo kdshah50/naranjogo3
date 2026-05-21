@@ -8,7 +8,6 @@ export const MAX_DRIVER_DOC_BYTES = 2 * 1024 * 1024; // 2 MB
 export const MAX_DRIVER_DOC_MB = MAX_DRIVER_DOC_BYTES / 1024 / 1024;
 
 const MAX_SIZE = MAX_DRIVER_DOC_BYTES;
-const ALLOWED = ["image/jpeg", "image/jpg", "image/png", "image/webp"] as const;
 
 function normalizeDriverDocMime(type: string, fileName: string): string | null {
   const t = type.trim().toLowerCase();
