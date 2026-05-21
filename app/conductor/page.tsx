@@ -1,8 +1,16 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ALL_COLONIA_KEYS, COLONIAS } from "@/lib/colonias";
+import {
+  clearConductorFormDraft,
+  loadConductorDraftPhoto,
+  loadConductorFormDraft,
+  saveConductorDraftPhoto,
+  saveConductorFormDraft,
+  type ConductorDraftStep,
+} from "@/lib/rides/conductor-form-draft";
 import { MAX_DRIVER_DOC_BYTES, MAX_DRIVER_DOC_MB } from "@/lib/rides/driver-storage";
 import { formatDriverSignupClientError } from "@/lib/rides/format-api-error";
 
@@ -11,7 +19,7 @@ const COLONIAS_LIST = ALL_COLONIA_KEYS.map((key) => ({
   label: COLONIAS[key].label,
 }));
 
-type Step = 1 | 2 | 3 | 4;
+type Step = ConductorDraftStep;
 
 export default function ConductorPage() {
   return (
@@ -28,6 +36,10 @@ export default function ConductorPage() {
 }
 
 function ConductorPageInner() {
+  const [hydrated, setHydrated] = useState(false);
+  const [draftNote, setDraftNote] = useState<string | null>(null);
+  const skipSaveRef = useRef(true);
+
   const [step, setStep] = useState<Step>(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,6 +71,140 @@ function ConductorPageInner() {
 
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedPricing, setAcceptedPricing] = useState(false);
+
+  useEffect(() => {
+    const draft = loadConductorFormDraft();
+    if (draft) {
+      setStep(draft.step);
+      setName(draft.name);
+      setWhatsapp(draft.whatsapp);
+      setCurp(draft.curp);
+      setRfc(draft.rfc);
+      setLicenseNumber(draft.licenseNumber);
+      setLicenseExpiry(draft.licenseExpiry);
+      setVehicleMake(draft.vehicleMake);
+      setVehicleModel(draft.vehicleModel);
+      setVehicleYear(draft.vehicleYear);
+      setVehicleColor(draft.vehicleColor);
+      setVehiclePlates(draft.vehiclePlates);
+      setInsuranceProvider(draft.insuranceProvider);
+      setInsurancePolicy(draft.insurancePolicy);
+      setInsuranceExpiry(draft.insuranceExpiry);
+      setPrimaryColonia(draft.primaryColonia);
+      setExtraColonias(draft.extraColonias);
+      setDescription(draft.description);
+      setAcceptedTerms(draft.acceptedTerms);
+      setAcceptedPricing(draft.acceptedPricing);
+      setDraftNote("Recuperamos tu borrador — puedes seguir donde lo dejaste.");
+    }
+
+    void (async () => {
+      const [license, vehicleCard, insurance] = await Promise.all([
+        loadConductorDraftPhoto("license"),
+        loadConductorDraftPhoto("vehicle_card"),
+        loadConductorDraftPhoto("insurance"),
+      ]);
+      if (license) setLicensePhoto(license);
+      if (vehicleCard) setVehicleCardPhoto(vehicleCard);
+      if (insurance) setInsurancePhoto(insurance);
+      skipSaveRef.current = false;
+      setHydrated(true);
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated || done || skipSaveRef.current) return;
+    saveConductorFormDraft({
+      step,
+      name,
+      whatsapp,
+      curp,
+      rfc,
+      licenseNumber,
+      licenseExpiry,
+      vehicleMake,
+      vehicleModel,
+      vehicleYear,
+      vehicleColor,
+      vehiclePlates,
+      insuranceProvider,
+      insurancePolicy,
+      insuranceExpiry,
+      primaryColonia,
+      extraColonias,
+      description,
+      acceptedTerms,
+      acceptedPricing,
+      savedAt: new Date().toISOString(),
+    });
+  }, [
+    hydrated,
+    done,
+    step,
+    name,
+    whatsapp,
+    curp,
+    rfc,
+    licenseNumber,
+    licenseExpiry,
+    vehicleMake,
+    vehicleModel,
+    vehicleYear,
+    vehicleColor,
+    vehiclePlates,
+    insuranceProvider,
+    insurancePolicy,
+    insuranceExpiry,
+    primaryColonia,
+    extraColonias,
+    description,
+    acceptedTerms,
+    acceptedPricing,
+  ]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    void saveConductorDraftPhoto("license", licensePhoto);
+  }, [hydrated, licensePhoto]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    void saveConductorDraftPhoto("vehicle_card", vehicleCardPhoto);
+  }, [hydrated, vehicleCardPhoto]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    void saveConductorDraftPhoto("insurance", insurancePhoto);
+  }, [hydrated, insurancePhoto]);
+
+  const clearDraft = async () => {
+    await clearConductorFormDraft();
+    setStep(1);
+    setName("");
+    setWhatsapp("");
+    setCurp("");
+    setRfc("");
+    setLicenseNumber("");
+    setLicenseExpiry("");
+    setVehicleMake("");
+    setVehicleModel("");
+    setVehicleYear(String(new Date().getFullYear()));
+    setVehicleColor("");
+    setVehiclePlates("");
+    setInsuranceProvider("");
+    setInsurancePolicy("");
+    setInsuranceExpiry("");
+    setPrimaryColonia("centro");
+    setExtraColonias([]);
+    setDescription("");
+    setLicensePhoto(null);
+    setVehicleCardPhoto(null);
+    setInsurancePhoto(null);
+    setAcceptedTerms(false);
+    setAcceptedPricing(false);
+    setDraftNote(null);
+    setError(null);
+  };
 
   const serviceColonias = useMemo(() => {
     const set = new Set([primaryColonia, ...extraColonias]);
@@ -180,6 +326,7 @@ function ConductorPageInner() {
         setError(formatDriverSignupClientError(res.status, data));
         return;
       }
+      await clearConductorFormDraft();
       setDone(true);
     } catch {
       setError("Error de red. Intenta de nuevo.");
@@ -224,6 +371,11 @@ function ConductorPageInner() {
           <p className="text-gray-600 mt-1">
             Ofrece transporte en San Miguel con pagos por la billetera Naranjo.
           </p>
+          {draftNote && (
+            <p className="mt-2 text-sm text-[#1B4332] bg-[#E8F5E9] rounded-lg px-3 py-2">
+              {draftNote}
+            </p>
+          )}
         </div>
 
         <div className="mb-6 flex gap-2">
@@ -409,6 +561,17 @@ function ConductorPageInner() {
             )}
           </div>
         </div>
+
+        <p className="mt-4 text-center text-xs text-gray-500">
+          Tu progreso se guarda automáticamente en este dispositivo hasta que envíes la solicitud.{" "}
+          <button
+            type="button"
+            onClick={() => void clearDraft()}
+            className="underline text-[#1B4332]/80 hover:text-[#1B4332]"
+          >
+            Borrar borrador
+          </button>
+        </p>
       </div>
     </main>
   );
