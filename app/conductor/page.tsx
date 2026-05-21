@@ -1,15 +1,18 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ALL_COLONIA_KEYS, COLONIAS } from "@/lib/colonias";
 import {
   clearConductorFormDraft,
+  draftHasContent,
   loadConductorDraftPhoto,
   loadConductorFormDraft,
   saveConductorDraftPhoto,
   saveConductorFormDraft,
   type ConductorDraftStep,
+  type ConductorFormDraft,
+  type ConductorPhotoKind,
 } from "@/lib/rides/conductor-form-draft";
 import { MAX_DRIVER_DOC_BYTES, MAX_DRIVER_DOC_MB } from "@/lib/rides/driver-storage";
 import { formatDriverSignupClientError } from "@/lib/rides/format-api-error";
@@ -36,9 +39,10 @@ export default function ConductorPage() {
 }
 
 function ConductorPageInner() {
-  const [hydrated, setHydrated] = useState(false);
+  const [draftReady, setDraftReady] = useState(false);
   const [draftNote, setDraftNote] = useState<string | null>(null);
-  const skipSaveRef = useRef(true);
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+  const restoreStartedRef = useRef(false);
 
   const [step, setStep] = useState<Step>(1);
   const [busy, setBusy] = useState(false);
@@ -72,49 +76,8 @@ function ConductorPageInner() {
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedPricing, setAcceptedPricing] = useState(false);
 
-  useEffect(() => {
-    const draft = loadConductorFormDraft();
-    if (draft) {
-      setStep(draft.step);
-      setName(draft.name);
-      setWhatsapp(draft.whatsapp);
-      setCurp(draft.curp);
-      setRfc(draft.rfc);
-      setLicenseNumber(draft.licenseNumber);
-      setLicenseExpiry(draft.licenseExpiry);
-      setVehicleMake(draft.vehicleMake);
-      setVehicleModel(draft.vehicleModel);
-      setVehicleYear(draft.vehicleYear);
-      setVehicleColor(draft.vehicleColor);
-      setVehiclePlates(draft.vehiclePlates);
-      setInsuranceProvider(draft.insuranceProvider);
-      setInsurancePolicy(draft.insurancePolicy);
-      setInsuranceExpiry(draft.insuranceExpiry);
-      setPrimaryColonia(draft.primaryColonia);
-      setExtraColonias(draft.extraColonias);
-      setDescription(draft.description);
-      setAcceptedTerms(draft.acceptedTerms);
-      setAcceptedPricing(draft.acceptedPricing);
-      setDraftNote("Recuperamos tu borrador — puedes seguir donde lo dejaste.");
-    }
-
-    void (async () => {
-      const [license, vehicleCard, insurance] = await Promise.all([
-        loadConductorDraftPhoto("license"),
-        loadConductorDraftPhoto("vehicle_card"),
-        loadConductorDraftPhoto("insurance"),
-      ]);
-      if (license) setLicensePhoto(license);
-      if (vehicleCard) setVehicleCardPhoto(vehicleCard);
-      if (insurance) setInsurancePhoto(insurance);
-      skipSaveRef.current = false;
-      setHydrated(true);
-    })();
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated || done || skipSaveRef.current) return;
-    saveConductorFormDraft({
+  const buildDraft = useCallback(
+    (): ConductorFormDraft => ({
       step,
       name,
       whatsapp,
@@ -136,46 +99,119 @@ function ConductorPageInner() {
       acceptedTerms,
       acceptedPricing,
       savedAt: new Date().toISOString(),
-    });
-  }, [
-    hydrated,
-    done,
-    step,
-    name,
-    whatsapp,
-    curp,
-    rfc,
-    licenseNumber,
-    licenseExpiry,
-    vehicleMake,
-    vehicleModel,
-    vehicleYear,
-    vehicleColor,
-    vehiclePlates,
-    insuranceProvider,
-    insurancePolicy,
-    insuranceExpiry,
-    primaryColonia,
-    extraColonias,
-    description,
-    acceptedTerms,
-    acceptedPricing,
-  ]);
+    }),
+    [
+      step,
+      name,
+      whatsapp,
+      curp,
+      rfc,
+      licenseNumber,
+      licenseExpiry,
+      vehicleMake,
+      vehicleModel,
+      vehicleYear,
+      vehicleColor,
+      vehiclePlates,
+      insuranceProvider,
+      insurancePolicy,
+      insuranceExpiry,
+      primaryColonia,
+      extraColonias,
+      description,
+      acceptedTerms,
+      acceptedPricing,
+    ],
+  );
+
+  const persistDraftNow = useCallback(() => {
+    if (!draftReady || done) return false;
+    const draft = buildDraft();
+    if (!draftHasContent(draft)) return false;
+    const ok = saveConductorFormDraft(draft);
+    if (ok) setLastSavedAt(new Date().toISOString());
+    return ok;
+  }, [buildDraft, draftReady, done]);
 
   useEffect(() => {
-    if (!hydrated) return;
-    void saveConductorDraftPhoto("license", licensePhoto);
-  }, [hydrated, licensePhoto]);
+    if (restoreStartedRef.current) return;
+    restoreStartedRef.current = true;
+
+    const draft = loadConductorFormDraft();
+    if (draft && draftHasContent(draft)) {
+      setStep(draft.step);
+      setName(draft.name);
+      setWhatsapp(draft.whatsapp);
+      setCurp(draft.curp);
+      setRfc(draft.rfc);
+      setLicenseNumber(draft.licenseNumber);
+      setLicenseExpiry(draft.licenseExpiry);
+      setVehicleMake(draft.vehicleMake);
+      setVehicleModel(draft.vehicleModel);
+      setVehicleYear(draft.vehicleYear);
+      setVehicleColor(draft.vehicleColor);
+      setVehiclePlates(draft.vehiclePlates);
+      setInsuranceProvider(draft.insuranceProvider);
+      setInsurancePolicy(draft.insurancePolicy);
+      setInsuranceExpiry(draft.insuranceExpiry);
+      setPrimaryColonia(draft.primaryColonia);
+      setExtraColonias(draft.extraColonias);
+      setDescription(draft.description);
+      setAcceptedTerms(draft.acceptedTerms);
+      setAcceptedPricing(draft.acceptedPricing);
+      if (draft.savedAt) setLastSavedAt(draft.savedAt);
+      setDraftNote("Recuperamos tu borrador — puedes seguir donde lo dejaste.");
+    }
+
+    void (async () => {
+      const [license, vehicleCard, insurance] = await Promise.all([
+        loadConductorDraftPhoto("license"),
+        loadConductorDraftPhoto("vehicle_card"),
+        loadConductorDraftPhoto("insurance"),
+      ]);
+      if (license) setLicensePhoto(license);
+      if (vehicleCard) setVehicleCardPhoto(vehicleCard);
+      if (insurance) setInsurancePhoto(insurance);
+      setDraftReady(true);
+    })();
+  }, []);
 
   useEffect(() => {
-    if (!hydrated) return;
-    void saveConductorDraftPhoto("vehicle_card", vehicleCardPhoto);
-  }, [hydrated, vehicleCardPhoto]);
+    if (!draftReady || done) return;
+    const id = window.setTimeout(() => {
+      const draft = buildDraft();
+      if (draftHasContent(draft) && saveConductorFormDraft(draft)) {
+        setLastSavedAt(new Date().toISOString());
+      }
+    }, 500);
+    return () => window.clearTimeout(id);
+  }, [draftReady, done, buildDraft]);
 
   useEffect(() => {
-    if (!hydrated) return;
-    void saveConductorDraftPhoto("insurance", insurancePhoto);
-  }, [hydrated, insurancePhoto]);
+    if (!draftReady || done) return;
+    const onLeave = () => {
+      const draft = buildDraft();
+      if (draftHasContent(draft)) saveConductorFormDraft(draft);
+    };
+    window.addEventListener("beforeunload", onLeave);
+    document.addEventListener("visibilitychange", onLeave);
+    return () => {
+      window.removeEventListener("beforeunload", onLeave);
+      document.removeEventListener("visibilitychange", onLeave);
+    };
+  }, [draftReady, done, buildDraft]);
+
+  const setDraftPhoto = (kind: ConductorPhotoKind, file: File | null) => {
+    if (kind === "license") setLicensePhoto(file);
+    else if (kind === "vehicle_card") setVehicleCardPhoto(file);
+    else setInsurancePhoto(file);
+    if (file && draftReady) void saveConductorDraftPhoto(kind, file);
+  };
+
+  const goToStep = (next: Step) => {
+    persistDraftNow();
+    setStep(next);
+  };
 
   const clearDraft = async () => {
     await clearConductorFormDraft();
@@ -203,7 +239,9 @@ function ConductorPageInner() {
     setAcceptedTerms(false);
     setAcceptedPricing(false);
     setDraftNote(null);
+    setLastSavedAt(null);
     setError(null);
+    setDraftReady(true);
   };
 
   const serviceColonias = useMemo(() => {
@@ -376,6 +414,12 @@ function ConductorPageInner() {
               {draftNote}
             </p>
           )}
+          {lastSavedAt && draftReady && !done && (
+            <p className="mt-1 text-xs text-gray-500">
+              Borrador guardado en este navegador
+              {draftHasContent(buildDraft()) ? "" : " (sin datos aún)"}.
+            </p>
+          )}
         </div>
 
         <div className="mb-6 flex gap-2">
@@ -491,13 +535,21 @@ function ConductorPageInner() {
               <p className="text-sm text-gray-500">
                 JPEG, PNG o WebP — máximo {MAX_DRIVER_DOC_MB} MB por foto (se suben una por una).
               </p>
-              <PhotoField label="Foto de licencia de conducir" file={licensePhoto} onChange={setLicensePhoto} />
+              <PhotoField
+                label="Foto de licencia de conducir"
+                file={licensePhoto}
+                onChange={(f) => setDraftPhoto("license", f)}
+              />
               <PhotoField
                 label="Tarjeta de circulación"
                 file={vehicleCardPhoto}
-                onChange={setVehicleCardPhoto}
+                onChange={(f) => setDraftPhoto("vehicle_card", f)}
               />
-              <PhotoField label="Póliza de seguro" file={insurancePhoto} onChange={setInsurancePhoto} />
+              <PhotoField
+                label="Póliza de seguro"
+                file={insurancePhoto}
+                onChange={(f) => setDraftPhoto("insurance", f)}
+              />
               <label className="flex items-start gap-2 text-sm">
                 <input
                   type="checkbox"
@@ -533,7 +585,7 @@ function ConductorPageInner() {
             {step > 1 ? (
               <button
                 type="button"
-                onClick={() => setStep((s) => (s - 1) as Step)}
+                onClick={() => goToStep((step - 1) as Step)}
                 className="text-[#1B4332] font-medium"
               >
                 ← Atrás
@@ -544,7 +596,7 @@ function ConductorPageInner() {
             {step < 4 ? (
               <button
                 type="button"
-                onClick={() => setStep((s) => (s + 1) as Step)}
+                onClick={() => goToStep((step + 1) as Step)}
                 className="rounded-xl bg-[#1B4332] px-5 py-2 text-white font-medium"
               >
                 Continuar →
@@ -563,7 +615,8 @@ function ConductorPageInner() {
         </div>
 
         <p className="mt-4 text-center text-xs text-gray-500">
-          Tu progreso se guarda automáticamente en este dispositivo hasta que envíes la solicitud.{" "}
+          Tu progreso se guarda en este navegador al escribir y al cambiar de paso. Usa siempre la
+          misma URL de preview (cambia en cada deploy de Vercel).{" "}
           <button
             type="button"
             onClick={() => void clearDraft()}

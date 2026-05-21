@@ -121,30 +121,36 @@ export function loadConductorFormDraft(): ConductorFormDraft | null {
   }
 }
 
-export function saveConductorFormDraft(draft: ConductorFormDraft): void {
-  if (typeof window === "undefined") return;
+export function draftHasContent(draft: ConductorFormDraft | null): boolean {
+  if (!draft) return false;
+  return Boolean(
+    draft.name.trim() ||
+      draft.whatsapp.trim() ||
+      draft.licenseNumber.trim() ||
+      draft.vehiclePlates.trim(),
+  );
+}
+
+export function saveConductorFormDraft(draft: ConductorFormDraft): boolean {
+  if (typeof window === "undefined") return false;
   try {
     localStorage.setItem(
       DRAFT_KEY,
       JSON.stringify({ ...draft, savedAt: new Date().toISOString() }),
     );
+    return true;
   } catch {
-    /* quota exceeded — text fields still work in memory */
+    return false;
   }
 }
 
 export async function saveConductorDraftPhoto(
   kind: ConductorPhotoKind,
-  file: File | null,
+  file: File,
 ): Promise<void> {
   if (typeof window === "undefined") return;
   try {
     const db = await openPhotoDb();
-    if (!file) {
-      const tx = db.transaction(PHOTO_STORE, "readwrite");
-      tx.objectStore(PHOTO_STORE).delete(kind);
-      return;
-    }
     const stored: StoredPhoto = {
       name: file.name,
       type: file.type,
@@ -153,7 +159,18 @@ export async function saveConductorDraftPhoto(
     };
     await idbPut(db, kind, stored);
   } catch {
-    /* photos won't survive refresh — form text still does */
+    /* photos won't survive refresh on this browser */
+  }
+}
+
+export async function deleteConductorDraftPhoto(kind: ConductorPhotoKind): Promise<void> {
+  if (typeof window === "undefined") return;
+  try {
+    const db = await openPhotoDb();
+    const tx = db.transaction(PHOTO_STORE, "readwrite");
+    tx.objectStore(PHOTO_STORE).delete(kind);
+  } catch {
+    /* ignore */
   }
 }
 
