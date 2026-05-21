@@ -35,9 +35,17 @@ export async function uploadDriverDoc(
 
   if (error) {
     console.error("[driver-storage] upload", kind, error);
+    const detail = typeof error.message === "string" ? error.message : "";
+    const missingBucket =
+      detail.toLowerCase().includes("bucket") &&
+      (detail.toLowerCase().includes("not found") || detail.includes("404"));
     return {
       ok: false,
-      error: "No se pudo subir el archivo — verifica que el bucket driver-docs exista en Supabase",
+      error: missingBucket
+        ? "Falta el bucket driver-docs en Supabase. Ejecuta la migración 20260521120000_driver_docs_storage_bucket.sql en SQL Editor."
+        : detail
+          ? `No se pudo subir el archivo: ${detail}`
+          : "No se pudo subir el archivo — verifica el bucket driver-docs en Supabase Storage.",
     };
   }
 
