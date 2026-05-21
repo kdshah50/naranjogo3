@@ -3,6 +3,8 @@
 import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
 import { ALL_COLONIA_KEYS, COLONIAS } from "@/lib/colonias";
+import { MAX_DRIVER_DOC_BYTES } from "@/lib/rides/driver-storage";
+import { formatDriverSignupClientError } from "@/lib/rides/format-api-error";
 
 const COLONIAS_LIST = ALL_COLONIA_KEYS.map((key) => ({
   value: key,
@@ -76,6 +78,16 @@ function ConductorPageInner() {
       setError("Sube las tres fotos requeridas.");
       return;
     }
+    for (const [label, file] of [
+      ["Licencia", licensePhoto],
+      ["Tarjeta de circulación", vehicleCardPhoto],
+      ["Póliza", insurancePhoto],
+    ] as const) {
+      if (file.size > MAX_DRIVER_DOC_BYTES) {
+        setError(`${label}: máximo 1 MB por foto (la tuya pesa ${(file.size / 1024 / 1024).toFixed(1)} MB).`);
+        return;
+      }
+    }
     if (!acceptedTerms || !acceptedPricing) {
       setError("Debes aceptar los términos.");
       return;
@@ -109,17 +121,15 @@ function ConductorPageInner() {
       fd.append("insurance_photo", insurancePhoto);
 
       const res = await fetch("/api/driver-signup", { method: "POST", body: fd });
-      const data = await res.json().catch(() => ({}));
+      const raw = await res.text();
+      let data: unknown = {};
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch {
+        data = { error: raw.slice(0, 200) };
+      }
       if (!res.ok) {
-        const base =
-          typeof data.error === "string" ? data.error : "No se pudo enviar la solicitud";
-        const detail =
-          data.details &&
-          typeof data.details === "object" &&
-          typeof (data.details as { message?: string }).message === "string"
-            ? (data.details as { message: string }).message
-            : null;
-        setError(detail && !base.includes(detail) ? `${base} (${detail})` : base);
+        setError(formatDriverSignupClientError(res.status, data));
         return;
       }
       setDone(true);
@@ -278,6 +288,9 @@ function ConductorPageInner() {
           {step === 4 && (
             <>
               <h2 className="font-semibold text-lg">Documentos y términos</h2>
+              <p className="text-sm text-gray-500">
+                JPEG, PNG o WebP — máximo 1 MB por foto (3 fotos en total).
+              </p>
               <PhotoField label="Foto de licencia de conducir" file={licensePhoto} onChange={setLicensePhoto} />
               <PhotoField
                 label="Tarjeta de circulación"
@@ -395,6 +408,7 @@ function PhotoField({
   file: File | null;
   onChange: (f: File | null) => void;
 }) {
+  const tooLarge = file != null && file.size > MAX_DRIVER_DOC_BYTES;
   return (
     <label className="block">
       <span className="text-sm font-medium text-gray-700">{label} *</span>
@@ -404,7 +418,12 @@ function PhotoField({
         className="mt-1 w-full text-sm"
         onChange={(e) => onChange(e.target.files?.[0] ?? null)}
       />
-      {file && <p className="text-xs text-gray-500 mt-1">{file.name}</p>}
+      {file && (
+        <p className={`text-xs mt-1 ${tooLarge ? "text-red-600" : "text-gray-500"}`}>
+          {file.name} ({(file.size / 1024).toFixed(0)} KB)
+          {tooLarge ? " — demasiado grande, máx. 1 MB" : ""}
+        </p>
+      )}
     </label>
   );
 }

@@ -12,6 +12,7 @@ import { uploadDriverDoc, type DriverDocKind } from "@/lib/rides/driver-storage"
 import { rateLimitListingCreateByUser } from "@/lib/rate-limit";
 import { getServiceRoleRestHeaders, getSupabaseUrl } from "@/lib/service-rest";
 import { COLONIAS } from "@/lib/colonias";
+import { formatApiErrorMessage } from "@/lib/rides/format-api-error";
 
 export const dynamic = "force-dynamic";
 
@@ -90,7 +91,13 @@ export async function POST(req: NextRequest) {
       rfc: input.rfc,
     });
     if (!userResult.ok) {
-      return NextResponse.json({ error: userResult.error }, { status: 500 });
+      return NextResponse.json(
+        {
+          error: formatApiErrorMessage(userResult.error, "No se pudo crear o encontrar el usuario"),
+          details: userResult.error,
+        },
+        { status: 500 },
+      );
     }
     const userId = userResult.userId;
 

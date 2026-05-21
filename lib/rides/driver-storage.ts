@@ -3,7 +3,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 /** Private bucket — store object keys only; serve via signed URLs. */
 export const DRIVER_DOCS_BUCKET = "driver-docs";
 
-const MAX_SIZE = 5 * 1024 * 1024;
+/** Max bytes per driver doc — keep 3 photos under Vercel ~4.5 MB request limit. */
+export const MAX_DRIVER_DOC_BYTES = 1024 * 1024; // 1 MB
+
+const MAX_SIZE = MAX_DRIVER_DOC_BYTES;
 const ALLOWED = ["image/jpeg", "image/png", "image/webp"] as const;
 
 export type DriverDocKind = "license" | "vehicle_card" | "insurance";
@@ -15,7 +18,7 @@ export async function uploadDriverDoc(
   file: File,
 ): Promise<{ ok: true; objectPath: string } | { ok: false; error: string }> {
   if (file.size > MAX_SIZE) {
-    return { ok: false, error: "Archivo demasiado grande (máx. 5 MB)" };
+    return { ok: false, error: "Archivo demasiado grande (máx. 1 MB por foto)" };
   }
   if (!ALLOWED.includes(file.type as (typeof ALLOWED)[number])) {
     return { ok: false, error: "Solo JPEG, PNG o WebP" };
