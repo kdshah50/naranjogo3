@@ -175,7 +175,11 @@ export async function createRideRequest(
       pickupColoniaKey: args.pickupColoniaKey ?? null,
     });
     if (!match.ok) {
-      return { ok: true, ride: (await getRideById(supabase, ride.id)) ?? ride, estimate, matched: false };
+      const fresh = (await getRideById(supabase, ride.id)) ?? ride;
+      if (match.code === "no_drivers") {
+        return { ok: false, error: match.error, code: "no_drivers" };
+      }
+      return { ok: true, ride: fresh, estimate, matched: false };
     }
     const fresh = await getRideById(supabase, ride.id);
     return { ok: true, ride: fresh ?? ride, estimate, matched: true };

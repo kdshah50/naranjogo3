@@ -71,6 +71,11 @@ const VIAJE = {
     status: "Estado:",
     ticket: "Ticket:",
     findingDriver: "Buscando conductor…",
+    noDriversAvailable:
+      "No hay conductores disponibles. Un conductor debe completar /conductor, ser aprobado por admin, y servir tu colonia de origen. Pide al conductor que abra /conductor/viajes y toque Conectar, luego intenta de nuevo.",
+    rideCancelled: "Viaje cancelado",
+    rideActive: "Tu viaje",
+    rideMatched: "Conductor asignado",
     cancelRide: "Cancelar viaje",
     tipMxn: "Propina (MXN)",
     sendTip: "Enviar propina",
@@ -111,6 +116,11 @@ const VIAJE = {
     status: "Status:",
     ticket: "Ticket:",
     findingDriver: "Finding a driver…",
+    noDriversAvailable:
+      "No drivers available. A driver must complete /conductor, be approved by admin, and serve your pickup neighborhood. Ask them to open /conductor/viajes and go online, then try again.",
+    rideCancelled: "Ride cancelled",
+    rideActive: "Your ride",
+    rideMatched: "Driver assigned",
     cancelRide: "Cancel ride",
     tipMxn: "Tip (MXN)",
     sendTip: "Send tip",

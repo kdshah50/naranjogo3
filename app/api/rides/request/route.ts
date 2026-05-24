@@ -119,7 +119,12 @@ export async function POST(req: NextRequest) {
     });
 
     if (!result.ok) {
-      const status = result.code === "insufficient_balance" ? 402 : 400;
+      const status =
+        result.code === "insufficient_balance"
+          ? 402
+          : result.code === "no_drivers"
+            ? 404
+            : 400;
       return NextResponse.json({ error: result.error, code: result.code }, { status });
     }
 

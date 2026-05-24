@@ -92,6 +92,15 @@ function ViajePageInner() {
     return () => clearInterval(timer);
   }, [ride, refreshActiveRide]);
 
+  const rideSectionTitle =
+    ride?.status === "cancelled"
+      ? t.rideCancelled
+      : ride?.driver_id || ride?.status === "matched"
+        ? t.rideMatched
+        : ride?.status === "requested"
+          ? t.rideActive
+          : t.rideCreated;
+
   const canSubmit = useMemo(
     () => pickupColonia !== dropoffColonia && !authError,
     [pickupColonia, dropoffColonia, authError],
@@ -151,12 +160,21 @@ function ViajePageInner() {
       if (!r.ok) {
         if (data?.code === "insufficient_balance") {
           setRequestError((data?.error ?? t.insufficientBalance) + t.topUpHint);
+        } else if (data?.code === "no_drivers") {
+          setRequestError(data?.error ?? t.noDriversAvailable);
         } else {
           setRequestError(data?.error ?? t.requestFailed);
         }
+        setRide(null);
         return;
       }
-      setRide(data.ride ?? null);
+      const rideRow = data.ride ?? null;
+      if (rideRow?.status === "cancelled") {
+        setRequestError(t.noDriversAvailable);
+        setRide(null);
+        return;
+      }
+      setRide(rideRow);
       if (data.estimate) setEstimate(data.estimate);
       await refreshActiveRide();
     } finally {
@@ -325,9 +343,9 @@ function ViajePageInner() {
           )}
         </section>
 
-        {ride && (
+        {ride && ride.status !== "cancelled" && (
           <section className="mt-6 rounded-2xl border-2 border-[#1B4332]/20 bg-white p-5 shadow-sm">
-            <h2 className="font-semibold text-lg">{t.rideCreated}</h2>
+            <h2 className="font-semibold text-lg">{rideSectionTitle}</h2>
             <p className="mt-2 text-sm">
               {t.status} <strong>{rideStatusLabel(ride.status, lang)}</strong>
             </p>
