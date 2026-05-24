@@ -2,7 +2,10 @@
 
 import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { withLang } from "@/components/BuyerRetentionPanel";
+import { useAppLang } from "@/hooks/use-app-lang";
 import { formatCurrencyMXN } from "@/lib/locale-format";
+import { driverTripActionHint, driverTripsCopy, rideStatusLabel } from "@/lib/rides/ui-copy";
 
 type RideRow = {
   id: string;
@@ -16,13 +19,6 @@ type RideRow = {
 type DriverOnline = {
   is_online: boolean;
   is_active_driver?: boolean;
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  matched: "Asignado — acepta el viaje",
-  accepted: "Aceptado — ve al origen",
-  arrived: "En origen — pide el código",
-  in_trip: "En curso",
 };
 
 export default function ConductorViajesPage() {
@@ -40,6 +36,9 @@ export default function ConductorViajesPage() {
 }
 
 function ConductorViajesInner() {
+  const lang = useAppLang();
+  const t = driverTripsCopy(lang);
+
   const [online, setOnline] = useState<DriverOnline | null>(null);
   const [trips, setTrips] = useState<RideRow[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -54,17 +53,17 @@ function ConductorViajesInner() {
     const oData = await oRes.json().catch(() => ({}));
     const tData = await tRes.json().catch(() => ({}));
     if (!oRes.ok && oRes.status !== 404) {
-      setError(oData?.error ?? "No se pudo cargar el perfil de conductor");
+      setError(oData?.error ?? t.profileLoadFailed);
     } else {
       setOnline(oData.driver ?? null);
     }
     if (tRes.ok) setTrips(tData.trips ?? []);
-  }, []);
+  }, [t.profileLoadFailed]);
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 8000);
-    return () => clearInterval(t);
+    const timer = setInterval(load, 8000);
+    return () => clearInterval(timer);
   }, [load]);
 
   const toggleOnline = async (next: boolean) => {
@@ -76,7 +75,7 @@ function ConductorViajesInner() {
       if (next && typeof navigator !== "undefined" && navigator.geolocation) {
         try {
           const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
-            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 8000 })
+            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 8000 }),
           );
           lat = pos.coords.latitude;
           lng = pos.coords.longitude;
@@ -92,7 +91,7 @@ function ConductorViajesInner() {
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) {
-        setError(data?.error ?? "No se pudo cambiar el estado");
+        setError(data?.error ?? t.toggleFailed);
         return;
       }
       setOnline(data.driver ?? null);
@@ -113,7 +112,7 @@ function ConductorViajesInner() {
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) {
-        setError(data?.error ?? "Acción fallida");
+        setError(data?.error ?? t.actionFailed);
         return;
       }
       await load();
@@ -129,32 +128,30 @@ function ConductorViajesInner() {
       <div className="mx-auto max-w-lg px-4 py-8">
         <div className="mb-6 flex items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold">Viajes asignados</h1>
-            <p className="mt-1 text-sm text-[#1B4332]/70">Panel del conductor</p>
+            <h1 className="text-2xl font-bold">{t.title}</h1>
+            <p className="mt-1 text-sm text-[#1B4332]/70">{t.subtitle}</p>
           </div>
-          <Link href="/conductor" className="text-sm font-medium underline">
-            Perfil
+          <Link href={withLang("/conductor", lang)} className="text-sm font-medium underline">
+            {t.profile}
           </Link>
         </div>
 
         {!online?.is_active_driver && online !== null && (
           <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm">
-            Tu cuenta de conductor no está activa. Completa{" "}
-            <Link href="/conductor" className="underline">
+            {t.inactiveDriverPrefix}
+            <Link href={withLang("/conductor", lang)} className="underline">
               /conductor
-            </Link>{" "}
-            y pide aprobación al admin.
+            </Link>
+            {t.inactiveDriverSuffix}
           </div>
         )}
 
         <section className="mb-6 rounded-2xl bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="font-medium">{isOnline ? "En línea" : "Fuera de línea"}</p>
+              <p className="font-medium">{isOnline ? t.online : t.offline}</p>
               <p className="text-sm text-[#1B4332]/70">
-                {isOnline
-                  ? "Recibirás viajes en tus colonias de servicio."
-                  : "Actívate para aparecer en el despacho."}
+                {isOnline ? t.onlineHint : t.offlineHint}
               </p>
             </div>
             <button
@@ -165,7 +162,7 @@ function ConductorViajesInner() {
                 isOnline ? "bg-amber-700" : "bg-[#1B4332]"
               }`}
             >
-              {busy === "online" ? "…" : isOnline ? "Desconectar" : "Conectar"}
+              {busy === "online" ? "…" : isOnline ? t.disconnect : t.connect}
             </button>
           </div>
         </section>
@@ -173,24 +170,29 @@ function ConductorViajesInner() {
         {error && <p className="mb-4 text-sm text-red-700">{error}</p>}
 
         {trips.length === 0 ? (
-          <p className="text-sm text-[#1B4332]/70">No tienes viajes activos.</p>
+          <p className="text-sm text-[#1B4332]/70">{t.noActiveTrips}</p>
         ) : (
           <ul className="space-y-4">
             {trips.map((trip) => (
               <li key={trip.id} className="rounded-2xl bg-white p-5 shadow-sm space-y-3">
-                <p className="text-xs uppercase tracking-wide text-[#1B4332]/60">{trip.status}</p>
+                <p className="text-xs uppercase tracking-wide text-[#1B4332]/60">
+                  {rideStatusLabel(trip.status, lang)}
+                </p>
                 <p className="font-medium">
                   {trip.pickup_address} → {trip.dropoff_address}
                 </p>
                 <p className="text-sm text-[#1B4332]/70">
-                  Tarifa est.: {formatCurrencyMXN(trip.estimated_total_mxn_cents, "es")}
+                  {t.estFare} {formatCurrencyMXN(trip.estimated_total_mxn_cents, lang)}
                 </p>
                 {trip.ticket_code && (
                   <p className="text-sm">
-                    Código del pasajero: <span className="font-mono font-bold">{trip.ticket_code}</span>
+                    {t.passengerCode}{" "}
+                    <span className="font-mono font-bold">{trip.ticket_code}</span>
                   </p>
                 )}
-                <p className="text-xs text-[#1B4332]/50">{STATUS_LABEL[trip.status] ?? ""}</p>
+                <p className="text-xs text-[#1B4332]/50">
+                  {driverTripActionHint(trip.status, lang)}
+                </p>
 
                 {trip.status === "matched" && (
                   <button
@@ -199,7 +201,7 @@ function ConductorViajesInner() {
                     onClick={() => action(trip.id, "accept")}
                     className="rounded-full bg-[#1B4332] px-4 py-2 text-sm text-white disabled:opacity-50"
                   >
-                    Aceptar viaje
+                    {t.acceptRide}
                   </button>
                 )}
                 {trip.status === "accepted" && (
@@ -209,14 +211,14 @@ function ConductorViajesInner() {
                     onClick={() => action(trip.id, "arrive")}
                     className="rounded-full bg-[#1B4332] px-4 py-2 text-sm text-white disabled:opacity-50"
                   >
-                    Llegué al origen
+                    {t.arrivedAtPickup}
                   </button>
                 )}
                 {trip.status === "arrived" && (
                   <div className="flex flex-wrap gap-2 items-end">
                     <input
                       className="rounded-lg border border-[#1B4332]/20 px-3 py-2 text-sm font-mono"
-                      placeholder="NG-XXXXXXXX"
+                      placeholder={t.ticketPlaceholder}
                       value={ticketByRide[trip.id] ?? ""}
                       onChange={(e) =>
                         setTicketByRide((m) => ({ ...m, [trip.id]: e.target.value }))
@@ -230,7 +232,7 @@ function ConductorViajesInner() {
                       }
                       className="rounded-full bg-[#1B4332] px-4 py-2 text-sm text-white disabled:opacity-50"
                     >
-                      Iniciar viaje
+                      {t.startRide}
                     </button>
                   </div>
                 )}
@@ -241,7 +243,7 @@ function ConductorViajesInner() {
                     onClick={() => action(trip.id, "complete")}
                     className="rounded-full bg-[#1B4332] px-4 py-2 text-sm text-white disabled:opacity-50"
                   >
-                    Completar viaje
+                    {t.completeRide}
                   </button>
                 )}
               </li>

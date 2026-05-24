@@ -2,7 +2,9 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { useAppLang } from "@/hooks/use-app-lang";
 import { formatCurrencyMXN } from "@/lib/locale-format";
+import { ledgerKindLabel, saldoCopy } from "@/lib/rides/ui-copy";
 
 type Wallet = {
   user_id: string;
@@ -34,6 +36,8 @@ export default function SaldoPage() {
 }
 
 function SaldoPageInner() {
+  const lang = useAppLang();
+  const t = saldoCopy(lang);
   const params = useSearchParams();
   const topupResult = params.get("topup");
   const sessionId = params.get("session_id");
@@ -50,7 +54,7 @@ function SaldoPageInner() {
     const r = await fetch("/api/rides/wallet", { credentials: "include", cache: "no-store" });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) {
-      setLoadError(data?.error ?? "No se pudo cargar el saldo");
+      setLoadError(data?.error ?? t.loadFailed);
       return null;
     }
     setLoadError(null);
@@ -93,7 +97,7 @@ function SaldoPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [topupResult, sessionId]);
+  }, [topupResult, sessionId, t.loadFailed]);
 
   async function startTopup(amountMxn: number) {
     setBusyAmount(amountMxn);
@@ -108,14 +112,14 @@ function SaldoPageInner() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.url) {
-        setTopupError(data?.error ?? "No se pudo iniciar la carga");
+        setTopupError(data?.error ?? t.topupFailed);
         setTopupDetail(typeof data?.detail === "string" ? data.detail : null);
         setBusyAmount(null);
         return;
       }
       window.location.href = data.url;
     } catch {
-      setTopupError("Error de red al iniciar la carga");
+      setTopupError(t.networkError);
       setBusyAmount(null);
     }
   }
@@ -124,39 +128,37 @@ function SaldoPageInner() {
     <main className="min-h-screen bg-[#F8F4ED] px-4 py-10">
       <div className="mx-auto max-w-md space-y-6">
         <header>
-          <h1 className="text-2xl font-semibold text-[#1B4332]">Saldo Naranjo</h1>
-          <p className="mt-1 text-sm text-[#5C5345]">
-            Carga saldo prepagado para usar en NaranjoGo.
-          </p>
+          <h1 className="text-2xl font-semibold text-[#1B4332]">{t.title}</h1>
+          <p className="mt-1 text-sm text-[#5C5345]">{t.subtitle}</p>
         </header>
 
         {topupResult === "success" && (
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-            {oxxoEnabled
-              ? "Recibimos tu solicitud. Si pagas en OXXO, el saldo aparecerá cuando se confirme el pago."
-              : "Recibimos tu pago. Tu saldo se actualizará en unos segundos."}
+            {oxxoEnabled ? t.topupSuccessOxxo : t.topupSuccessCard}
           </div>
         )}
         {topupResult === "cancel" && (
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            Carga cancelada. Puedes intentarlo nuevamente.
+            {t.topupCancel}
           </div>
         )}
 
         <section className="rounded-2xl border border-[#E5E0D8] bg-white p-6 shadow-sm">
-          <p className="text-xs uppercase tracking-wide text-[#8A8170]">Saldo disponible</p>
+          <p className="text-xs uppercase tracking-wide text-[#8A8170]">{t.availableBalance}</p>
           {loadError ? (
             <p className="mt-2 text-sm text-red-600">{loadError}</p>
           ) : !wallet ? (
-            <p className="mt-2 text-sm text-[#8A8170]">{syncingTopup ? "Confirmando pago…" : "Cargando…"}</p>
+            <p className="mt-2 text-sm text-[#8A8170]">
+              {syncingTopup ? t.confirmingPayment : t.loading}
+            </p>
           ) : (
             <>
               <p className="mt-1 text-4xl font-bold text-[#1B4332]">
-                {formatCurrencyMXN(wallet.balance_mxn_cents, "es")}
+                {formatCurrencyMXN(wallet.balance_mxn_cents, lang)}
               </p>
               {wallet.held_mxn_cents > 0 && (
                 <p className="mt-1 text-xs text-[#8A8170]">
-                  Reservado: {formatCurrencyMXN(wallet.held_mxn_cents, "es")}
+                  {t.held} {formatCurrencyMXN(wallet.held_mxn_cents, lang)}
                 </p>
               )}
             </>
@@ -164,11 +166,9 @@ function SaldoPageInner() {
         </section>
 
         <section className="rounded-2xl border border-[#E5E0D8] bg-white p-6 shadow-sm">
-          <h2 className="text-base font-semibold text-[#1B4332]">Cargar saldo</h2>
+          <h2 className="text-base font-semibold text-[#1B4332]">{t.topUpTitle}</h2>
           <p className="mt-1 text-xs text-[#5C5345]">
-            {oxxoEnabled
-              ? "Paga en cualquier OXXO o con tarjeta. El saldo se acredita al confirmarse el pago."
-              : "Paga con tarjeta. El saldo se acredita al confirmarse el pago."}
+            {oxxoEnabled ? t.topUpOxxo : t.topUpCard}
           </p>
           <div className="mt-4 space-y-2">
             {PRESET_AMOUNTS_MXN.map((amt) => (
@@ -179,7 +179,7 @@ function SaldoPageInner() {
                 disabled={busyAmount !== null}
                 className="w-full rounded-xl border border-[#1B4332] bg-[#1B4332] px-4 py-3 text-base font-medium text-white transition hover:bg-[#143425] disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {busyAmount === amt ? "Abriendo pago…" : `Cargar $${amt} MXN`}
+                {busyAmount === amt ? t.openingPayment : t.loadAmount(amt)}
               </button>
             ))}
           </div>
@@ -187,9 +187,7 @@ function SaldoPageInner() {
             <div className="mt-3 space-y-1">
               <p className="text-sm text-red-600">{topupError}</p>
               {topupDetail && (
-                <p className="break-words font-mono text-xs text-red-500">
-                  {topupDetail}
-                </p>
+                <p className="break-words font-mono text-xs text-red-500">{topupDetail}</p>
               )}
             </div>
           )}
@@ -197,14 +195,14 @@ function SaldoPageInner() {
 
         {wallet && wallet.recent_ledger.length > 0 && (
           <section className="rounded-2xl border border-[#E5E0D8] bg-white p-6 shadow-sm">
-            <h2 className="text-base font-semibold text-[#1B4332]">Últimos movimientos</h2>
+            <h2 className="text-base font-semibold text-[#1B4332]">{t.recentActivity}</h2>
             <ul className="mt-3 space-y-2 text-sm">
               {wallet.recent_ledger.map((e) => (
                 <li
                   key={e.id}
                   className="flex items-center justify-between border-b border-[#F2EDE3] pb-2 last:border-b-0 last:pb-0"
                 >
-                  <span className="text-[#5C5345]">{e.kind}</span>
+                  <span className="text-[#5C5345]">{ledgerKindLabel(e.kind, lang)}</span>
                   <span
                     className={
                       e.amount_mxn_cents >= 0
@@ -213,7 +211,7 @@ function SaldoPageInner() {
                     }
                   >
                     {e.amount_mxn_cents >= 0 ? "+" : ""}
-                    {formatCurrencyMXN(e.amount_mxn_cents, "es")}
+                    {formatCurrencyMXN(e.amount_mxn_cents, lang)}
                   </span>
                 </li>
               ))}
