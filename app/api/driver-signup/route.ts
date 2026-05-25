@@ -239,6 +239,13 @@ export async function POST(req: NextRequest) {
   } catch (e: unknown) {
     console.error("[driver-signup]", e);
     const msg = e instanceof Error ? e.message : "Error interno";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    const hint =
+      msg.includes("SUPABASE") || msg.includes("NEXT_PUBLIC_SUPABASE")
+        ? "Revisa variables de entorno en Vercel preview (SUPABASE_SERVICE_ROLE_KEY, NEXT_PUBLIC_SUPABASE_URL)."
+        : "Revisa migraciones Phase 1 (driver_profiles, subcategory_kind) y bucket driver-docs en Supabase.";
+    return NextResponse.json(
+      { error: msg, details: hint, code: "driver_signup_exception" },
+      { status: 500 },
+    );
   }
 }

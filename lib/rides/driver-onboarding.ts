@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { createAdminSupabase } from "@/lib/auth-server";
 import { COLONIAS, coloniaLabel } from "@/lib/colonias";
 import { canonicalizeAuthPhone, normalizeAuthPhone } from "@/lib/phone";
@@ -34,17 +35,30 @@ export async function findOrCreateUserByPhone(args: {
   const h = { ...getServiceRoleRestHeaders(), "Content-Type": "application/json" as const };
   const phone = canonicalizeAuthPhone(normalizeAuthPhone(args.phone.replace(/\s/g, "")));
 
-  const picked = await pickLoginUserForPhone(createAdminSupabase(), phone);
+  const supabase = createAdminSupabase();
+  const picked = await pickLoginUserForPhone(supabase, phone);
   if (picked?.id) {
     const userId = picked.id;
-    const patch: Record<string, string> = { phone };
+    const patch: Record<string, string> = {};
+    if (args.displayName) patch.display_name = args.displayName;
     if (args.curp) patch.curp = args.curp;
     if (args.rfc) patch.rfc = args.rfc;
-    await fetch(`${SUPA_URL}/rest/v1/users?id=eq.${encodeURIComponent(userId)}`, {
-      method: "PATCH",
-      headers: h,
-      body: JSON.stringify(patch),
-    }).catch(() => {});
+    // users.phone is UNIQUE — do not force canonical if another row already has it
+    const { data: phoneTaken } = await supabase
+      .from("users")
+      .select("id")
+      .eq("phone", phone)
+      .neq("id", userId)
+      .limit(1)
+      .maybeSingle();
+    if (!phoneTaken) patch.phone = phone;
+    if (Object.keys(patch).length > 0) {
+      const { error: patchErr } = await supabase.from("users").update(patch).eq("id", userId);
+      if (patchErr) {
+        console.error("[driver-onboarding] patch user", patchErr);
+        return { ok: false, error: patchErr };
+      }
+    }
     return { ok: true, userId };
   }
 
@@ -105,6 +119,7 @@ export function buildDriverListingPayload(input: DriverSignupInput, sellerId: st
     `Conductor verificado en Naranjogo. Vehículo: ${vehicleLine}. Zonas: ${zonesEs}.`;
 
   return {
+    id: randomUUID(),
     seller_id: sellerId,
     title_es: `Transporte / Taxi — ${coloniaLabelEs}, SMA`,
     title_en: `Ride / Taxi — ${coloniaLabelEn}, SMA`,
