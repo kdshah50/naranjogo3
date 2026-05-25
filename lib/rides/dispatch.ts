@@ -17,7 +17,7 @@ export type NearbyDriver = {
   service_colonias: string[];
 };
 
-const ACTIVE_RIDE_STATUSES = ["requested", "matched", "accepted", "arrived", "in_trip"];
+const DRIVER_BUSY_STATUSES = ["matched", "accepted", "arrived", "in_trip"];
 
 function coloniaCenter(key: string): ColoniaInfo | null {
   const c = COLONIAS[key];
@@ -92,13 +92,14 @@ export async function findNearbyDrivers(
     .from("listings")
     .select("id,seller_id,title_es,is_verified,subcategory_kind,status")
     .in("seller_id", allSellerIds)
-    .eq("is_verified", true)
-    .neq("status", "deleted");
+    .eq("is_verified", true);
 
   if (lErr) console.error("[rides/dispatch] listings", lErr);
 
   const listingBySeller = new Map<string, { id: string; title_es: string | null }>();
   for (const row of listings ?? []) {
+    const status = String(row.status ?? "").toLowerCase();
+    if (status === "deleted" || status === "archived") continue;
     const isRide =
       row.subcategory_kind === "ride" ||
       (row.subcategory_kind == null &&
@@ -125,8 +126,8 @@ export async function findNearbyDrivers(
 
   const { data: busyRides } = await supabase
     .from("ride_bookings")
-    .select("driver_id")
-    .in("status", ACTIVE_RIDE_STATUSES)
+    .select("driver_id,status")
+    .in("status", DRIVER_BUSY_STATUSES)
     .not("driver_id", "is", null);
 
   const busyDriverIds = new Set(
