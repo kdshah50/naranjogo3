@@ -3,6 +3,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { generateTicketCodeCandidate } from "@/lib/booking-lifecycle";
 import { pickBestDriver } from "@/lib/rides/dispatch";
+import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 import { locationFromColoniaKey } from "@/lib/rides/ride-locations";
 import { estimateFare, type RideLocation } from "@/lib/rides/ride-pricing";
 import { holdWalletForRide } from "@/lib/rides/wallet-hold";
@@ -218,15 +219,21 @@ export async function matchRideToDriver(
   let listingId: string | null = null;
 
   if (driverUserId) {
-    const { data: listing } = await supabase
+    const sellerPool = await expandUserAccountIdPool(supabase, driverUserId);
+    const { data: listings } = await supabase
       .from("listings")
-      .select("id")
-      .eq("seller_id", driverUserId)
-      .eq("subcategory_kind", "ride")
+      .select("id,subcategory_kind,title_es")
+      .in("seller_id", sellerPool)
       .eq("is_verified", true)
-      .limit(1)
-      .maybeSingle();
-    listingId = listing?.id ? String(listing.id) : null;
+      .limit(20);
+    const rideListing = (listings ?? []).find(
+      (row) =>
+        row.subcategory_kind === "ride" ||
+        (row.subcategory_kind == null &&
+          typeof row.title_es === "string" &&
+          /taxi|transporte|ride/i.test(row.title_es)),
+    );
+    listingId = rideListing?.id ? String(rideListing.id) : null;
     if (!listingId) return { ok: false, error: "Conductor no disponible", code: "no_drivers" };
   } else {
     const best = await pickBestDriver(supabase, {

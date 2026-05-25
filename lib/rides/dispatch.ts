@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { COLONIAS, type ColoniaInfo } from "@/lib/colonias";
 import { haversineMeters } from "@/lib/rides/ride-pricing";
+import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 import { idMatchVariantsForIn } from "@/lib/user-id-variants";
 
 export type NearbyDriver = {
@@ -75,14 +76,26 @@ export async function findNearbyDrivers(
 
   if (!profiles?.length) return [];
 
-  const userIds = profiles.map((p) => String(p.user_id));
-  const sellerVariants = [...new Set(userIds.flatMap((id) => idMatchVariantsForIn(id)))];
-  const { data: listings } = await supabase
+  const profilePools = await Promise.all(
+    profiles.map(async (p) => ({
+      profile: p,
+      pool: await expandUserAccountIdPool(supabase, String(p.user_id)),
+    })),
+  );
+
+  const allSellerIds = [
+    ...new Set(profilePools.flatMap(({ pool }) => pool.flatMap((id) => idMatchVariantsForIn(id)))),
+  ];
+  if (allSellerIds.length === 0) return [];
+
+  const { data: listings, error: lErr } = await supabase
     .from("listings")
     .select("id,seller_id,title_es,is_verified,subcategory_kind,status")
-    .in("seller_id", sellerVariants)
+    .in("seller_id", allSellerIds)
     .eq("is_verified", true)
     .neq("status", "deleted");
+
+  if (lErr) console.error("[rides/dispatch] listings", lErr);
 
   const listingBySeller = new Map<string, { id: string; title_es: string | null }>();
   for (const row of listings ?? []) {
@@ -92,16 +105,22 @@ export async function findNearbyDrivers(
         typeof row.title_es === "string" &&
         /taxi|transporte|ride/i.test(row.title_es));
     if (!isRide) continue;
-    const sid = String(row.seller_id).toLowerCase();
     for (const variant of idMatchVariantsForIn(String(row.seller_id))) {
       const key = variant.toLowerCase();
       if (!listingBySeller.has(key)) {
         listingBySeller.set(key, { id: String(row.id), title_es: row.title_es as string | null });
       }
     }
-    if (!listingBySeller.has(sid)) {
-      listingBySeller.set(sid, { id: String(row.id), title_es: row.title_es as string | null });
+  }
+
+  function listingForProfilePool(pool: string[]): { id: string; title_es: string | null } | undefined {
+    for (const id of pool) {
+      for (const variant of idMatchVariantsForIn(id)) {
+        const hit = listingBySeller.get(variant.toLowerCase());
+        if (hit) return hit;
+      }
     }
+    return undefined;
   }
 
   const { data: busyRides } = await supabase
@@ -116,15 +135,12 @@ export async function findNearbyDrivers(
 
   const candidates: NearbyDriver[] = [];
 
-  for (const profile of profiles) {
+  for (const { profile, pool } of profilePools) {
     const uid = String(profile.user_id).toLowerCase();
-    if (busyDriverIds.has(uid)) continue;
+    const busyInPool = pool.some((id) => busyDriverIds.has(id.toLowerCase()));
+    if (busyInPool) continue;
 
-    const listing =
-      listingBySeller.get(uid) ??
-      idMatchVariantsForIn(String(profile.user_id))
-        .map((v) => listingBySeller.get(v.toLowerCase()))
-        .find(Boolean);
+    const listing = listingForProfilePool(pool);
     if (!listing) continue;
 
     const serviceColonias = (profile.service_colonias as string[]) ?? [];
@@ -133,6 +149,15 @@ export async function findNearbyDrivers(
     let bestKey = pickupKey ?? serviceColonias[0] ?? "centro";
     let bestDist = Number.POSITIVE_INFINITY;
     let bestLabel = COLONIAS[bestKey]?.label ?? bestKey;
+
+    if (pickupKey) {
+      const pc = coloniaCenter(pickupKey);
+      if (pc) {
+        bestDist = haversineMeters(args.pickupLat, args.pickupLng, pc.lat, pc.lng);
+        bestKey = pickupKey;
+        bestLabel = pc.label;
+      }
+    }
 
     const lastLat = profile.last_lat as number | null | undefined;
     const lastLng = profile.last_lng as number | null | undefined;
@@ -148,7 +173,6 @@ export async function findNearbyDrivers(
     }
 
     const coloniaOk = driverServesColonia(serviceColonias, pickupKey);
-    if (!coloniaOk && !hasGps) continue;
 
     if (!hasGps || bestDist > maxDistanceM) {
       const keysToTry =
