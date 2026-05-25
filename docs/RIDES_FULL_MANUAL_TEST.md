@@ -352,7 +352,26 @@ WHERE ride_booking_id = '<RIDE_ID>' ORDER BY created_at;
 | drivers/me returns null | Not logged in as driver | Use driver phone on /unete |
 | WhatsApp no response | Webhook or flag | Check Twilio URL + RIDES_WHATSAPP_INBOUND_ENABLED |
 | Invalid ticket on start | Wrong code | Copy exact NG-XXXXXXXX from buyer |
-| Duplicate user rows | Phone format +52 vs 52 | Use same phone format as login |
+| Duplicate user rows | Phone format +52 vs 52 | Log out at /unete; re-login; see `supabase/scripts/reset-rides-drivers-test.sql` |
+| “No active driver for this session” | Wrong `users` row / stale cookie | Log out; run reset SQL; one driver signup; approve in SQL |
+| Clean slate for drivers | Old profiles + duplicate phones | Run `supabase/scripts/reset-rides-drivers-test.sql` in Supabase (preview only) |
+
+---
+
+## Part J2 — Reset all drivers (clean test)
+
+**Preview / staging only.** In Supabase → **SQL Editor**, paste and run:
+
+`supabase/scripts/reset-rides-drivers-test.sql`
+
+Then:
+
+1. Every tester **logs out** at `/unete` (or clears cookies for the preview domain).
+2. **One** person completes `/conductor` signup with the test WhatsApp (e.g. 415 181 6902).
+3. Admin runs the approve block at the bottom of that SQL file (`is_active_driver`, `is_verified`).
+4. Driver opens `/conductor/viajes` → **Conectar**.
+
+Optional: uncomment §4 in the script to delete duplicate `users` rows for the same phone (keep one id only).
 
 ---
 
