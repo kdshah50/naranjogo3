@@ -9,7 +9,7 @@
 --   • Deletes wallet_ledger rows tied to those rides
 --   • Deletes ALL driver_profiles
 --   • Deletes ALL listings with subcategory_kind = 'ride'
---   • Deletes driver document files in storage bucket driver-docs
+--   • Driver docs: delete in Dashboard → Storage → driver-docs (SQL not allowed)
 --   • Optionally removes duplicate users rows for one test phone (see §4)
 --
 -- What this does NOT do:
@@ -41,9 +41,10 @@ DELETE FROM public.driver_profiles;
 DELETE FROM public.listings
 WHERE subcategory_kind = 'ride';
 
--- ── 4. Driver docs in Storage (optional but recommended for clean signup) ─────
-DELETE FROM storage.objects
-WHERE bucket_id = 'driver-docs';
+-- ── 4. Driver docs in Storage (optional — NOT via SQL) ───────────────────────
+-- Supabase blocks DELETE on storage.objects. Clear files manually:
+--   Dashboard → Storage → bucket "driver-docs" → select all → Delete
+-- Or skip this step; new signup uploads new doc paths anyway.
 
 -- ── 5. (Optional) Remove duplicate users for ONE test phone ───────────────────
 -- Uncomment and set ids after you run the SELECT below.
