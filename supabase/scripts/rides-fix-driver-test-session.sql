@@ -15,7 +15,11 @@ UPDATE public.ride_bookings
 SET status = 'cancelled',
     cancel_reason = 'test_reset_session',
     updated_at = now()
-WHERE driver_id::text = '3d5522b3-aedf-4625-80a1-8a79708bb893'
+WHERE driver_id::text IN (
+  '3d5522b3-aedf-4625-80a1-8a79708bb893',
+  '94a74ff0-d2f4-46a7-b43e-85fb8f2cf524',
+  '7003532b-1bba-4bbe-8b7e-b89e86051169'
+)
   AND status IN ('matched', 'accepted', 'arrived', 'in_trip', 'requested');
 
 -- 2) Single driver profile on canonical user (delete dupes on other phone rows)
@@ -53,13 +57,17 @@ WHERE seller_id::text = '3d5522b3-aedf-4625-80a1-8a79708bb893'
 
 SELECT 'open_rides' AS check_name, count(*)::int AS n
 FROM public.ride_bookings
-WHERE driver_id::text = '3d5522b3-aedf-4625-80a1-8a79708bb893'
+WHERE driver_id::text IN (
+  '3d5522b3-aedf-4625-80a1-8a79708bb893',
+  '94a74ff0-d2f4-46a7-b43e-85fb8f2cf524',
+  '7003532b-1bba-4bbe-8b7e-b89e86051169'
+)
   AND status IN ('matched', 'accepted', 'arrived', 'in_trip', 'requested');
 
 COMMIT;
 
 -- AFTER SQL:
--- 1) Preview deploy with /api/rides/drivers/me/panel (latest rides-setup branch)
+-- 1) Preview deploy with latest rides-setup branch
 -- 2) Driver phone: log out /unete → log in 415 181 6902 → /conductor/viajes → Conectar
 -- 3) Rider (different browser or account): ONE trip Centro → Guadalupe
--- 4) Driver panel should show Matched + Accept within ~5s
+-- 4) Driver panel should show latest ticket within ~3s

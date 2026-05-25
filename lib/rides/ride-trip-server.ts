@@ -17,25 +17,26 @@ import {
   hasHoldForRide,
   releaseWalletHoldForRide,
 } from "@/lib/rides/wallet-hold";
-import { driverRideAccountIdPool, findActiveDriverProfileForAccount } from "@/lib/rides/driver-account";
+import { driverRideAccountIdPool, findActiveDriverProfileForAccount, pickCanonicalDriverProfile } from "@/lib/rides/driver-account";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 
 export type RideAccountOptions = { authPhone?: string | null };
 
 const ACTIVE_DRIVER_TRIP_STATUSES = ["matched", "accepted", "arrived", "in_trip"] as const;
 
-/** Direct lookup by driver_profiles.user_id — same id dispatch writes to ride_bookings.driver_id. */
+/** Active trips for driver account pool (duplicate phone users share assignments). */
 export async function listActiveTripsForDriverProfile(
   supabase: SupabaseClient,
   profileUserId: string,
+  options?: RideAccountOptions,
 ): Promise<RideBookingRow[]> {
-  const driverId = String(profileUserId).trim();
-  if (!driverId) return [];
+  const pool = await driverRideAccountIdPool(supabase, profileUserId, options);
+  const driverIds = pool.length > 0 ? pool : [String(profileUserId).trim()];
 
   const { data, error } = await supabase
     .from("ride_bookings")
     .select("*")
-    .eq("driver_id", driverId)
+    .in("driver_id", driverIds)
     .in("status", [...ACTIVE_DRIVER_TRIP_STATUSES])
     .order("created_at", { ascending: false })
     .limit(20);
@@ -44,7 +45,10 @@ export async function listActiveTripsForDriverProfile(
     console.error("[ride-trip] listActiveTripsForDriverProfile", error);
     return [];
   }
-  return (data ?? []) as RideBookingRow[];
+
+  const rows = (data ?? []) as RideBookingRow[];
+  rows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  return rows;
 }
 
 export async function listActiveTripsForDriver(
@@ -54,7 +58,7 @@ export async function listActiveTripsForDriver(
 ): Promise<RideBookingRow[]> {
   const profile = await findActiveDriverProfileForAccount(supabase, driverUserId, options);
   if (!profile?.user_id) return [];
-  return listActiveTripsForDriverProfile(supabase, profile.user_id);
+  return listActiveTripsForDriverProfile(supabase, profile.user_id, options);
 }
 
 export type TripResult =

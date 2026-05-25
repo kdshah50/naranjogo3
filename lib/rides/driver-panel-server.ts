@@ -30,7 +30,7 @@ export async function loadDriverPanel(
 
   const trips =
     driver?.is_active_driver && driver.user_id
-      ? await listActiveTripsForDriverProfile(supabase, driver.user_id)
+      ? await listActiveTripsForDriverProfile(supabase, driver.user_id, accountOpts)
       : [];
 
   return {

@@ -70,10 +70,10 @@ function ConductorViajesInner() {
 
   useEffect(() => {
     load();
-    const ms = isOnline && trips.length === 0 ? 3000 : 5000;
+    const ms = isOnline ? 3000 : 8000;
     const timer = setInterval(load, ms);
     return () => clearInterval(timer);
-  }, [load, isOnline, trips.length]);
+  }, [load, isOnline]);
 
   const toggleOnline = async (next: boolean) => {
     setBusy("online");

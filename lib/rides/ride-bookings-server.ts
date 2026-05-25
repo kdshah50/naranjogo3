@@ -3,10 +3,11 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { generateTicketCodeCandidate } from "@/lib/booking-lifecycle";
 import { pickBestDriver } from "@/lib/rides/dispatch";
+import { pickCanonicalDriverProfile } from "@/lib/rides/driver-account";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 import { locationFromColoniaKey } from "@/lib/rides/ride-locations";
 import { estimateFare, type RideLocation } from "@/lib/rides/ride-pricing";
-import { holdWalletForRide } from "@/lib/rides/wallet-hold";
+import { holdWalletForRide, hasHoldForRide, releaseWalletHoldForRide } from "@/lib/rides/wallet-hold";
 import { getWalletForUser } from "@/lib/rides/wallet-server";
 
 export type RideBookingStatus =
@@ -85,6 +86,55 @@ async function ensureUniqueTicketCode(supabase: SupabaseClient): Promise<string>
     if (!data) return candidate;
   }
   return generateTicketCodeCandidate();
+}
+
+/** Cancel older matched-only rides when a new match lands on the same driver account. */
+async function cancelSupersededMatchedRides(
+  supabase: SupabaseClient,
+  args: { driverUserId: string; keepRideId: string },
+): Promise<void> {
+  const pool = await expandUserAccountIdPool(supabase, args.driverUserId);
+  if (pool.length === 0) return;
+
+  const { data: stale } = await supabase
+    .from("ride_bookings")
+    .select("*")
+    .in("driver_id", pool)
+    .eq("status", "matched")
+    .neq("id", args.keepRideId);
+
+  for (const row of stale ?? []) {
+    const staleRide = row as RideBookingRow;
+    const buyerId = String(staleRide.buyer_id).trim().toLowerCase();
+    const holdAmount = Math.round(Number(staleRide.hold_amount_mxn_cents));
+
+    if (await hasHoldForRide(supabase, buyerId, staleRide.id)) {
+      await releaseWalletHoldForRide(supabase, {
+        userId: buyerId,
+        rideBookingId: staleRide.id,
+        releaseAmountMxnCents: holdAmount,
+        meta: { reason: "superseded_by_new_match" },
+      });
+    }
+
+    await supabase
+      .from("ride_bookings")
+      .update({
+        status: "cancelled",
+        cancel_reason: "superseded_by_new_match",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", staleRide.id)
+      .eq("status", "matched");
+
+    await appendRideEvent(supabase, {
+      rideId: staleRide.id,
+      eventType: "ride_cancelled",
+      fromStatus: "matched",
+      toStatus: "cancelled",
+      meta: { reason: "superseded_by_new_match", replaced_by: args.keepRideId },
+    });
+  }
 }
 
 export type CreateRideRequestArgs = {
@@ -264,6 +314,11 @@ export async function matchRideToDriver(
     listingId = best.listing_id;
   }
 
+  const canonical = await pickCanonicalDriverProfile(supabase, String(driverUserId));
+  if (canonical?.user_id) {
+    driverUserId = canonical.user_id;
+  }
+
   const ticketCode = await ensureUniqueTicketCode(supabase);
   const matchedAt = new Date().toISOString();
 
@@ -333,6 +388,11 @@ export async function matchRideToDriver(
       hold_amount_mxn_cents: Math.round(Number(updated.hold_amount_mxn_cents)),
       ledger_id: hold.ledgerId,
     },
+  });
+
+  await cancelSupersededMatchedRides(supabase, {
+    driverUserId: String(driverUserId),
+    keepRideId: ride.id,
   });
 
   return { ok: true, ride: updated as RideBookingRow, driverUserId: String(driverUserId) };
