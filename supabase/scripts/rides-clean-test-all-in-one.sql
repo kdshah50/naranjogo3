@@ -75,7 +75,8 @@ ORDER BY created_at;
 
 -- ══════════════════════════════════════════════════════════════════════════════
 -- 3. AFTER /conductor signup — auto-approve newest driver + ride listing
---    (Run only when driver_profiles has at least one row)
+--    STOP: Run sections 1–2c first, complete /conductor signup, THEN run §3–3b only.
+--    (Do not re-run §2 after signup — it deletes the new profile.)
 -- ══════════════════════════════════════════════════════════════════════════════
 
 UPDATE public.driver_profiles
@@ -93,8 +94,7 @@ WHERE user_id = (
 UPDATE public.listings
 SET
   is_verified = true,
-  status = 'active',
-  updated_at = now()
+  status = 'active'
 WHERE id = (
   SELECT id
   FROM public.listings
