@@ -17,9 +17,10 @@
 --   • Does not delete non-ride listings or service_bookings
 --
 -- After running:
---   1. Tester: clear site cookies OR log out at /unete (tianguis_token)
---   2. One person registers fresh at /conductor with test phone
---   3. Admin approves in SQL (§5) or Supabase table editor
+--   1. Run Phase 4 migration if missing (see bottom of this file) — required for Conectar
+--   2. Tester: clear site cookies OR log out at /unete (tianguis_token)
+--   3. One person registers fresh at /conductor with test phone
+--   4. Admin approves in SQL (§7) or Supabase table editor
 -- =============================================================================
 
 BEGIN;
@@ -34,10 +35,6 @@ WHERE ride_id IN (SELECT id FROM public.ride_bookings);
 DELETE FROM public.ride_bookings;
 
 -- ── 2. Driver profiles (all drivers) ──────────────────────────────────────────
-UPDATE public.driver_profiles
-SET is_online = false
-WHERE is_online = true;
-
 DELETE FROM public.driver_profiles;
 
 -- ── 3. Ride driver listings ───────────────────────────────────────────────────
@@ -86,9 +83,25 @@ SELECT 'ride_bookings', count(*) FROM public.ride_bookings;
 -- Replace USER_ID and LISTING_ID from new signup:
 --
 -- UPDATE public.driver_profiles
--- SET is_active_driver = true, is_online = false, updated_at = now()
+-- SET is_active_driver = true, updated_at = now()
 -- WHERE user_id = 'PASTE_NEW_USER_ID';
+-- (If Phase 4 migration applied, also: is_online = false)
 --
 -- UPDATE public.listings
 -- SET is_verified = true, status = 'active'
 -- WHERE id = 'PASTE_NEW_LISTING_ID' AND subcategory_kind = 'ride';
+
+-- =============================================================================
+-- PREREQUISITE — Phase 4 columns (run ONCE if Conectar fails / is_online missing)
+-- Copy from: supabase/migrations/20260523120000_rides_phase4_driver_online.sql
+-- =============================================================================
+--
+-- ALTER TABLE public.driver_profiles
+--   ADD COLUMN IF NOT EXISTS is_online BOOLEAN NOT NULL DEFAULT false,
+--   ADD COLUMN IF NOT EXISTS last_lat DOUBLE PRECISION NULL,
+--   ADD COLUMN IF NOT EXISTS last_lng DOUBLE PRECISION NULL,
+--   ADD COLUMN IF NOT EXISTS last_location_at TIMESTAMPTZ NULL;
+--
+-- CREATE INDEX IF NOT EXISTS idx_driver_profiles_online
+--   ON public.driver_profiles (is_online, is_active_driver)
+--   WHERE is_online = true AND is_active_driver = true;
