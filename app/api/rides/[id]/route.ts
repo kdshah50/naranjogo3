@@ -24,6 +24,13 @@ export async function GET(
   if (!rideId) {
     return NextResponse.json({ error: "ID requerido" }, { status: 400 });
   }
+  // Static ride tools live outside /api/rides/[id] (e.g. /api/rides-dispatch-debug).
+  if (rideId === "debug-dispatch") {
+    return NextResponse.json(
+      { error: "Usa GET /api/rides-dispatch-debug?pickup_colonia=centro" },
+      { status: 404 },
+    );
+  }
 
   try {
     const supabase = createAdminSupabase();
