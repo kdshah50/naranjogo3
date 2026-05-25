@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { userIdsForAuthPhone } from "@/lib/resolve-login-user";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 
 export type DriverProfileOnlineRow = {
@@ -13,11 +14,10 @@ export type DriverProfileOnlineRow = {
 };
 
 /** Active driver profile for this login, including duplicate-user rows tied by phone. */
-export async function findActiveDriverProfileForAccount(
+async function queryActiveDriverProfile(
   supabase: SupabaseClient,
-  userId: string,
+  idPool: string[],
 ): Promise<DriverProfileOnlineRow | null> {
-  const idPool = await expandUserAccountIdPool(supabase, userId);
   if (idPool.length === 0) return null;
 
   const { data, error } = await supabase
@@ -30,18 +30,34 @@ export async function findActiveDriverProfileForAccount(
     .maybeSingle();
 
   if (error) {
-    console.error("[driver-account] findActiveDriverProfileForAccount", error);
+    console.error("[driver-account] queryActiveDriverProfile", error);
     return null;
   }
   return (data as DriverProfileOnlineRow) ?? null;
+}
+
+export async function findActiveDriverProfileForAccount(
+  supabase: SupabaseClient,
+  userId: string,
+  options?: { authPhone?: string | null },
+): Promise<DriverProfileOnlineRow | null> {
+  const idPool = await expandUserAccountIdPool(supabase, userId, options);
+  const fromPool = await queryActiveDriverProfile(supabase, idPool);
+  if (fromPool) return fromPool;
+
+  if (!options?.authPhone) return null;
+
+  const phoneIds = await userIdsForAuthPhone(supabase, options.authPhone);
+  return queryActiveDriverProfile(supabase, phoneIds);
 }
 
 /** Any driver profile row for account pool (pending approval). */
 export async function findAnyDriverProfileForAccount(
   supabase: SupabaseClient,
   userId: string,
+  options?: { authPhone?: string | null },
 ): Promise<DriverProfileOnlineRow | null> {
-  const idPool = await expandUserAccountIdPool(supabase, userId);
+  const idPool = await expandUserAccountIdPool(supabase, userId, options);
   if (idPool.length === 0) return null;
 
   const { data, error } = await supabase

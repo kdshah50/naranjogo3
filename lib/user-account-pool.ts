@@ -22,8 +22,21 @@ const MAX_ACCOUNT_POOL_PHONE_ITERS = 6;
  * (including transitive: A–B share a phone, B–C share another → A,B,C merge).
  * Fixes provider logged in as one row while listings/bookings use another `seller_id`.
  */
-export async function expandUserAccountIdPool(supabase: SupabaseClient, userId: string): Promise<string[]> {
+export async function expandUserAccountIdPool(
+  supabase: SupabaseClient,
+  userId: string,
+  options?: { authPhone?: string | null },
+): Promise<string[]> {
   const pool = new Set<string>(idMatchVariantsForIn(userId));
+
+  // JWT may carry canonical phone even when the `sub` row has null/wrong phone.
+  const authVariants = options?.authPhone ? phoneLookupVariants(options.authPhone) : [];
+  if (authVariants.length > 0) {
+    const { data: samePhone } = await supabase.from("users").select("id").in("phone", authVariants);
+    for (const row of samePhone ?? []) {
+      for (const v of idMatchVariantsForIn(row.id)) pool.add(v);
+    }
+  }
 
   for (let iter = 0; iter < MAX_ACCOUNT_POOL_PHONE_ITERS; iter++) {
     const beforeSize = pool.size;

@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminSupabase, getUserIdFromRequest } from "@/lib/auth-server";
+import {
+  createAdminSupabase,
+  getTianguisJwtPayloadFromRequest,
+  getUserIdFromRequest,
+} from "@/lib/auth-server";
 import { isRidesEnabled } from "@/lib/rides/flags";
 import { signedDriverDocUrl } from "@/lib/rides/driver-storage";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
@@ -23,7 +27,12 @@ export async function GET(req: NextRequest) {
     }
 
     const supabase = createAdminSupabase();
-    const idPool = await expandUserAccountIdPool(supabase, userId);
+    const payload = await getTianguisJwtPayloadFromRequest(req);
+    const authPhone =
+      typeof payload?.phone === "string" && payload.phone.trim().length > 0
+        ? payload.phone.trim()
+        : null;
+    const idPool = await expandUserAccountIdPool(supabase, userId, { authPhone });
 
     const { data: activeProfiles, error: activeErr } = await supabase
       .from("driver_profiles")

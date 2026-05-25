@@ -1,6 +1,8 @@
+import { createAdminSupabase } from "@/lib/auth-server";
 import { COLONIAS, coloniaLabel } from "@/lib/colonias";
 import { canonicalizeAuthPhone, normalizeAuthPhone } from "@/lib/phone";
 import { getServiceRoleRestHeaders, getSupabaseUrl } from "@/lib/service-rest";
+import { pickLoginUserForPhone } from "@/lib/resolve-login-user";
 import { phoneLookupVariants } from "@/lib/user-account-pool";
 import {
   type DriverSignupInput,
@@ -32,6 +34,20 @@ export async function findOrCreateUserByPhone(args: {
   const h = { ...getServiceRoleRestHeaders(), "Content-Type": "application/json" as const };
   const phone = canonicalizeAuthPhone(normalizeAuthPhone(args.phone.replace(/\s/g, "")));
 
+  const picked = await pickLoginUserForPhone(createAdminSupabase(), phone);
+  if (picked?.id) {
+    const userId = picked.id;
+    const patch: Record<string, string> = { phone };
+    if (args.curp) patch.curp = args.curp;
+    if (args.rfc) patch.rfc = args.rfc;
+    await fetch(`${SUPA_URL}/rest/v1/users?id=eq.${encodeURIComponent(userId)}`, {
+      method: "PATCH",
+      headers: h,
+      body: JSON.stringify(patch),
+    }).catch(() => {});
+    return { ok: true, userId };
+  }
+
   for (const phoneVariant of phoneLookupVariants(phone)) {
     const userRes = await fetch(
       `${SUPA_URL}/rest/v1/users?phone=eq.${encodeURIComponent(phoneVariant)}&select=id`,
@@ -43,7 +59,7 @@ export async function findOrCreateUserByPhone(args: {
       const patch: Record<string, string> = { phone };
       if (args.curp) patch.curp = args.curp;
       if (args.rfc) patch.rfc = args.rfc;
-      await fetch(`${SUPA_URL}/rest/v1/users?id=eq.${userId}`, {
+      await fetch(`${SUPA_URL}/rest/v1/users?id=eq.${encodeURIComponent(userId)}`, {
         method: "PATCH",
         headers: h,
         body: JSON.stringify(patch),

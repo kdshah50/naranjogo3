@@ -21,9 +21,14 @@ export async function POST(req: NextRequest) {
     lng?: number;
   };
 
-  const profile = await findActiveDriverProfileForAccount(guard.supabase, guard.userId);
+  const authOpts = { authPhone: guard.authPhone };
+  const profile = await findActiveDriverProfileForAccount(
+    guard.supabase,
+    guard.userId,
+    authOpts,
+  );
   if (!profile?.user_id) {
-    const any = await findAnyDriverProfileForAccount(guard.supabase, guard.userId);
+    const any = await findAnyDriverProfileForAccount(guard.supabase, guard.userId, authOpts);
     if (any && !any.is_active_driver) {
       return NextResponse.json(
         { error: "Tu conductor aún no está aprobado por admin.", code: "not_approved" },
@@ -89,11 +94,16 @@ export async function GET(req: NextRequest) {
   const guard = await ridesRouteGuard(req);
   if (!guard.ok) return guard.response;
 
-  const active = await findActiveDriverProfileForAccount(guard.supabase, guard.userId);
+  const authOpts = { authPhone: guard.authPhone };
+  const active = await findActiveDriverProfileForAccount(
+    guard.supabase,
+    guard.userId,
+    authOpts,
+  );
   if (active) {
     return NextResponse.json({ driver: active });
   }
 
-  const any = await findAnyDriverProfileForAccount(guard.supabase, guard.userId);
+  const any = await findAnyDriverProfileForAccount(guard.supabase, guard.userId, authOpts);
   return NextResponse.json({ driver: any });
 }
