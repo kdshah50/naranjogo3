@@ -3,6 +3,7 @@ import { createAdminSupabase, getUserIdFromRequest, isSameUserId } from "@/lib/a
 import { COLONIAS } from "@/lib/colonias";
 import { isRidesEnabled } from "@/lib/rides/flags";
 import { verifyInternalSecret } from "@/lib/rides/internal-auth";
+import { buildDispatchDebugReport } from "@/lib/rides/dispatch-debug";
 import {
   createRideRequest,
 } from "@/lib/rides/ride-bookings-server";
@@ -125,7 +126,15 @@ export async function POST(req: NextRequest) {
           : result.code === "no_drivers"
             ? 404
             : 400;
-      return NextResponse.json({ error: result.error, code: result.code }, { status });
+      const body: Record<string, unknown> = { error: result.error, code: result.code };
+      if (result.code === "no_drivers" && pickupColonia) {
+        body.dispatch_debug = await buildDispatchDebugReport(supabase, {
+          pickupColoniaKey: pickupColonia,
+          pickupLat: pickup.lat,
+          pickupLng: pickup.lng,
+        });
+      }
+      return NextResponse.json(body, { status });
     }
 
     await notifyBuyerRideCreated(supabase, {

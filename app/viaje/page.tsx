@@ -161,7 +161,11 @@ function ViajePageInner() {
         if (data?.code === "insufficient_balance") {
           setRequestError((data?.error ?? t.insufficientBalance) + t.topUpHint);
         } else if (data?.code === "no_drivers") {
-          setRequestError(data?.error ?? t.noDriversAvailable);
+          const hints =
+            data?.dispatch_debug?.checks?.length > 0
+              ? `\n\n${(data.dispatch_debug.checks as string[]).join("\n")}`
+              : "";
+          setRequestError((data?.error ?? t.noDriversAvailable) + hints);
         } else {
           setRequestError(data?.error ?? t.requestFailed);
         }
