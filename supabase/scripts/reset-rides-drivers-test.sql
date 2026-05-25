@@ -46,30 +46,13 @@ WHERE subcategory_kind = 'ride';
 --   Dashboard → Storage → bucket "driver-docs" → select all → Delete
 -- Or skip this step; new signup uploads new doc paths anyway.
 
--- ── 5. (Optional) Remove duplicate users for ONE test phone ───────────────────
--- Uncomment and set ids after you run the SELECT below.
--- Keep exactly ONE user row for the driver phone; delete the rest.
+-- ── 5. Duplicate users (same phone) ───────────────────────────────────────────
+-- Plain DELETE usually fails: FK from listings, service_bookings, wallets, etc.
 --
--- Preview which rows exist:
--- SELECT id, phone, display_name, created_at
--- FROM public.users
--- WHERE phone LIKE '%4151816902%'
---    OR phone IN ('524151816902', '+524151816902', '5214151816902')
--- ORDER BY created_at;
+-- Easiest (recommended): only normalize phones — run §A in:
+--   supabase/scripts/merge-duplicate-users-by-phone.sql
 --
--- Example (adjust ids to your query result — keep ONE row):
--- DELETE FROM public.users
--- WHERE id IN (
---   '94a74ff0-d2f4-46a7-b43e-85fb8f2cf524'::uuid,
---   '7003532b-1bba-4bbe-8b7e-b89e86051169'::uuid
--- );
--- AND id NOT IN ('3d5522b3-aedf-4625-80a1-8a79708bb893'::uuid);
-
--- Normalize phone on remaining test users (helps login + driver match):
--- UPDATE public.users
--- SET phone = '524151816902', phone_verified = true
--- WHERE phone LIKE '%4151816902%'
---    OR phone IN ('+524151816902', '5214151816902');
+-- To actually remove extra rows: use merge script §D (repoint then delete).
 
 COMMIT;
 

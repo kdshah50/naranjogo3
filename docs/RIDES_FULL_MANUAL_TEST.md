@@ -354,7 +354,7 @@ WHERE ride_booking_id = '<RIDE_ID>' ORDER BY created_at;
 | Invalid ticket on start | Wrong code | Copy exact NG-XXXXXXXX from buyer |
 | Duplicate user rows | Phone format +52 vs 52 | Log out at /unete; re-login; see `supabase/scripts/reset-rides-drivers-test.sql` |
 | “No active driver for this session” | Wrong `users` row / stale cookie | Log out; run reset SQL; one driver signup; approve in SQL |
-| Clean slate for drivers | Old profiles + duplicate phones | Run `supabase/scripts/reset-rides-drivers-test.sql` in Supabase (preview only) |
+| Clean slate for drivers | Old profiles + duplicate phones | Run `supabase/scripts/rides-clean-test-all-in-one.sql` (preview only) |
 
 ---
 
@@ -362,7 +362,7 @@ WHERE ride_booking_id = '<RIDE_ID>' ORDER BY created_at;
 
 **Preview / staging only.** In Supabase → **SQL Editor**, paste and run:
 
-`supabase/scripts/reset-rides-drivers-test.sql`
+`supabase/scripts/rides-clean-test-all-in-one.sql`
 
 Then:
 
@@ -371,7 +371,7 @@ Then:
 3. Admin runs the approve block at the bottom of that SQL file (`is_active_driver`, `is_verified`).
 4. Driver opens `/conductor/viajes` → **Conectar**.
 
-Optional: uncomment §4 in the script to delete duplicate `users` rows for the same phone (keep one id only).
+Do **not** `UPDATE` all duplicate users to the same `phone` — `users_phone_key` is unique. Leave multiple rows or use `merge-duplicate-users-by-phone.sql` §D to repoint then delete extras.
 
 ---
 
