@@ -25,19 +25,33 @@ export async function GET(req: NextRequest) {
     const supabase = createAdminSupabase();
     const idPool = await expandUserAccountIdPool(supabase, userId);
 
-    const { data: profiles, error: pErr } = await supabase
+    const { data: activeProfiles, error: activeErr } = await supabase
       .from("driver_profiles")
       .select("*")
       .in("user_id", idPool)
-      .order("created_at", { ascending: false })
+      .eq("is_active_driver", true)
+      .order("updated_at", { ascending: false })
       .limit(1);
 
-    if (pErr) {
-      console.error("[rides/drivers/me] profile", pErr);
+    if (activeErr) {
+      console.error("[rides/drivers/me] profile active", activeErr);
       return NextResponse.json({ error: "No se pudo cargar el perfil" }, { status: 500 });
     }
 
-    const profile = profiles?.[0];
+    let profile = activeProfiles?.[0];
+    if (!profile) {
+      const { data: anyProfiles, error: anyErr } = await supabase
+        .from("driver_profiles")
+        .select("*")
+        .in("user_id", idPool)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      if (anyErr) {
+        console.error("[rides/drivers/me] profile", anyErr);
+        return NextResponse.json({ error: "No se pudo cargar el perfil" }, { status: 500 });
+      }
+      profile = anyProfiles?.[0];
+    }
     if (!profile) {
       return NextResponse.json({ driver: null });
     }

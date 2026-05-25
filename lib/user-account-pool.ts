@@ -7,7 +7,12 @@ export function phoneLookupVariants(phone: string | null | undefined): string[] 
   if (phone == null || !String(phone).trim()) return [];
   const raw = String(phone).trim();
   const digits = canonicalizeAuthPhone(normalizeAuthPhone(raw));
-  return [...new Set([raw, digits, `+${digits}`].filter(Boolean))];
+  const out = new Set([raw, digits, `+${digits}`].filter(Boolean));
+  // Legacy rows sometimes store Mexico as 521 + 10 digits instead of 52 + 10.
+  if (/^52\d{10}$/.test(digits)) {
+    out.add(`521${digits.slice(2)}`);
+  }
+  return [...out];
 }
 
 const MAX_ACCOUNT_POOL_PHONE_ITERS = 6;

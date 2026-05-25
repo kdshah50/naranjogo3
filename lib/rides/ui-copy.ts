@@ -193,6 +193,11 @@ const DRIVER_TRIPS = {
     connect: "Conectar",
     profileLoadFailed: "No se pudo cargar el perfil de conductor",
     toggleFailed: "No se pudo cambiar el estado",
+    notApproved: "Tu conductor aún no está aprobado por admin.",
+    wrongSession:
+      "No encontramos conductor activo para esta sesión. Cierra sesión en /unete e inicia con el mismo WhatsApp del registro (415 181 6902).",
+    schemaMissing:
+      "Falta migración Phase 4 en Supabase (columnas is_online en driver_profiles).",
     actionFailed: "Acción fallida",
     noActiveTrips: "No tienes viajes activos.",
     estFare: "Tarifa est.:",
@@ -217,6 +222,11 @@ const DRIVER_TRIPS = {
     connect: "Go online",
     profileLoadFailed: "Could not load driver profile",
     toggleFailed: "Could not change status",
+    notApproved: "Your driver account is not approved by admin yet.",
+    wrongSession:
+      "No active driver for this session. Log out at /unete and sign in with the same WhatsApp used for driver signup (415 181 6902).",
+    schemaMissing:
+      "Missing Phase 4 migration in Supabase (is_online columns on driver_profiles).",
     actionFailed: "Action failed",
     noActiveTrips: "You have no active rides.",
     estFare: "Est. fare:",

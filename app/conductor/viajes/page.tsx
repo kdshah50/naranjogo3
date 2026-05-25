@@ -94,7 +94,7 @@ function ConductorViajesInner() {
         setError(data?.error ?? t.toggleFailed);
         return;
       }
-      setOnline(data.driver ?? null);
+      await load();
     } finally {
       setBusy(null);
     }

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ridesRouteGuard } from "@/lib/rides/ride-route-guard";
-import { expandUserAccountIdPool } from "@/lib/user-account-pool";
+import {
+  findActiveDriverProfileForAccount,
+  findAnyDriverProfileForAccount,
+} from "@/lib/rides/driver-account";
 
 export const dynamic = "force-dynamic";
 
@@ -18,17 +21,23 @@ export async function POST(req: NextRequest) {
     lng?: number;
   };
 
-  const idPool = await expandUserAccountIdPool(guard.supabase, guard.userId);
-  const { data: profile } = await guard.supabase
-    .from("driver_profiles")
-    .select("user_id,is_active_driver")
-    .in("user_id", idPool)
-    .eq("is_active_driver", true)
-    .limit(1)
-    .maybeSingle();
-
+  const profile = await findActiveDriverProfileForAccount(guard.supabase, guard.userId);
   if (!profile?.user_id) {
-    return NextResponse.json({ error: "No eres conductor activo" }, { status: 403 });
+    const any = await findAnyDriverProfileForAccount(guard.supabase, guard.userId);
+    if (any && !any.is_active_driver) {
+      return NextResponse.json(
+        { error: "Tu conductor aún no está aprobado por admin.", code: "not_approved" },
+        { status: 403 },
+      );
+    }
+    return NextResponse.json(
+      {
+        error:
+          "No encontramos un conductor activo para esta sesión. Cierra sesión en /unete e inicia con el mismo WhatsApp del registro (415 181 6902).",
+        code: "not_active_driver",
+      },
+      { status: 403 },
+    );
   }
 
   const online = body.online !== false;
@@ -37,7 +46,12 @@ export async function POST(req: NextRequest) {
     updated_at: new Date().toISOString(),
   };
 
-  if (typeof body.lat === "number" && typeof body.lng === "number" && Number.isFinite(body.lat) && Number.isFinite(body.lng)) {
+  if (
+    typeof body.lat === "number" &&
+    typeof body.lng === "number" &&
+    Number.isFinite(body.lat) &&
+    Number.isFinite(body.lng)
+  ) {
     patch.last_lat = body.lat;
     patch.last_lng = body.lng;
     patch.last_location_at = new Date().toISOString();
@@ -47,12 +61,24 @@ export async function POST(req: NextRequest) {
     .from("driver_profiles")
     .update(patch)
     .eq("user_id", profile.user_id)
-    .select("user_id,is_online,last_lat,last_lng,last_location_at")
+    .select("user_id,is_online,is_active_driver,last_lat,last_lng,last_location_at")
     .maybeSingle();
 
   if (error || !updated) {
     console.error("[rides/drivers/me/online] POST", error);
-    return NextResponse.json({ error: "No se pudo actualizar estado" }, { status: 500 });
+    const missingColumn =
+      error?.message?.includes("is_online") ||
+      error?.message?.includes("last_lat") ||
+      error?.code === "42703";
+    return NextResponse.json(
+      {
+        error: missingColumn
+          ? "Falta migración Phase 4 en Supabase (columnas is_online / GPS en driver_profiles)."
+          : "No se pudo actualizar estado",
+        code: missingColumn ? "schema_missing" : "update_failed",
+      },
+      { status: 500 },
+    );
   }
 
   return NextResponse.json({ driver: updated });
@@ -63,17 +89,11 @@ export async function GET(req: NextRequest) {
   const guard = await ridesRouteGuard(req);
   if (!guard.ok) return guard.response;
 
-  const idPool = await expandUserAccountIdPool(guard.supabase, guard.userId);
-  const { data: profile } = await guard.supabase
-    .from("driver_profiles")
-    .select("user_id,is_online,last_lat,last_lng,last_location_at,is_active_driver")
-    .in("user_id", idPool)
-    .limit(1)
-    .maybeSingle();
-
-  if (!profile) {
-    return NextResponse.json({ driver: null });
+  const active = await findActiveDriverProfileForAccount(guard.supabase, guard.userId);
+  if (active) {
+    return NextResponse.json({ driver: active });
   }
 
-  return NextResponse.json({ driver: profile });
+  const any = await findAnyDriverProfileForAccount(guard.supabase, guard.userId);
+  return NextResponse.json({ driver: any });
 }
