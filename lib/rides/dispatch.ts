@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { COLONIAS, type ColoniaInfo } from "@/lib/colonias";
 import { haversineMeters } from "@/lib/rides/ride-pricing";
+import { idMatchVariantsForIn } from "@/lib/user-id-variants";
 
 export type NearbyDriver = {
   user_id: string;
@@ -49,7 +50,7 @@ export async function findNearbyDrivers(
     let q = supabase
       .from("driver_profiles")
       .select(
-        "user_id,vehicle_make,vehicle_model,vehicle_color,service_colonias,is_active_driver,is_online"
+        "user_id,vehicle_make,vehicle_model,vehicle_color,service_colonias,is_active_driver,is_online,last_lat,last_lng"
       )
       .eq("is_active_driver", true);
     if (onlineOnly) q = q.eq("is_online", true);
@@ -75,17 +76,29 @@ export async function findNearbyDrivers(
   if (!profiles?.length) return [];
 
   const userIds = profiles.map((p) => String(p.user_id));
+  const sellerVariants = [...new Set(userIds.flatMap((id) => idMatchVariantsForIn(id)))];
   const { data: listings } = await supabase
     .from("listings")
     .select("id,seller_id,title_es,is_verified,subcategory_kind,status")
-    .in("seller_id", userIds)
-    .eq("subcategory_kind", "ride")
+    .in("seller_id", sellerVariants)
     .eq("is_verified", true)
     .neq("status", "deleted");
 
   const listingBySeller = new Map<string, { id: string; title_es: string | null }>();
   for (const row of listings ?? []) {
+    const isRide =
+      row.subcategory_kind === "ride" ||
+      (row.subcategory_kind == null &&
+        typeof row.title_es === "string" &&
+        /taxi|transporte|ride/i.test(row.title_es));
+    if (!isRide) continue;
     const sid = String(row.seller_id).toLowerCase();
+    for (const variant of idMatchVariantsForIn(String(row.seller_id))) {
+      const key = variant.toLowerCase();
+      if (!listingBySeller.has(key)) {
+        listingBySeller.set(key, { id: String(row.id), title_es: row.title_es as string | null });
+      }
+    }
     if (!listingBySeller.has(sid)) {
       listingBySeller.set(sid, { id: String(row.id), title_es: row.title_es as string | null });
     }
@@ -107,30 +120,53 @@ export async function findNearbyDrivers(
     const uid = String(profile.user_id).toLowerCase();
     if (busyDriverIds.has(uid)) continue;
 
-    const listing = listingBySeller.get(uid);
+    const listing =
+      listingBySeller.get(uid) ??
+      idMatchVariantsForIn(String(profile.user_id))
+        .map((v) => listingBySeller.get(v.toLowerCase()))
+        .find(Boolean);
     if (!listing) continue;
 
     const serviceColonias = (profile.service_colonias as string[]) ?? [];
-    if (!driverServesColonia(serviceColonias, args.pickupColoniaKey ?? null)) continue;
+    const pickupKey = args.pickupColoniaKey ?? null;
 
-    let bestKey = args.pickupColoniaKey ?? serviceColonias[0] ?? "centro";
+    let bestKey = pickupKey ?? serviceColonias[0] ?? "centro";
     let bestDist = Number.POSITIVE_INFINITY;
     let bestLabel = COLONIAS[bestKey]?.label ?? bestKey;
 
-    const keysToTry =
-      serviceColonias.length > 0 ? serviceColonias : Object.keys(COLONIAS).filter((k) => k !== "otro");
+    const lastLat = profile.last_lat as number | null | undefined;
+    const lastLng = profile.last_lng as number | null | undefined;
+    const hasGps =
+      profile.is_online === true &&
+      typeof lastLat === "number" &&
+      typeof lastLng === "number" &&
+      Number.isFinite(lastLat) &&
+      Number.isFinite(lastLng);
 
-    for (const key of keysToTry) {
-      const center = coloniaCenter(key);
-      if (!center) continue;
-      const d = haversineMeters(args.pickupLat, args.pickupLng, center.lat, center.lng);
-      if (d < bestDist) {
-        bestDist = d;
-        bestKey = key;
-        bestLabel = center.label;
+    if (hasGps) {
+      bestDist = haversineMeters(args.pickupLat, args.pickupLng, lastLat, lastLng);
+    }
+
+    const coloniaOk = driverServesColonia(serviceColonias, pickupKey);
+    if (!coloniaOk && !hasGps) continue;
+
+    if (!hasGps || bestDist > maxDistanceM) {
+      const keysToTry =
+        serviceColonias.length > 0 ? serviceColonias : Object.keys(COLONIAS).filter((k) => k !== "otro");
+
+      for (const key of keysToTry) {
+        const center = coloniaCenter(key);
+        if (!center) continue;
+        const d = haversineMeters(args.pickupLat, args.pickupLng, center.lat, center.lng);
+        if (d < bestDist) {
+          bestDist = d;
+          bestKey = key;
+          bestLabel = center.label;
+        }
       }
     }
 
+    if (!coloniaOk && bestDist > maxDistanceM) continue;
     if (bestDist > maxDistanceM) continue;
 
     candidates.push({
