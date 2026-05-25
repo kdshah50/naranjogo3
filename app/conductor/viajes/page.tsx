@@ -62,13 +62,16 @@ function ConductorViajesInner() {
     } else if (tRes.ok) {
       setTrips(tData.trips ?? []);
     }
-  }, [t.profileLoadFailed]);
+  }, [t.profileLoadFailed, t.tripsLoadFailed]);
+
+  const isOnline = Boolean(online?.is_online);
 
   useEffect(() => {
     load();
-    const timer = setInterval(load, 8000);
+    const ms = isOnline && trips.length === 0 ? 3000 : 8000;
+    const timer = setInterval(load, ms);
     return () => clearInterval(timer);
-  }, [load]);
+  }, [load, isOnline, trips.length]);
 
   const toggleOnline = async (next: boolean) => {
     setBusy("online");
@@ -125,8 +128,6 @@ function ConductorViajesInner() {
     }
   };
 
-  const isOnline = Boolean(online?.is_online);
-
   return (
     <main className="min-h-screen bg-[#F8F4ED] text-[#1B4332]">
       <div className="mx-auto max-w-lg px-4 py-8">
@@ -174,7 +175,15 @@ function ConductorViajesInner() {
         {error && <p className="mb-4 text-sm text-red-700">{error}</p>}
 
         {trips.length === 0 ? (
-          <p className="text-sm text-[#1B4332]/70">{t.noActiveTrips}</p>
+          <div className="space-y-2">
+            <p className="text-sm text-[#1B4332]/70">{t.noActiveTrips}</p>
+            {isOnline && (
+              <p className="text-xs text-[#1B4332]/50">
+                {t.staleTripHint}{" "}
+                <code className="text-[11px]">/api/rides-drivers-trips-debug</code>
+              </p>
+            )}
+          </div>
         ) : (
           <ul className="space-y-4">
             {trips.map((trip) => (

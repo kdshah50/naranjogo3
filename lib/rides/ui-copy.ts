@@ -201,6 +201,8 @@ const DRIVER_TRIPS = {
       "Falta migración Phase 4 en Supabase (columnas is_online en driver_profiles).",
     actionFailed: "Acción fallida",
     noActiveTrips: "No tienes viajes activos.",
+    staleTripHint:
+      "Si WhatsApp muestra un ticket pero no aparece aquí, abre (logueado como conductor)",
     estFare: "Tarifa est.:",
     passengerCode: "Código del pasajero:",
     acceptRide: "Aceptar viaje",
@@ -231,6 +233,8 @@ const DRIVER_TRIPS = {
       "Missing Phase 4 migration in Supabase (is_online columns on driver_profiles).",
     actionFailed: "Action failed",
     noActiveTrips: "You have no active rides.",
+    staleTripHint:
+      "If WhatsApp shows a ticket but nothing here, open while logged in as driver:",
     estFare: "Est. fare:",
     passengerCode: "Passenger code:",
     acceptRide: "Accept ride",

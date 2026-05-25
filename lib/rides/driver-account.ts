@@ -3,6 +3,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { userIdsForAuthPhone } from "@/lib/resolve-login-user";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
+import { idMatchVariantsForIn } from "@/lib/user-id-variants";
 
 export type DriverProfileOnlineRow = {
   user_id: string;
@@ -23,7 +24,18 @@ export async function driverRideAccountIdPool(
 ): Promise<string[]> {
   const profile = await findActiveDriverProfileForAccount(supabase, userId, options);
   const rootId = profile?.user_id ?? userId;
-  return expandUserAccountIdPool(supabase, rootId, options);
+  const pool = new Set<string>(await expandUserAccountIdPool(supabase, rootId, options));
+
+  if (profile?.user_id) {
+    for (const v of idMatchVariantsForIn(String(profile.user_id))) pool.add(v);
+  }
+  if (options?.authPhone) {
+    for (const id of await userIdsForAuthPhone(supabase, options.authPhone)) {
+      for (const v of idMatchVariantsForIn(id)) pool.add(v);
+    }
+  }
+
+  return [...pool].filter(Boolean);
 }
 
 /** Active driver profile for this login, including duplicate-user rows tied by phone. */

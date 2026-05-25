@@ -17,10 +17,12 @@ import {
   hasHoldForRide,
   releaseWalletHoldForRide,
 } from "@/lib/rides/wallet-hold";
-import { driverRideAccountIdPool } from "@/lib/rides/driver-account";
+import { driverRideAccountIdPool, findActiveDriverProfileForAccount } from "@/lib/rides/driver-account";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 
 export type RideAccountOptions = { authPhone?: string | null };
+
+const ACTIVE_DRIVER_TRIP_STATUSES = ["matched", "accepted", "arrived", "in_trip"] as const;
 
 export type TripResult =
   | { ok: true; ride: RideBookingRow }
@@ -422,20 +424,55 @@ export async function listActiveTripsForDriver(
   driverUserId: string,
   options?: RideAccountOptions,
 ): Promise<RideBookingRow[]> {
+  const profile = await findActiveDriverProfileForAccount(supabase, driverUserId, options);
+  if (!profile?.user_id) return [];
+
   const pool = await driverRideAccountIdPool(supabase, driverUserId, options);
+  const poolMatch = (driverId: string | null | undefined) =>
+    Boolean(driverId && pool.some((id) => isSameUserId(id, driverId)));
+
   const { data, error } = await supabase
     .from("ride_bookings")
     .select("*")
-    .in("driver_id", pool)
-    .in("status", ["matched", "accepted", "arrived", "in_trip"])
+    .eq("driver_id", String(profile.user_id).trim().toLowerCase())
+    .in("status", [...ACTIVE_DRIVER_TRIP_STATUSES])
     .order("created_at", { ascending: false })
     .limit(20);
 
-  if (error) {
-    console.error("[ride-trip] listActiveTripsForDriver", error);
-    return [];
+  if (error) console.error("[ride-trip] listActiveTripsForDriver eq", error);
+
+  let rows = ((data ?? []) as RideBookingRow[]).filter((r) => poolMatch(r.driver_id));
+
+  if (rows.length === 0) {
+    const { data: byPool, error: poolErr } = await supabase
+      .from("ride_bookings")
+      .select("*")
+      .in("driver_id", pool)
+      .in("status", [...ACTIVE_DRIVER_TRIP_STATUSES])
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    if (poolErr) console.error("[ride-trip] listActiveTripsForDriver in", poolErr);
+    rows = ((byPool ?? []) as RideBookingRow[]).filter((r) => poolMatch(r.driver_id));
   }
-  return (data ?? []) as RideBookingRow[];
+
+  if (rows.length === 0) {
+    const { data: recent, error: recentErr } = await supabase
+      .from("ride_bookings")
+      .select("*")
+      .in("status", [...ACTIVE_DRIVER_TRIP_STATUSES])
+      .not("driver_id", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(40);
+
+    if (recentErr) console.error("[ride-trip] listActiveTripsForDriver scan", recentErr);
+    rows = ((recent ?? []) as RideBookingRow[]).filter((r) => poolMatch(r.driver_id));
+  }
+
+  rows.sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+  );
+  return rows.slice(0, 20);
 }
 
 export async function listActiveTripsForBuyer(
