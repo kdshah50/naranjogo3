@@ -22,6 +22,7 @@ export async function POST(
     rideId: id,
     driverUserId: guard.userId,
     ticketCode,
+    authPhone: guard.authPhone,
   });
   if (!result.ok) return tripErrorResponse(result);
   return NextResponse.json({ ride: result.ride });

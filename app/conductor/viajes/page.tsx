@@ -57,7 +57,11 @@ function ConductorViajesInner() {
     } else {
       setOnline(oData.driver ?? null);
     }
-    if (tRes.ok) setTrips(tData.trips ?? []);
+    if (!tRes.ok && tRes.status !== 404) {
+      setError(tData?.error ?? t.tripsLoadFailed);
+    } else if (tRes.ok) {
+      setTrips(tData.trips ?? []);
+    }
   }, [t.profileLoadFailed]);
 
   useEffect(() => {

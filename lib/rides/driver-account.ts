@@ -13,6 +13,19 @@ export type DriverProfileOnlineRow = {
   last_location_at: string | null;
 };
 
+export type DriverAccountOptions = { authPhone?: string | null };
+
+/** Pool for ride assignment lookups — includes approved driver profile + duplicate phone rows. */
+export async function driverRideAccountIdPool(
+  supabase: SupabaseClient,
+  userId: string,
+  options?: DriverAccountOptions,
+): Promise<string[]> {
+  const profile = await findActiveDriverProfileForAccount(supabase, userId, options);
+  const rootId = profile?.user_id ?? userId;
+  return expandUserAccountIdPool(supabase, rootId, options);
+}
+
 /** Active driver profile for this login, including duplicate-user rows tied by phone. */
 async function queryActiveDriverProfile(
   supabase: SupabaseClient,

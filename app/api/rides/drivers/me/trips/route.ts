@@ -9,6 +9,8 @@ export async function GET(req: NextRequest) {
   const guard = await ridesRouteGuard(req);
   if (!guard.ok) return guard.response;
 
-  const trips = await listActiveTripsForDriver(guard.supabase, guard.userId);
+  const trips = await listActiveTripsForDriver(guard.supabase, guard.userId, {
+    authPhone: guard.authPhone,
+  });
   return NextResponse.json({ trips });
 }

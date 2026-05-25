@@ -22,9 +22,10 @@ export async function GET(req: NextRequest) {
     .maybeSingle();
 
   const asDriver = Boolean(profile?.user_id);
+  const accountOpts = { authPhone: guard.authPhone };
   const [buyerTrips, driverTrips] = await Promise.all([
-    listActiveTripsForBuyer(guard.supabase, guard.userId),
-    asDriver ? listActiveTripsForDriver(guard.supabase, guard.userId) : Promise.resolve([]),
+    listActiveTripsForBuyer(guard.supabase, guard.userId, accountOpts),
+    asDriver ? listActiveTripsForDriver(guard.supabase, guard.userId, accountOpts) : Promise.resolve([]),
   ]);
 
   return NextResponse.json({

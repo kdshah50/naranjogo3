@@ -17,7 +17,10 @@ import {
   hasHoldForRide,
   releaseWalletHoldForRide,
 } from "@/lib/rides/wallet-hold";
-import { expandUserAccountIdPool, poolsOverlap } from "@/lib/user-account-pool";
+import { driverRideAccountIdPool } from "@/lib/rides/driver-account";
+import { expandUserAccountIdPool } from "@/lib/user-account-pool";
+
+export type RideAccountOptions = { authPhone?: string | null };
 
 export type TripResult =
   | { ok: true; ride: RideBookingRow }
@@ -44,29 +47,35 @@ async function updateRideStatus(
 export async function userCanAccessRide(
   supabase: SupabaseClient,
   userId: string,
-  ride: RideBookingRow
+  ride: RideBookingRow,
+  options?: RideAccountOptions,
 ): Promise<"buyer" | "driver" | null> {
-  const pool = await expandUserAccountIdPool(supabase, userId);
-  if (pool.some((id) => isSameUserId(id, ride.buyer_id))) return "buyer";
-  if (ride.driver_id && pool.some((id) => isSameUserId(id, ride.driver_id))) return "driver";
+  const buyerPool = await expandUserAccountIdPool(supabase, userId, options);
+  if (buyerPool.some((id) => isSameUserId(id, ride.buyer_id))) return "buyer";
+  if (ride.driver_id) {
+    const driverPool = await driverRideAccountIdPool(supabase, userId, options);
+    if (driverPool.some((id) => isSameUserId(id, ride.driver_id))) return "driver";
+  }
   return null;
 }
 
 export async function userIsDriverForRide(
   supabase: SupabaseClient,
   userId: string,
-  ride: RideBookingRow
+  ride: RideBookingRow,
+  options?: RideAccountOptions,
 ): Promise<boolean> {
-  return (await userCanAccessRide(supabase, userId, ride)) === "driver";
+  return (await userCanAccessRide(supabase, userId, ride, options)) === "driver";
 }
 
 export async function acceptRide(
   supabase: SupabaseClient,
-  args: { rideId: string; driverUserId: string }
+  args: { rideId: string; driverUserId: string; authPhone?: string | null }
 ): Promise<TripResult> {
   const ride = await getRideById(supabase, args.rideId);
   if (!ride) return { ok: false, error: "Viaje no encontrado" };
-  if (!(await userIsDriverForRide(supabase, args.driverUserId, ride))) {
+  const accountOpts = { authPhone: args.authPhone };
+  if (!(await userIsDriverForRide(supabase, args.driverUserId, ride, accountOpts))) {
     return { ok: false, error: "No autorizado", code: "forbidden" };
   }
   if (!canTransitionRideStatus(ride.status, "accepted")) {
@@ -89,11 +98,12 @@ export async function acceptRide(
 
 export async function arriveAtPickup(
   supabase: SupabaseClient,
-  args: { rideId: string; driverUserId: string }
+  args: { rideId: string; driverUserId: string; authPhone?: string | null }
 ): Promise<TripResult> {
   const ride = await getRideById(supabase, args.rideId);
   if (!ride) return { ok: false, error: "Viaje no encontrado" };
-  if (!(await userIsDriverForRide(supabase, args.driverUserId, ride))) {
+  const accountOpts = { authPhone: args.authPhone };
+  if (!(await userIsDriverForRide(supabase, args.driverUserId, ride, accountOpts))) {
     return { ok: false, error: "No autorizado", code: "forbidden" };
   }
   if (!canTransitionRideStatus(ride.status, "arrived")) {
@@ -116,11 +126,12 @@ export async function arriveAtPickup(
 
 export async function startTrip(
   supabase: SupabaseClient,
-  args: { rideId: string; driverUserId: string; ticketCode: string }
+  args: { rideId: string; driverUserId: string; ticketCode: string; authPhone?: string | null }
 ): Promise<TripResult> {
   const ride = await getRideById(supabase, args.rideId);
   if (!ride) return { ok: false, error: "Viaje no encontrado" };
-  if (!(await userIsDriverForRide(supabase, args.driverUserId, ride))) {
+  const accountOpts = { authPhone: args.authPhone };
+  if (!(await userIsDriverForRide(supabase, args.driverUserId, ride, accountOpts))) {
     return { ok: false, error: "No autorizado", code: "forbidden" };
   }
   if (!canTransitionRideStatus(ride.status, "in_trip")) {
@@ -154,11 +165,12 @@ export async function startTrip(
 
 export async function completeTrip(
   supabase: SupabaseClient,
-  args: { rideId: string; driverUserId: string; finalTotalMxnCents?: number }
+  args: { rideId: string; driverUserId: string; finalTotalMxnCents?: number; authPhone?: string | null }
 ): Promise<TripResult> {
   const ride = await getRideById(supabase, args.rideId);
   if (!ride) return { ok: false, error: "Viaje no encontrado" };
-  if (!(await userIsDriverForRide(supabase, args.driverUserId, ride))) {
+  const accountOpts = { authPhone: args.authPhone };
+  if (!(await userIsDriverForRide(supabase, args.driverUserId, ride, accountOpts))) {
     return { ok: false, error: "No autorizado", code: "forbidden" };
   }
   if (!canTransitionRideStatus(ride.status, "completed")) {
@@ -407,9 +419,10 @@ export async function disputeRide(
 
 export async function listActiveTripsForDriver(
   supabase: SupabaseClient,
-  driverUserId: string
+  driverUserId: string,
+  options?: RideAccountOptions,
 ): Promise<RideBookingRow[]> {
-  const pool = await expandUserAccountIdPool(supabase, driverUserId);
+  const pool = await driverRideAccountIdPool(supabase, driverUserId, options);
   const { data, error } = await supabase
     .from("ride_bookings")
     .select("*")
@@ -427,9 +440,10 @@ export async function listActiveTripsForDriver(
 
 export async function listActiveTripsForBuyer(
   supabase: SupabaseClient,
-  buyerUserId: string
+  buyerUserId: string,
+  options?: RideAccountOptions,
 ): Promise<RideBookingRow[]> {
-  const pool = await expandUserAccountIdPool(supabase, buyerUserId);
+  const pool = await expandUserAccountIdPool(supabase, buyerUserId, options);
   const { data, error } = await supabase
     .from("ride_bookings")
     .select("*")

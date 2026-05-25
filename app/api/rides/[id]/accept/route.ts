@@ -12,7 +12,11 @@ export async function POST(
   if (!guard.ok) return guard.response;
 
   const { id } = await ctx.params;
-  const result = await acceptRide(guard.supabase, { rideId: id, driverUserId: guard.userId });
+  const result = await acceptRide(guard.supabase, {
+    rideId: id,
+    driverUserId: guard.userId,
+    authPhone: guard.authPhone,
+  });
   if (!result.ok) return tripErrorResponse(result);
   return NextResponse.json({ ride: result.ride });
 }

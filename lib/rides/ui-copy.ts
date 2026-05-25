@@ -192,6 +192,7 @@ const DRIVER_TRIPS = {
     disconnect: "Desconectar",
     connect: "Conectar",
     profileLoadFailed: "No se pudo cargar el perfil de conductor",
+    tripsLoadFailed: "No se pudieron cargar los viajes asignados",
     toggleFailed: "No se pudo cambiar el estado",
     notApproved: "Tu conductor aún no está aprobado por admin.",
     wrongSession:
@@ -221,6 +222,7 @@ const DRIVER_TRIPS = {
     disconnect: "Go offline",
     connect: "Go online",
     profileLoadFailed: "Could not load driver profile",
+    tripsLoadFailed: "Could not load assigned rides",
     toggleFailed: "Could not change status",
     notApproved: "Your driver account is not approved by admin yet.",
     wrongSession:
