@@ -22,7 +22,7 @@ export async function driverRideAccountIdPool(
   userId: string,
   options?: DriverAccountOptions,
 ): Promise<string[]> {
-  const profile = await findActiveDriverProfileForAccount(supabase, userId, options);
+  const profile = await pickCanonicalDriverProfile(supabase, userId, options);
   const rootId = profile?.user_id ?? userId;
   const pool = new Set<string>(await expandUserAccountIdPool(supabase, rootId, options));
 
@@ -39,26 +39,85 @@ export async function driverRideAccountIdPool(
 }
 
 /** Active driver profile for this login, including duplicate-user rows tied by phone. */
-async function queryActiveDriverProfile(
+async function queryActiveDriverProfiles(
   supabase: SupabaseClient,
   idPool: string[],
-): Promise<DriverProfileOnlineRow | null> {
-  if (idPool.length === 0) return null;
+): Promise<DriverProfileOnlineRow[]> {
+  if (idPool.length === 0) return [];
 
   const { data, error } = await supabase
     .from("driver_profiles")
     .select("user_id,is_online,is_active_driver,last_lat,last_lng,last_location_at")
     .in("user_id", idPool)
     .eq("is_active_driver", true)
-    .order("updated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .order("updated_at", { ascending: false });
 
   if (error) {
-    console.error("[driver-account] queryActiveDriverProfile", error);
-    return null;
+    console.error("[driver-account] queryActiveDriverProfiles", error);
+    return [];
   }
-  return (data as DriverProfileOnlineRow) ?? null;
+  return (data ?? []) as DriverProfileOnlineRow[];
+}
+
+function isRideListingRow(row: {
+  subcategory_kind: string | null;
+  title_es: string | null;
+  status?: string | null;
+}): boolean {
+  const status = String(row.status ?? "").toLowerCase();
+  if (status === "deleted" || status === "archived") return false;
+  return (
+    row.subcategory_kind === "ride" ||
+    (row.subcategory_kind == null &&
+      typeof row.title_es === "string" &&
+      /taxi|transporte|ride/i.test(row.title_es))
+  );
+}
+
+/**
+ * Same driver row dispatch uses: active profile that owns a verified ride listing.
+ * Avoids picking the wrong duplicate-user profile (root cause of empty driver panel).
+ */
+export async function pickCanonicalDriverProfile(
+  supabase: SupabaseClient,
+  userId: string,
+  options?: DriverAccountOptions,
+): Promise<DriverProfileOnlineRow | null> {
+  const idPool = await expandUserAccountIdPool(supabase, userId, options);
+  const phoneIds = options?.authPhone
+    ? await userIdsForAuthPhone(supabase, options.authPhone)
+    : [];
+  const searchPool = [...new Set([...idPool, ...phoneIds.flatMap((id) => idMatchVariantsForIn(id))])];
+
+  let profiles = await queryActiveDriverProfiles(supabase, searchPool);
+  if (profiles.length === 0 && phoneIds.length > 0) {
+    profiles = await queryActiveDriverProfiles(supabase, phoneIds);
+  }
+  if (profiles.length === 0) return null;
+
+  for (const profile of profiles) {
+    const sellerPool = await expandUserAccountIdPool(supabase, profile.user_id, options);
+    const { data: listings } = await supabase
+      .from("listings")
+      .select("id,subcategory_kind,title_es,is_verified,status")
+      .in("seller_id", sellerPool)
+      .eq("is_verified", true);
+
+    if ((listings ?? []).some(isRideListingRow)) {
+      return profile;
+    }
+  }
+
+  const online = profiles.find((p) => p.is_online === true);
+  return online ?? profiles[0];
+}
+
+async function queryActiveDriverProfile(
+  supabase: SupabaseClient,
+  idPool: string[],
+): Promise<DriverProfileOnlineRow | null> {
+  const rows = await queryActiveDriverProfiles(supabase, idPool);
+  return rows[0] ?? null;
 }
 
 export async function findActiveDriverProfileForAccount(
@@ -66,6 +125,9 @@ export async function findActiveDriverProfileForAccount(
   userId: string,
   options?: { authPhone?: string | null },
 ): Promise<DriverProfileOnlineRow | null> {
+  const canonical = await pickCanonicalDriverProfile(supabase, userId, options);
+  if (canonical) return canonical;
+
   const idPool = await expandUserAccountIdPool(supabase, userId, options);
   const fromPool = await queryActiveDriverProfile(supabase, idPool);
   if (fromPool) return fromPool;

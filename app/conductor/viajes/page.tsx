@@ -17,6 +17,7 @@ type RideRow = {
 };
 
 type DriverOnline = {
+  user_id?: string;
   is_online: boolean;
   is_active_driver?: boolean;
 };
@@ -44,31 +45,32 @@ function ConductorViajesInner() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [ticketByRide, setTicketByRide] = useState<Record<string, string>>({});
+  const [canonicalUserId, setCanonicalUserId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [oRes, tRes] = await Promise.all([
-      fetch("/api/rides/drivers/me/online", { credentials: "include", cache: "no-store" }),
-      fetch("/api/rides/drivers/me/trips", { credentials: "include", cache: "no-store" }),
-    ]);
-    const oData = await oRes.json().catch(() => ({}));
-    const tData = await tRes.json().catch(() => ({}));
-    if (!oRes.ok && oRes.status !== 404) {
-      setError(oData?.error ?? t.profileLoadFailed);
-    } else {
-      setOnline(oData.driver ?? null);
+    const r = await fetch("/api/rides/drivers/me/panel", {
+      credentials: "include",
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok && r.status !== 404) {
+      setError(data?.error ?? t.panelLoadFailed);
+      return;
     }
-    if (!tRes.ok && tRes.status !== 404) {
-      setError(tData?.error ?? t.tripsLoadFailed);
-    } else if (tRes.ok) {
-      setTrips(tData.trips ?? []);
-    }
-  }, [t.profileLoadFailed, t.tripsLoadFailed]);
+    if (!r.ok) return;
+
+    setOnline(data.driver ?? null);
+    setTrips(Array.isArray(data.trips) ? data.trips : []);
+    setCanonicalUserId(data.canonical_user_id ?? data.driver?.user_id ?? null);
+    setError(null);
+  }, [t.panelLoadFailed]);
 
   const isOnline = Boolean(online?.is_online);
 
   useEffect(() => {
     load();
-    const ms = isOnline && trips.length === 0 ? 3000 : 8000;
+    const ms = isOnline && trips.length === 0 ? 3000 : 5000;
     const timer = setInterval(load, ms);
     return () => clearInterval(timer);
   }, [load, isOnline, trips.length]);
@@ -178,9 +180,15 @@ function ConductorViajesInner() {
           <div className="space-y-2">
             <p className="text-sm text-[#1B4332]/70">{t.noActiveTrips}</p>
             {isOnline && (
-              <p className="text-xs text-[#1B4332]/50">
-                {t.staleTripHint}{" "}
-                <code className="text-[11px]">/api/rides-drivers-trips-debug</code>
+              <p className="text-xs text-[#1B4332]/50 leading-relaxed">
+                {t.staleTripHint}
+                {canonicalUserId && (
+                  <>
+                    {" "}
+                    {t.driverIdLabel}{" "}
+                    <span className="font-mono">{canonicalUserId.slice(0, 8)}…</span>
+                  </>
+                )}
               </p>
             )}
           </div>

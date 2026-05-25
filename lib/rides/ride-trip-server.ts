@@ -24,6 +24,39 @@ export type RideAccountOptions = { authPhone?: string | null };
 
 const ACTIVE_DRIVER_TRIP_STATUSES = ["matched", "accepted", "arrived", "in_trip"] as const;
 
+/** Direct lookup by driver_profiles.user_id — same id dispatch writes to ride_bookings.driver_id. */
+export async function listActiveTripsForDriverProfile(
+  supabase: SupabaseClient,
+  profileUserId: string,
+): Promise<RideBookingRow[]> {
+  const driverId = String(profileUserId).trim();
+  if (!driverId) return [];
+
+  const { data, error } = await supabase
+    .from("ride_bookings")
+    .select("*")
+    .eq("driver_id", driverId)
+    .in("status", [...ACTIVE_DRIVER_TRIP_STATUSES])
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  if (error) {
+    console.error("[ride-trip] listActiveTripsForDriverProfile", error);
+    return [];
+  }
+  return (data ?? []) as RideBookingRow[];
+}
+
+export async function listActiveTripsForDriver(
+  supabase: SupabaseClient,
+  driverUserId: string,
+  options?: RideAccountOptions,
+): Promise<RideBookingRow[]> {
+  const profile = await findActiveDriverProfileForAccount(supabase, driverUserId, options);
+  if (!profile?.user_id) return [];
+  return listActiveTripsForDriverProfile(supabase, profile.user_id);
+}
+
 export type TripResult =
   | { ok: true; ride: RideBookingRow }
   | { ok: false; error: string; code?: string };
@@ -67,6 +100,10 @@ export async function userIsDriverForRide(
   ride: RideBookingRow,
   options?: RideAccountOptions,
 ): Promise<boolean> {
+  const profile = await findActiveDriverProfileForAccount(supabase, userId, options);
+  if (profile?.user_id && ride.driver_id && isSameUserId(profile.user_id, ride.driver_id)) {
+    return true;
+  }
   return (await userCanAccessRide(supabase, userId, ride, options)) === "driver";
 }
 
@@ -80,8 +117,15 @@ export async function acceptRide(
   if (!(await userIsDriverForRide(supabase, args.driverUserId, ride, accountOpts))) {
     return { ok: false, error: "No autorizado", code: "forbidden" };
   }
+  if (ride.status === "accepted") {
+    return { ok: true, ride };
+  }
   if (!canTransitionRideStatus(ride.status, "accepted")) {
-    return { ok: false, error: "No se puede aceptar en este estado", code: "invalid_state" };
+    return {
+      ok: false,
+      error: `No se puede aceptar en este estado (${ride.status})`,
+      code: "invalid_state",
+    };
   }
 
   const updated = await updateRideStatus(supabase, ride.id, "matched", { status: "accepted" });
@@ -417,62 +461,6 @@ export async function disputeRide(
   });
 
   return { ok: true, ride: updated as RideBookingRow };
-}
-
-export async function listActiveTripsForDriver(
-  supabase: SupabaseClient,
-  driverUserId: string,
-  options?: RideAccountOptions,
-): Promise<RideBookingRow[]> {
-  const profile = await findActiveDriverProfileForAccount(supabase, driverUserId, options);
-  if (!profile?.user_id) return [];
-
-  const pool = await driverRideAccountIdPool(supabase, driverUserId, options);
-  const poolMatch = (driverId: string | null | undefined) =>
-    Boolean(driverId && pool.some((id) => isSameUserId(id, driverId)));
-
-  const { data, error } = await supabase
-    .from("ride_bookings")
-    .select("*")
-    .eq("driver_id", String(profile.user_id).trim().toLowerCase())
-    .in("status", [...ACTIVE_DRIVER_TRIP_STATUSES])
-    .order("created_at", { ascending: false })
-    .limit(20);
-
-  if (error) console.error("[ride-trip] listActiveTripsForDriver eq", error);
-
-  let rows = ((data ?? []) as RideBookingRow[]).filter((r) => poolMatch(r.driver_id));
-
-  if (rows.length === 0) {
-    const { data: byPool, error: poolErr } = await supabase
-      .from("ride_bookings")
-      .select("*")
-      .in("driver_id", pool)
-      .in("status", [...ACTIVE_DRIVER_TRIP_STATUSES])
-      .order("created_at", { ascending: false })
-      .limit(20);
-
-    if (poolErr) console.error("[ride-trip] listActiveTripsForDriver in", poolErr);
-    rows = ((byPool ?? []) as RideBookingRow[]).filter((r) => poolMatch(r.driver_id));
-  }
-
-  if (rows.length === 0) {
-    const { data: recent, error: recentErr } = await supabase
-      .from("ride_bookings")
-      .select("*")
-      .in("status", [...ACTIVE_DRIVER_TRIP_STATUSES])
-      .not("driver_id", "is", null)
-      .order("created_at", { ascending: false })
-      .limit(40);
-
-    if (recentErr) console.error("[ride-trip] listActiveTripsForDriver scan", recentErr);
-    rows = ((recent ?? []) as RideBookingRow[]).filter((r) => poolMatch(r.driver_id));
-  }
-
-  rows.sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-  );
-  return rows.slice(0, 20);
 }
 
 export async function listActiveTripsForBuyer(

@@ -1,11 +1,8 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import {
-  driverRideAccountIdPool,
-  findActiveDriverProfileForAccount,
-} from "@/lib/rides/driver-account";
-import { listActiveTripsForDriver } from "@/lib/rides/ride-trip-server";
+import { loadDriverPanel } from "@/lib/rides/driver-panel-server";
+import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 
 export type DriverTripsDebugReport = {
   session_user_id: string;
@@ -30,24 +27,21 @@ export async function buildDriverTripsDebugReport(
   args: { sessionUserId: string; authPhone: string | null },
 ): Promise<DriverTripsDebugReport> {
   const checks: string[] = [];
-  const accountOpts = { authPhone: args.authPhone };
-
-  const profile = await findActiveDriverProfileForAccount(
-    supabase,
-    args.sessionUserId,
-    accountOpts,
-  );
-  const pool = profile
-    ? await driverRideAccountIdPool(supabase, args.sessionUserId, accountOpts)
+  const panel = await loadDriverPanel(supabase, args);
+  const profile = panel.driver;
+  const pool = panel.canonical_user_id
+    ? await expandUserAccountIdPool(supabase, panel.canonical_user_id, {
+        authPhone: args.authPhone,
+      })
     : [];
 
   if (!profile?.user_id) {
     checks.push(
-      "No active driver profile for this session — log out at /unete and sign in with driver WhatsApp (415 181 6902).",
+      "No active driver profile — log out at /unete and sign in with 415 181 6902, then run rides-fix-driver-test-session.sql.",
     );
   }
   if (!args.authPhone) {
-    checks.push("JWT has no phone — duplicate-user linking may fail. Re-login via OTP.");
+    checks.push("JWT has no phone — re-login via OTP on /unete.");
   }
 
   const { data: dbRides } = await supabase
@@ -67,9 +61,7 @@ export async function buildDriverTripsDebugReport(
     dropoff_address: String(r.dropoff_address),
   }));
 
-  const trips = profile
-    ? await listActiveTripsForDriver(supabase, args.sessionUserId, accountOpts)
-    : [];
+  const trips = panel.trips;
 
   if (dbRows.length > 0 && trips.length === 0 && profile?.user_id) {
     const assignedToProfile = dbRows.filter(
@@ -77,19 +69,19 @@ export async function buildDriverTripsDebugReport(
     );
     if (assignedToProfile.length > 0) {
       checks.push(
-        `DB has ${assignedToProfile.length} active ride(s) for profile ${profile.user_id.slice(0, 8)}… but trips API returned 0 — redeploy preview or hard-refresh.`,
+        `DB has ride(s) for ${profile.user_id.slice(0, 8)}… but panel API returned 0 — run rides-fix-driver-test-session.sql and redeploy preview.`,
       );
     } else {
       checks.push(
-        `Active rides exist but driver_id is not ${profile.user_id.slice(0, 8)}… — duplicate-user / wrong driver assignment.`,
+        `Rides assigned to wrong driver_id — run supabase/scripts/rides-fix-driver-test-session.sql.`,
       );
     }
   }
   if (trips.length > 0) {
-    checks.push("Trips API OK — panel should list assigned rides after refresh.");
+    checks.push("Panel API OK — Accept ride on /conductor/viajes.");
   }
   if (dbRows.length === 0) {
-    checks.push("No matched+ rides in DB — rider request may not have completed match.");
+    checks.push("No active rides in DB — request one trip after SQL reset.");
   }
 
   return {
