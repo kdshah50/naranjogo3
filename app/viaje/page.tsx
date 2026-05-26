@@ -45,6 +45,12 @@ const RIDE_STATUS_RANK: Record<string, number> = {
   cancelled: -1,
 };
 
+const VIAJE_PINNED_RIDE_KEY = "ng_viaje_pinned_ride_id";
+
+function rideRank(status: string): number {
+  return RIDE_STATUS_RANK[status] ?? 0;
+}
+
 function mergeRideRow(
   prev: RideRow | null,
   next: RideRow | null,
@@ -57,13 +63,20 @@ function mergeRideRow(
       if (prev.id === preferId) return prev;
       if (next.id === preferId) return next;
     }
-    const rPrev = RIDE_STATUS_RANK[prev.status] ?? 0;
-    const rNext = RIDE_STATUS_RANK[next.status] ?? 0;
-    return rNext >= rPrev ? next : prev;
+    return rideRank(next.status) >= rideRank(prev.status) ? next : prev;
   }
-  const rPrev = RIDE_STATUS_RANK[prev.status] ?? 0;
-  const rNext = RIDE_STATUS_RANK[next.status] ?? 0;
-  return rNext >= rPrev ? { ...prev, ...next } : prev;
+  return rideRank(next.status) >= rideRank(prev.status) ? { ...prev, ...next } : prev;
+}
+
+function applyRideUpdate(
+  prev: RideRow | null,
+  next: RideRow | null,
+  pinnedId?: string | null,
+): RideRow | null {
+  const merged = mergeRideRow(prev, next, pinnedId);
+  if (!merged) return prev;
+  if (prev && rideRank(merged.status) < rideRank(prev.status)) return prev;
+  return merged;
 }
 
 export default function ViajePage() {
@@ -106,14 +119,30 @@ function ViajePageInner() {
   const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
-    rideIdRef.current = ride?.id ?? rideIdFromUrl;
+    const pinned =
+      rideIdFromUrl ??
+      (typeof sessionStorage !== "undefined"
+        ? sessionStorage.getItem(VIAJE_PINNED_RIDE_KEY)
+        : null);
+    rideIdRef.current = ride?.id ?? pinned;
   }, [ride?.id, rideIdFromUrl]);
 
-  const refreshActiveRide = useCallback(async () => {
-    const knownId = rideIdRef.current ?? rideIdFromUrl;
+  useEffect(() => {
+    if (ride?.status === "completed" && ride.id && typeof sessionStorage !== "undefined") {
+      sessionStorage.setItem(VIAJE_PINNED_RIDE_KEY, ride.id);
+    }
+  }, [ride?.status, ride?.id]);
 
-    if (knownId) {
-      const dr = await fetch(`/api/rides/${knownId}`, {
+  const refreshActiveRide = useCallback(async () => {
+    const pinnedId =
+      rideIdFromUrl ??
+      (typeof sessionStorage !== "undefined"
+        ? sessionStorage.getItem(VIAJE_PINNED_RIDE_KEY)
+        : null) ??
+      rideIdRef.current;
+
+    if (pinnedId) {
+      const dr = await fetch(`/api/rides/${pinnedId}`, {
         credentials: "include",
         cache: "no-store",
       });
@@ -121,7 +150,13 @@ function ViajePageInner() {
         const data = await dr.json().catch(() => ({}));
         const row = data.ride as RideRow | undefined;
         if (row?.id) {
-          setRide(row);
+          setRide((prev) => {
+            const next = applyRideUpdate(prev, row, pinnedId);
+            if (next?.status === "completed" && typeof sessionStorage !== "undefined") {
+              sessionStorage.setItem(VIAJE_PINNED_RIDE_KEY, next.id);
+            }
+            return next;
+          });
           return;
         }
       }
@@ -130,13 +165,16 @@ function ViajePageInner() {
     const r = await fetch("/api/rides/active", { credentials: "include", cache: "no-store" });
     if (!r.ok) return;
     const data = await r.json().catch(() => ({}));
-    const fromActive =
-      (data.as_buyer_display as RideRow | undefined) ??
-      (data.as_buyer?.[0] as RideRow | undefined) ??
-      null;
+    const fromActive = data.as_buyer_display as RideRow | undefined;
     if (!fromActive?.id) return;
 
-    setRide((prev) => mergeRideRow(prev, fromActive, knownId));
+    setRide((prev) => {
+      const next = applyRideUpdate(prev, fromActive, pinnedId);
+      if (next?.status === "completed" && typeof sessionStorage !== "undefined") {
+        sessionStorage.setItem(VIAJE_PINNED_RIDE_KEY, next.id);
+      }
+      return next;
+    });
   }, [rideIdFromUrl]);
 
   useEffect(() => {

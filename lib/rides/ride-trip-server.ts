@@ -615,16 +615,41 @@ const BUYER_DISPLAY_STATUSES = [
 
 function pickLatestBuyerRideRow(rows: RideBookingRow[]): RideBookingRow | null {
   if (rows.length === 0) return null;
-  const rank = (s: string) =>
-    ({ requested: 0, matched: 1, accepted: 2, arrived: 3, in_trip: 4, completed: 5 }[s] ?? 0);
-  rows.sort((a, b) => {
-    const rDiff = rank(b.status) - rank(a.status);
-    if (rDiff !== 0) return rDiff;
-    const tA = new Date(a.updated_at ?? a.created_at).getTime();
-    const tB = new Date(b.updated_at ?? b.created_at).getTime();
-    return tB - tA;
-  });
-  return rows[0];
+
+  const completed = rows.filter((r) => r.status === "completed");
+  const active = rows.filter((r) => r.status !== "completed" && r.status !== "cancelled");
+
+  const latestCompleted = [...completed].sort(
+    (a, b) =>
+      new Date(b.trip_ended_at ?? b.updated_at ?? b.created_at).getTime() -
+      new Date(a.trip_ended_at ?? a.updated_at ?? a.created_at).getTime(),
+  )[0];
+
+  if (!latestCompleted) {
+    return [...active].sort(
+      (a, b) =>
+        new Date(b.updated_at ?? b.created_at).getTime() -
+        new Date(a.updated_at ?? a.created_at).getTime(),
+    )[0] ?? null;
+  }
+
+  if (active.length === 0) return latestCompleted;
+
+  const latestActive = [...active].sort(
+    (a, b) =>
+      new Date(b.updated_at ?? b.created_at).getTime() -
+      new Date(a.updated_at ?? a.created_at).getTime(),
+  )[0];
+
+  const completedAt = new Date(
+    latestCompleted.trip_ended_at ?? latestCompleted.updated_at ?? latestCompleted.created_at,
+  ).getTime();
+  const activeCreated = new Date(latestActive.created_at).getTime();
+
+  // Only show a new active ride if it was created after this trip finished (not a stale zombie row).
+  if (activeCreated > completedAt + 60_000) return latestActive;
+
+  return latestCompleted;
 }
 
 /**

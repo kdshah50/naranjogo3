@@ -11,6 +11,22 @@ WHERE status IN ('matched', 'accepted', 'arrived', 'in_trip')
   )
 ORDER BY updated_at DESC;
 
+-- Cancel stale actives when a completed ride exists (stops /viaje flipping back to in_trip).
+UPDATE public.ride_bookings stale
+SET status = 'cancelled',
+    cancel_reason = 'stale_test_cleanup',
+    updated_at = now()
+FROM public.ride_bookings done
+WHERE stale.status IN ('matched', 'accepted', 'arrived', 'in_trip')
+  AND done.status = 'completed'
+  AND stale.id <> done.id
+  AND stale.buyer_id = done.buyer_id
+  AND stale.buyer_id IN (
+    SELECT id::text FROM public.users
+    WHERE phone LIKE '%4151816902%'
+       OR phone IN ('524151816902', '+524151816902', '5214151816902')
+  );
+
 UPDATE public.ride_bookings
 SET status = 'cancelled',
     cancel_reason = 'stale_test_cleanup',
