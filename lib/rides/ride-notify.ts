@@ -3,9 +3,20 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { formatMxnFromCents } from "@/lib/rides/ride-pricing";
 import type { RideBookingRow } from "@/lib/rides/ride-bookings-server";
+import { getPublicAppUrl } from "@/lib/app-url";
 import { sendWhatsAppToE164Digits, isTwilioWhatsAppConfigured } from "@/lib/twilio";
 import { canonicalizeAuthPhone, normalizeAuthPhone } from "@/lib/phone";
 import { phoneLookupVariants } from "@/lib/user-account-pool";
+
+export function rideBuyerViajeUrl(rideId?: string | null): string {
+  const base = `${getPublicAppUrl()}/viaje`;
+  if (!rideId) return base;
+  return `${base}?ride=${encodeURIComponent(rideId)}`;
+}
+
+export function rideDriverPanelUrl(): string {
+  return `${getPublicAppUrl()}/conductor/viajes`;
+}
 
 export async function findUserPhoneById(
   supabase: SupabaseClient,
@@ -28,6 +39,7 @@ export async function notifyBuyerRideCreated(
 
   const fare = formatMxnFromCents(args.ride.estimated_total_mxn_cents);
   const hold = formatMxnFromCents(args.ride.hold_amount_mxn_cents);
+  const viajeUrl = rideBuyerViajeUrl(args.ride.id);
   let msg =
     `🚕 *Solicitud de viaje recibida*\n` +
     `Origen: ${args.ride.pickup_address}\n` +
@@ -37,9 +49,12 @@ export async function notifyBuyerRideCreated(
   if (args.matched && args.ride.ticket_code) {
     msg +=
       `\nConductor asignado. Tu código de viaje: *${args.ride.ticket_code}*\n` +
-      `Muéstralo al conductor al subir.`;
+      `Muéstralo al conductor al subir.\n\n` +
+      `Abre tu viaje en la app:\n${viajeUrl}`;
   } else if (!args.matched) {
-    msg += `\nBuscando conductor… Te avisaremos cuando haya match.`;
+    msg += `\nBuscando conductor… Te avisaremos cuando haya match.\n\n${viajeUrl}`;
+  } else {
+    msg += `\n\n${viajeUrl}`;
   }
 
   await sendWhatsAppToE164Digits(phone, msg);
@@ -55,13 +70,14 @@ export async function notifyDriverRideMatched(
   if (!phone) return;
 
   const fare = formatMxnFromCents(args.ride.estimated_total_mxn_cents);
+  const panelUrl = rideDriverPanelUrl();
   const msg =
     `🚕 *Nuevo viaje asignado*\n` +
     `Recoger: ${args.ride.pickup_address}\n` +
     `Destino: ${args.ride.dropoff_address}\n` +
     `Tarifa est.: *${fare}*\n` +
-    `Ticket: *${args.ride.ticket_code ?? "—"}*\n` +
-    `Abre NaranjoGo para aceptar el viaje.`;
+    `Ticket pasajero: *${args.ride.ticket_code ?? "—"}*\n\n` +
+    `Acepta el viaje en la app (Conectar si estás fuera de línea):\n${panelUrl}`;
 
   await sendWhatsAppToE164Digits(phone, msg);
 }

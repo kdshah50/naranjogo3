@@ -10,6 +10,7 @@ import {
   findUserIdByPhone,
   notifyBuyerRideCreated,
   notifyDriverRideMatched,
+  rideBuyerViajeUrl,
   twimlMessage,
 } from "@/lib/rides/ride-notify";
 import {
@@ -120,10 +121,13 @@ export async function POST(req: NextRequest) {
       `${ride.pickup_address} → ${ride.dropoff_address}\n` +
       `Tarifa est.: *${fare}*`;
 
+    const viajeUrl = rideBuyerViajeUrl(ride.id);
     if (matched && ride.ticket_code) {
-      reply += `\n\nConductor asignado. Código: *${ride.ticket_code}*`;
+      reply += `\n\nConductor asignado. Código: *${ride.ticket_code}*\n${viajeUrl}`;
     } else if (!matched) {
       reply += `\n\nNo hay conductores disponibles ahora. Intenta en unos minutos.`;
+    } else {
+      reply += `\n\n${viajeUrl}`;
     }
 
     return new NextResponse(twimlMessage(reply), {
