@@ -45,9 +45,22 @@ const RIDE_STATUS_RANK: Record<string, number> = {
   cancelled: -1,
 };
 
-function mergeRideRow(prev: RideRow | null, next: RideRow | null): RideRow | null {
+function mergeRideRow(
+  prev: RideRow | null,
+  next: RideRow | null,
+  preferId?: string | null,
+): RideRow | null {
   if (!next) return prev;
-  if (!prev || prev.id !== next.id) return next;
+  if (!prev) return next;
+  if (prev.id !== next.id) {
+    if (preferId) {
+      if (prev.id === preferId) return prev;
+      if (next.id === preferId) return next;
+    }
+    const rPrev = RIDE_STATUS_RANK[prev.status] ?? 0;
+    const rNext = RIDE_STATUS_RANK[next.status] ?? 0;
+    return rNext >= rPrev ? next : prev;
+  }
   const rPrev = RIDE_STATUS_RANK[prev.status] ?? 0;
   const rNext = RIDE_STATUS_RANK[next.status] ?? 0;
   return rNext >= rPrev ? { ...prev, ...next } : prev;
@@ -98,7 +111,6 @@ function ViajePageInner() {
 
   const refreshActiveRide = useCallback(async () => {
     const knownId = rideIdRef.current ?? rideIdFromUrl;
-    let latest: RideRow | null = null;
 
     if (knownId) {
       const dr = await fetch(`/api/rides/${knownId}`, {
@@ -108,23 +120,23 @@ function ViajePageInner() {
       if (dr.ok) {
         const data = await dr.json().catch(() => ({}));
         const row = data.ride as RideRow | undefined;
-        if (row?.id) latest = row;
+        if (row?.id) {
+          setRide(row);
+          return;
+        }
       }
     }
 
     const r = await fetch("/api/rides/active", { credentials: "include", cache: "no-store" });
-    if (r.ok) {
-      const data = await r.json().catch(() => ({}));
-      const fromActive =
-        (data.as_buyer_display as RideRow | undefined) ??
-        (data.as_buyer?.[0] as RideRow | undefined) ??
-        null;
-      if (fromActive?.id) {
-        latest = latest ? mergeRideRow(latest, fromActive) : fromActive;
-      }
-    }
+    if (!r.ok) return;
+    const data = await r.json().catch(() => ({}));
+    const fromActive =
+      (data.as_buyer_display as RideRow | undefined) ??
+      (data.as_buyer?.[0] as RideRow | undefined) ??
+      null;
+    if (!fromActive?.id) return;
 
-    if (latest?.id) setRide((prev) => mergeRideRow(prev, latest));
+    setRide((prev) => mergeRideRow(prev, fromActive, knownId));
   }, [rideIdFromUrl]);
 
   useEffect(() => {

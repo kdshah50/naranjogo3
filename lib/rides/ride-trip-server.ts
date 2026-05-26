@@ -602,35 +602,72 @@ export async function listActiveTripsForBuyer(
   return rows.slice(0, 5);
 }
 
-const BUYER_DISPLAY_COMPLETED_MS = 48 * 60 * 60 * 1000;
+const BUYER_DISPLAY_LOOKBACK_MS = 48 * 60 * 60 * 1000;
 
-/** Active trip, or the latest completed trip (48h) so /viaje stays in sync after Completar. */
+const BUYER_DISPLAY_STATUSES = [
+  "requested",
+  "matched",
+  "accepted",
+  "arrived",
+  "in_trip",
+  "completed",
+] as const;
+
+function pickLatestBuyerRideRow(rows: RideBookingRow[]): RideBookingRow | null {
+  if (rows.length === 0) return null;
+  const rank = (s: string) =>
+    ({ requested: 0, matched: 1, accepted: 2, arrived: 3, in_trip: 4, completed: 5 }[s] ?? 0);
+  rows.sort((a, b) => {
+    const rDiff = rank(b.status) - rank(a.status);
+    if (rDiff !== 0) return rDiff;
+    const tA = new Date(a.updated_at ?? a.created_at).getTime();
+    const tB = new Date(b.updated_at ?? b.created_at).getTime();
+    return tB - tA;
+  });
+  return rows[0];
+}
+
+/**
+ * Most relevant buyer ride for /viaje — prefers completed over stale in_trip rows
+ * left in DB from testing (rank), then latest updated_at.
+ */
 export async function latestBuyerRideForDisplay(
   supabase: SupabaseClient,
   buyerUserId: string,
   options?: RideAccountOptions,
 ): Promise<RideBookingRow | null> {
-  const active = await listActiveTripsForBuyer(supabase, buyerUserId, options);
-  if (active[0]) return active[0];
-
   const pool = await expandUserAccountIdPool(supabase, buyerUserId, options);
   if (pool.length === 0) return null;
 
-  const since = new Date(Date.now() - BUYER_DISPLAY_COMPLETED_MS).toISOString();
+  const since = new Date(Date.now() - BUYER_DISPLAY_LOOKBACK_MS).toISOString();
+  const statuses = [...BUYER_DISPLAY_STATUSES];
+
   const { data, error } = await supabase
     .from("ride_bookings")
     .select("*")
     .in("buyer_id", pool)
-    .eq("status", "completed")
+    .in("status", statuses)
     .gte("updated_at", since)
-    .order("created_at", { ascending: false })
-    .limit(5);
+    .order("updated_at", { ascending: false })
+    .limit(15);
 
-  if (error) {
-    console.error("[ride-trip] latestBuyerRideForDisplay", error);
-    return null;
+  let rows = ((data ?? []) as RideBookingRow[]).filter((r) => tripMatchesBuyerPool(r, pool));
+
+  if (rows.length === 0) {
+    const { data: recent, error: recentErr } = await supabase
+      .from("ride_bookings")
+      .select("*")
+      .in("status", statuses)
+      .gte("updated_at", since)
+      .order("updated_at", { ascending: false })
+      .limit(40);
+
+    if (recentErr) {
+      console.error("[ride-trip] latestBuyerRideForDisplay fallback", recentErr);
+    } else {
+      rows = (recent ?? []).filter((r) => tripMatchesBuyerPool(r as RideBookingRow, pool));
+    }
   }
 
-  const rows = ((data ?? []) as RideBookingRow[]).filter((r) => tripMatchesBuyerPool(r, pool));
-  return rows[0] ?? null;
+  return pickLatestBuyerRideRow(rows);
 }
