@@ -14,6 +14,8 @@ import {
   rideStatusLabel,
 } from "@/lib/rides/ui-copy";
 
+const DRIVER_ACTIVE_STATUSES = new Set(["matched", "accepted", "arrived", "in_trip"]);
+
 const TRIP_STATUS_RANK: Record<string, number> = {
   requested: 0,
   matched: 1,
@@ -21,12 +23,30 @@ const TRIP_STATUS_RANK: Record<string, number> = {
   arrived: 3,
   in_trip: 4,
   completed: 5,
+  cancelled: -1,
 };
 
+function isDriverActiveTrip(row: RideRow): boolean {
+  return DRIVER_ACTIVE_STATUSES.has(row.status);
+}
+
+function sortDriverTrips(rows: RideRow[]): RideRow[] {
+  return [...rows].sort((a, b) => {
+    const rDiff = (TRIP_STATUS_RANK[b.status] ?? 0) - (TRIP_STATUS_RANK[a.status] ?? 0);
+    if (rDiff !== 0) return rDiff;
+    const tA = a.updated_at ?? a.created_at ?? "";
+    const tB = b.updated_at ?? b.created_at ?? "";
+    return tB.localeCompare(tA);
+  });
+}
+
+/** Merge for optimistic action updates only — never keep completed/cancelled rows. */
 function mergeDriverTripLists(prev: RideRow[], next: RideRow[]): RideRow[] {
-  if (next.length === 0) return prev.length > 0 ? prev : [];
+  const activePrev = prev.filter(isDriverActiveTrip);
+  if (next.length === 0) return activePrev;
   const byId = new Map<string, RideRow>();
-  for (const row of [...next, ...prev]) {
+  for (const row of [...next, ...activePrev]) {
+    if (!isDriverActiveTrip(row)) continue;
     const cur = byId.get(row.id);
     if (!cur) {
       byId.set(row.id, row);
@@ -36,9 +56,7 @@ function mergeDriverTripLists(prev: RideRow[], next: RideRow[]): RideRow[] {
     const rankCur = TRIP_STATUS_RANK[cur.status] ?? 0;
     byId.set(row.id, rankRow >= rankCur ? { ...cur, ...row } : cur);
   }
-  return [...byId.values()].sort(
-    (a, b) => (TRIP_STATUS_RANK[b.status] ?? 0) - (TRIP_STATUS_RANK[a.status] ?? 0),
-  );
+  return sortDriverTrips([...byId.values()]);
 }
 
 function debugRideToRow(
@@ -67,6 +85,8 @@ type RideRow = {
   dropoff_address: string;
   ticket_code: string | null;
   estimated_total_mxn_cents: number;
+  created_at?: string;
+  updated_at?: string;
 };
 
 type DriverOnline = {
@@ -120,8 +140,10 @@ function ConductorViajesInner() {
     }
 
     if (data.driver) setOnline(data.driver as DriverOnline);
-    const nextTrips = Array.isArray(data.trips) ? (data.trips as RideRow[]) : [];
-    setTrips((prev) => mergeDriverTripLists(prev, nextTrips));
+    const nextTrips = sortDriverTrips(
+      (Array.isArray(data.trips) ? (data.trips as RideRow[]) : []).filter(isDriverActiveTrip),
+    );
+    setTrips(nextTrips);
     const sessionId = data.session_user_id ?? null;
     setCanonicalUserId(data.canonical_user_id ?? data.driver?.user_id ?? null);
     if (!data.driver?.is_active_driver && data.driver !== null) {
@@ -184,8 +206,13 @@ function ConductorViajesInner() {
         ? dbRides.filter((row) => row.driver_id?.toLowerCase() === profileId)
         : [];
       if (mine.length > 0) {
-        setTrips((prev) => mergeDriverTripLists(prev, mine.map(debugRideToRow)));
-        setTripDebugHint(t.tripRecoveredHint);
+        const recovered = sortDriverTrips(
+          mine.filter((r) => DRIVER_ACTIVE_STATUSES.has(r.status)).map(debugRideToRow),
+        );
+        if (recovered.length > 0) {
+          setTrips(recovered);
+          setTripDebugHint(t.tripRecoveredHint);
+        }
       }
 
       const checks = Array.isArray(data.checks) ? (data.checks as string[]).join(" ") : "";
