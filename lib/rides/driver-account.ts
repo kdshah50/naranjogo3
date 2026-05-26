@@ -2,6 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { userIdsForAuthPhone } from "@/lib/resolve-login-user";
+import { resolveDriverProfileForSession } from "@/lib/rides/resolve-driver-session";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 import { idMatchVariantsForIn } from "@/lib/user-id-variants";
 
@@ -22,7 +23,11 @@ export async function driverRideAccountIdPool(
   userId: string,
   options?: DriverAccountOptions,
 ): Promise<string[]> {
-  const profile = await pickCanonicalDriverProfile(supabase, userId, options);
+  const profile =
+    (await resolveDriverProfileForSession(supabase, {
+      sessionUserId: userId,
+      authPhone: options?.authPhone ?? null,
+    })) ?? (await pickCanonicalDriverProfile(supabase, userId, options));
   const rootId = profile?.user_id ?? userId;
   const pool = new Set<string>(await expandUserAccountIdPool(supabase, rootId, options));
 

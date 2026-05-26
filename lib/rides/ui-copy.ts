@@ -214,7 +214,8 @@ const DRIVER_TRIPS = {
     actionFailed: "Acción fallida",
     noActiveTrips: "No tienes viajes activos.",
     staleTripHint:
-      "Si WhatsApp muestra un ticket, cancela viajes viejos en Supabase y pide un solo viaje nuevo.",
+      "Si WhatsApp muestra un ticket, espera unos segundos o desconecta y vuelve a Conectar.",
+    tripAssignedHint: "Hay viaje en la base de datos (ticket",
     driverIdLabel: "Conductor:",
     estFare: "Tarifa est.:",
     passengerCode: "Código del pasajero:",
@@ -259,7 +260,8 @@ const DRIVER_TRIPS = {
     actionFailed: "Action failed",
     noActiveTrips: "You have no active rides.",
     staleTripHint:
-      "If WhatsApp shows a ticket, cancel stale rides in Supabase and request only one new trip.",
+      "If WhatsApp shows a ticket, wait a few seconds or go offline and Conectar again.",
+    tripAssignedHint: "Trip exists in DB (ticket",
     driverIdLabel: "Driver:",
     estFare: "Est. fare:",
     passengerCode: "Passenger code:",

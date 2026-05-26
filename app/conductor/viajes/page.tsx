@@ -48,6 +48,7 @@ function ConductorViajesInner() {
   const [busy, setBusy] = useState<string | null>(null);
   const [ticketByRide, setTicketByRide] = useState<Record<string, string>>({});
   const [canonicalUserId, setCanonicalUserId] = useState<string | null>(null);
+  const [tripDebugHint, setTripDebugHint] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const r = await fetch("/api/rides/drivers/me/panel", {
@@ -236,16 +237,23 @@ function ConductorViajesInner() {
           <div className="space-y-2">
             <p className="text-sm text-[#1B4332]/70">{t.noActiveTrips}</p>
             {isOnline && (
-              <p className="text-xs text-[#1B4332]/50 leading-relaxed">
-                {t.staleTripHint}
-                {canonicalUserId && (
-                  <>
-                    {" "}
-                    {t.driverIdLabel}{" "}
-                    <span className="font-mono">{canonicalUserId.slice(0, 8)}…</span>
-                  </>
+              <div className="space-y-2">
+                <p className="text-xs text-[#1B4332]/50 leading-relaxed">
+                  {t.staleTripHint}
+                  {canonicalUserId && (
+                    <>
+                      {" "}
+                      {t.driverIdLabel}{" "}
+                      <span className="font-mono">{canonicalUserId.slice(0, 8)}…</span>
+                    </>
+                  )}
+                </p>
+                {tripDebugHint && (
+                  <p className="text-xs text-amber-800 leading-relaxed rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                    {tripDebugHint}
+                  </p>
                 )}
-              </p>
+              </div>
             )}
           </div>
         ) : (
