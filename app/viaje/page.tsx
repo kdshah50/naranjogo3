@@ -25,6 +25,7 @@ type RideRow = {
   dropoff_address: string;
   estimated_total_mxn_cents: number;
   hold_amount_mxn_cents: number;
+  final_total_mxn_cents?: number | null;
   ticket_code: string | null;
   driver_id: string | null;
 };
@@ -96,27 +97,34 @@ function ViajePageInner() {
   }, [ride?.id, rideIdFromUrl]);
 
   const refreshActiveRide = useCallback(async () => {
-    const r = await fetch("/api/rides/active", { credentials: "include", cache: "no-store" });
-    let active: RideRow | null = null;
-    if (r.ok) {
-      const data = await r.json().catch(() => ({}));
-      active = (data.as_buyer?.[0] as RideRow | undefined) ?? null;
-    }
+    const knownId = rideIdRef.current ?? rideIdFromUrl;
+    let latest: RideRow | null = null;
 
-    const rideId = active?.id ?? rideIdRef.current ?? rideIdFromUrl;
-    if (rideId) {
-      const dr = await fetch(`/api/rides/${rideId}`, {
+    if (knownId) {
+      const dr = await fetch(`/api/rides/${knownId}`, {
         credentials: "include",
         cache: "no-store",
       });
       if (dr.ok) {
         const data = await dr.json().catch(() => ({}));
         const row = data.ride as RideRow | undefined;
-        if (row?.id) active = row;
+        if (row?.id) latest = row;
       }
     }
 
-    if (active?.id) setRide((prev) => mergeRideRow(prev, active));
+    const r = await fetch("/api/rides/active", { credentials: "include", cache: "no-store" });
+    if (r.ok) {
+      const data = await r.json().catch(() => ({}));
+      const fromActive =
+        (data.as_buyer_display as RideRow | undefined) ??
+        (data.as_buyer?.[0] as RideRow | undefined) ??
+        null;
+      if (fromActive?.id) {
+        latest = latest ? mergeRideRow(latest, fromActive) : fromActive;
+      }
+    }
+
+    if (latest?.id) setRide((prev) => mergeRideRow(prev, latest));
   }, [rideIdFromUrl]);
 
   useEffect(() => {
@@ -133,7 +141,7 @@ function ViajePageInner() {
     if (authError) return;
     const terminal = ride?.status === "completed" || ride?.status === "cancelled";
     const ms =
-      ride?.status === "arrived" || ride?.status === "accepted"
+      ride?.status === "in_trip" || ride?.status === "arrived" || ride?.status === "accepted"
         ? 2000
         : ride && !terminal
           ? 3000
@@ -142,9 +150,17 @@ function ViajePageInner() {
     return () => clearInterval(timer);
   }, [authError, ride?.status, refreshActiveRide]);
 
+  useEffect(() => {
+    const onFocus = () => refreshActiveRide();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [refreshActiveRide]);
+
   const rideSectionTitle =
     ride?.status === "cancelled"
       ? t.rideCancelled
+      : ride?.status === "completed"
+        ? t.rideCompleted
       : ride?.status === "in_trip"
         ? t.rideInProgress
         : ride?.status === "arrived"
@@ -432,6 +448,23 @@ function ViajePageInner() {
             )}
             {ride.status === "in_trip" && (
               <p className="mt-2 text-sm text-emerald-800">{t.driverInTripHint}</p>
+            )}
+            {ride.status === "completed" && (
+              <p className="mt-2 text-sm text-emerald-800">
+                {t.rideCompletedHint}
+                {(ride.final_total_mxn_cents ?? ride.estimated_total_mxn_cents) > 0 && (
+                  <>
+                    {" "}
+                    {t.chargedFare}{" "}
+                    <strong>
+                      {formatCurrencyMXN(
+                        ride.final_total_mxn_cents ?? ride.estimated_total_mxn_cents,
+                        lang,
+                      )}
+                    </strong>
+                  </>
+                )}
+              </p>
             )}
             {["requested", "matched", "accepted", "arrived", "in_trip"].includes(ride.status) && (
               <p className="mt-2 text-xs text-[#1B4332]/50">{t.rideSyncHint}</p>

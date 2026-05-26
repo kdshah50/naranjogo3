@@ -7,7 +7,9 @@ import { appendRideEvent, getRideById, type RideBookingRow } from "@/lib/rides/r
 import {
   notifyBuyerRideAccepted,
   notifyBuyerRideArrived,
+  notifyBuyerRideCompleted,
   notifyBuyerTripStarted,
+  notifyDriverRideCompleted,
 } from "@/lib/rides/ride-notify";
 import {
   canTransitionRideStatus,
@@ -374,7 +376,17 @@ export async function completeTrip(
     meta: { final_total_mxn_cents: finalTotal, commission_mxn_cents: commission, driver_payout: driverPay },
   });
 
-  return { ok: true, ride: updated as RideBookingRow };
+  const completed = updated as RideBookingRow;
+  void notifyBuyerRideCompleted(supabase, { ride: completed, finalTotalMxnCents: finalTotal }).catch(
+    (e) => console.error("[ride-trip] notifyBuyerRideCompleted", e),
+  );
+  void notifyDriverRideCompleted(supabase, {
+    ride: completed,
+    driverUserId: driverId,
+    driverPayoutMxnCents: driverPay,
+  }).catch((e) => console.error("[ride-trip] notifyDriverRideCompleted", e));
+
+  return { ok: true, ride: completed };
 }
 
 export async function cancelRide(
@@ -588,4 +600,37 @@ export async function listActiveTripsForBuyer(
 
   rows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   return rows.slice(0, 5);
+}
+
+const BUYER_DISPLAY_COMPLETED_MS = 48 * 60 * 60 * 1000;
+
+/** Active trip, or the latest completed trip (48h) so /viaje stays in sync after Completar. */
+export async function latestBuyerRideForDisplay(
+  supabase: SupabaseClient,
+  buyerUserId: string,
+  options?: RideAccountOptions,
+): Promise<RideBookingRow | null> {
+  const active = await listActiveTripsForBuyer(supabase, buyerUserId, options);
+  if (active[0]) return active[0];
+
+  const pool = await expandUserAccountIdPool(supabase, buyerUserId, options);
+  if (pool.length === 0) return null;
+
+  const since = new Date(Date.now() - BUYER_DISPLAY_COMPLETED_MS).toISOString();
+  const { data, error } = await supabase
+    .from("ride_bookings")
+    .select("*")
+    .in("buyer_id", pool)
+    .eq("status", "completed")
+    .gte("updated_at", since)
+    .order("created_at", { ascending: false })
+    .limit(5);
+
+  if (error) {
+    console.error("[ride-trip] latestBuyerRideForDisplay", error);
+    return null;
+  }
+
+  const rows = ((data ?? []) as RideBookingRow[]).filter((r) => tripMatchesBuyerPool(r, pool));
+  return rows[0] ?? null;
 }

@@ -129,6 +129,49 @@ export async function notifyDriverRideMatched(
   await sendWhatsAppToE164Digits(phone, msg);
 }
 
+export async function notifyBuyerRideCompleted(
+  supabase: SupabaseClient,
+  args: { ride: RideBookingRow; finalTotalMxnCents: number }
+): Promise<void> {
+  if (!isTwilioWhatsAppConfigured()) return;
+
+  const phone = await findUserPhoneById(supabase, args.ride.buyer_id);
+  if (!phone) return;
+
+  const fare = formatMxnFromCents(args.finalTotalMxnCents);
+  const viajeUrl = rideBuyerViajeUrl(args.ride.id);
+  const msg =
+    `🚕 *Viaje completado*\n` +
+    `Gracias por viajar con NaranjoGo.\n` +
+    `Cargo en tu saldo: *${fare}*\n` +
+    `Ruta: ${args.ride.pickup_address} → ${args.ride.dropoff_address}\n\n` +
+    `Detalle y propina:\n${viajeUrl}`;
+
+  await sendWhatsAppToE164Digits(phone, msg);
+}
+
+export async function notifyDriverRideCompleted(
+  supabase: SupabaseClient,
+  args: { ride: RideBookingRow; driverUserId: string; driverPayoutMxnCents: number }
+): Promise<void> {
+  if (!isTwilioWhatsAppConfigured()) return;
+
+  const phone = await findUserPhoneById(supabase, args.driverUserId);
+  if (!phone) return;
+
+  const fare = formatMxnFromCents(args.ride.final_total_mxn_cents ?? args.ride.estimated_total_mxn_cents);
+  const payout = formatMxnFromCents(args.driverPayoutMxnCents);
+  const panelUrl = rideDriverPanelUrl();
+  const msg =
+    `🚕 *Viaje completado*\n` +
+    `Pasajero: ticket *${args.ride.ticket_code ?? "—"}*\n` +
+    `Tarifa: *${fare}* · Tu pago: *${payout}*\n` +
+    `${args.ride.pickup_address} → ${args.ride.dropoff_address}\n\n` +
+    `Panel:\n${panelUrl}`;
+
+  await sendWhatsAppToE164Digits(phone, msg);
+}
+
 export async function notifyBuyerRideAccepted(
   supabase: SupabaseClient,
   args: { ride: RideBookingRow }

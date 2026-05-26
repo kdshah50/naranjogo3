@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ridesRouteGuard } from "@/lib/rides/ride-route-guard";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 import {
+  latestBuyerRideForDisplay,
   listActiveTripsForBuyer,
   listActiveTripsForDriver,
 } from "@/lib/rides/ride-trip-server";
@@ -23,13 +24,15 @@ export async function GET(req: NextRequest) {
 
   const asDriver = Boolean(profile?.user_id);
   const accountOpts = { authPhone: guard.authPhone };
-  const [buyerTrips, driverTrips] = await Promise.all([
+  const [buyerTrips, buyerDisplay, driverTrips] = await Promise.all([
     listActiveTripsForBuyer(guard.supabase, guard.userId, accountOpts),
+    latestBuyerRideForDisplay(guard.supabase, guard.userId, accountOpts),
     asDriver ? listActiveTripsForDriver(guard.supabase, guard.userId, accountOpts) : Promise.resolve([]),
   ]);
 
   return NextResponse.json({
     as_buyer: buyerTrips,
+    as_buyer_display: buyerDisplay,
     as_driver: driverTrips,
   });
 }
