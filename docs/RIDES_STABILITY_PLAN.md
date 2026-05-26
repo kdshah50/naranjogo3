@@ -54,9 +54,11 @@ In-app updates: **Realtime subscription** on `ride_bookings` row (Phase 2) repla
 
 Run **once** before the next test day:
 
-1. `merge-duplicate-users-by-phone.sql`
-2. `rides-restore-driver-profile.sql` (if Conectar ever breaks)
-3. `rides-cancel-stale-active-test-rides.sql` (after messy tests)
+1. **`rides-one-driver-cleanup.sql`** — one script: merge 3 users → 1 driver, one profile, cancel open rides
+2. `rides-restore-driver-profile.sql` (only if Conectar still broken after step 1)
+3. `rides-cancel-stale-active-test-rides.sql` (only if old in_trip rows reappear)
+
+Legacy: `merge-duplicate-users-by-phone.sql` (same merge, manual uncomment) — prefer `rides-one-driver-cleanup.sql`.
 
 Bookmark **one URL**: `https://naranjogo3-git-rides-setup-jigna-shahs-projects.vercel.app`
 
