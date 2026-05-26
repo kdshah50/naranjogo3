@@ -1,7 +1,8 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { withLang } from "@/components/BuyerRetentionPanel";
 import { RidesStagingBanner } from "@/components/RidesStagingBanner";
 import { useAppLang } from "@/hooks/use-app-lang";
@@ -33,6 +34,24 @@ const COLONIAS_LIST = COLONIA_KEYS.map((key) => ({
   label: COLONIAS[key].label,
 }));
 
+const RIDE_STATUS_RANK: Record<string, number> = {
+  requested: 0,
+  matched: 1,
+  accepted: 2,
+  arrived: 3,
+  in_trip: 4,
+  completed: 5,
+  cancelled: -1,
+};
+
+function mergeRideRow(prev: RideRow | null, next: RideRow | null): RideRow | null {
+  if (!next) return prev;
+  if (!prev || prev.id !== next.id) return next;
+  const rPrev = RIDE_STATUS_RANK[prev.status] ?? 0;
+  const rNext = RIDE_STATUS_RANK[next.status] ?? 0;
+  return rNext >= rPrev ? { ...prev, ...next } : prev;
+}
+
 export default function ViajePage() {
   return (
     <Suspense
@@ -50,6 +69,9 @@ export default function ViajePage() {
 function ViajePageInner() {
   const lang = useAppLang();
   const t = viajeCopy(lang);
+  const searchParams = useSearchParams();
+  const rideIdFromUrl = searchParams.get("ride")?.trim() || null;
+  const rideIdRef = useRef<string | null>(null);
 
   const [pickupColonia, setPickupColonia] = useState("centro");
   const [dropoffColonia, setDropoffColonia] = useState("guadalupe");
@@ -69,13 +91,33 @@ function ViajePageInner() {
 
   const [authError, setAuthError] = useState<string | null>(null);
 
+  useEffect(() => {
+    rideIdRef.current = ride?.id ?? rideIdFromUrl;
+  }, [ride?.id, rideIdFromUrl]);
+
+  const fetchRideById = useCallback(async (rideId: string) => {
+    const r = await fetch(`/api/rides/${rideId}`, {
+      credentials: "include",
+      cache: "no-store",
+    });
+    if (!r.ok) return;
+    const data = await r.json().catch(() => ({}));
+    const row = data.ride as RideRow | undefined;
+    if (row?.id) setRide((prev) => mergeRideRow(prev, row));
+  }, []);
+
   const refreshActiveRide = useCallback(async () => {
     const r = await fetch("/api/rides/active", { credentials: "include", cache: "no-store" });
     if (!r.ok) return;
     const data = await r.json().catch(() => ({}));
     const active = (data.as_buyer?.[0] as RideRow | undefined) ?? null;
-    if (active) setRide(active);
-  }, []);
+    if (active?.id) {
+      setRide((prev) => mergeRideRow(prev, active));
+      return;
+    }
+    const fallbackId = rideIdRef.current ?? rideIdFromUrl;
+    if (fallbackId) await fetchRideById(fallbackId);
+  }, [fetchRideById, rideIdFromUrl]);
 
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
@@ -88,10 +130,12 @@ function ViajePageInner() {
   }, [refreshActiveRide, t.loginRequired, t.sessionError]);
 
   useEffect(() => {
-    if (!ride || ride.status === "completed" || ride.status === "cancelled") return;
-    const timer = setInterval(refreshActiveRide, 6000);
+    if (authError) return;
+    const terminal = ride?.status === "completed" || ride?.status === "cancelled";
+    const ms = ride && !terminal ? 3000 : 8000;
+    const timer = setInterval(refreshActiveRide, ms);
     return () => clearInterval(timer);
-  }, [ride, refreshActiveRide]);
+  }, [authError, ride?.status, refreshActiveRide]);
 
   const rideSectionTitle =
     ride?.status === "cancelled"
@@ -373,6 +417,12 @@ function ViajePageInner() {
             )}
             {ride.status === "accepted" && (
               <p className="mt-2 text-sm text-emerald-800">{t.driverAcceptedHint}</p>
+            )}
+            {ride.status === "arrived" && (
+              <p className="mt-2 text-sm text-emerald-800">{t.driverArrivedHint}</p>
+            )}
+            {["requested", "matched", "accepted", "arrived", "in_trip"].includes(ride.status) && (
+              <p className="mt-2 text-xs text-[#1B4332]/50">{t.rideSyncHint}</p>
             )}
             {["requested", "matched", "accepted", "arrived"].includes(ride.status) && (
               <button

@@ -126,6 +126,9 @@ const VIAJE = {
     driverAcceptedHint: "El conductor aceptó y va hacia el origen. Ten listo tu código de ticket.",
     driverMatchedHint:
       "Conductor asignado — espera a que acepte en su panel. Cuando acepte verás «Aceptado» aquí y un WhatsApp «Conductor en camino».",
+    driverArrivedHint:
+      "El conductor está en el origen. Muéstrale tu código de ticket al subir.",
+    rideSyncHint: "Actualizando estado cada pocos segundos…",
     cancelRide: "Cancelar viaje",
     tipMxn: "Propina (MXN)",
     sendTip: "Enviar propina",
@@ -175,6 +178,9 @@ const VIAJE = {
     driverAcceptedHint: "Driver accepted and is heading to pickup. Have your ticket code ready.",
     driverMatchedHint:
       "Driver assigned — wait for them to accept in their panel. When they accept you will see «Accepted» here and a WhatsApp «Driver on the way».",
+    driverArrivedHint:
+      "Driver is at pickup. Show your ticket code when you get in.",
+    rideSyncHint: "Refreshing status every few seconds…",
     cancelRide: "Cancel ride",
     tipMxn: "Tip (MXN)",
     sendTip: "Send tip",

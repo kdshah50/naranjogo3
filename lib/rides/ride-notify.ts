@@ -6,7 +6,8 @@ import type { RideBookingRow } from "@/lib/rides/ride-bookings-server";
 import { getPublicAppUrl } from "@/lib/app-url";
 import { sendWhatsAppToE164Digits, isTwilioWhatsAppConfigured } from "@/lib/twilio";
 import { canonicalizeAuthPhone, normalizeAuthPhone } from "@/lib/phone";
-import { phoneLookupVariants } from "@/lib/user-account-pool";
+import { expandUserAccountIdPool, phoneLookupVariants } from "@/lib/user-account-pool";
+import { idMatchVariantsForIn } from "@/lib/user-id-variants";
 
 export function rideBuyerViajeUrl(rideId?: string | null): string {
   const base = `${getPublicAppUrl()}/viaje`;
@@ -22,10 +23,16 @@ export async function findUserPhoneById(
   supabase: SupabaseClient,
   userId: string
 ): Promise<string | null> {
-  const { data } = await supabase.from("users").select("phone").eq("id", userId).maybeSingle();
-  const phone = data?.phone ? String(data.phone) : "";
-  if (!phone) return null;
-  return canonicalizeAuthPhone(normalizeAuthPhone(phone));
+  const pool = await expandUserAccountIdPool(supabase, userId);
+  const ids = pool.length > 0 ? pool : idMatchVariantsForIn(userId);
+  const { data: rows } = await supabase.from("users").select("phone").in("id", ids);
+  for (const row of rows ?? []) {
+    const raw = String(row.phone ?? "").trim();
+    if (!raw) continue;
+    const digits = canonicalizeAuthPhone(normalizeAuthPhone(raw));
+    if (digits) return digits;
+  }
+  return null;
 }
 
 export async function notifyBuyerRideCreated(
@@ -56,6 +63,26 @@ export async function notifyBuyerRideCreated(
   } else {
     msg += `\n\n${viajeUrl}`;
   }
+
+  await sendWhatsAppToE164Digits(phone, msg);
+}
+
+export async function notifyBuyerRideArrived(
+  supabase: SupabaseClient,
+  args: { ride: RideBookingRow }
+): Promise<void> {
+  if (!isTwilioWhatsAppConfigured()) return;
+
+  const phone = await findUserPhoneById(supabase, args.ride.buyer_id);
+  if (!phone) return;
+
+  const viajeUrl = rideBuyerViajeUrl(args.ride.id);
+  const msg =
+    `🚕 *Conductor en el origen*\n` +
+    `Ya está en tu punto de recogida.\n` +
+    `Origen: ${args.ride.pickup_address}\n` +
+    `Ticket: *${args.ride.ticket_code ?? "—"}*\n\n` +
+    `Muéstrale el código al subir.\n${viajeUrl}`;
 
   await sendWhatsAppToE164Digits(phone, msg);
 }

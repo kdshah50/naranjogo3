@@ -4,7 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { isSameUserId } from "@/lib/auth-server";
 import { normalizeNgTicketQuery } from "@/lib/ng-ticket-normalize";
 import { appendRideEvent, getRideById, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
-import { notifyBuyerRideAccepted } from "@/lib/rides/ride-notify";
+import { notifyBuyerRideAccepted, notifyBuyerRideArrived } from "@/lib/rides/ride-notify";
 import {
   canTransitionRideStatus,
   cancelFeeApplies,
@@ -233,6 +233,10 @@ export async function arriveAtPickup(
     fromStatus: "accepted",
     toStatus: "arrived",
   });
+
+  void notifyBuyerRideArrived(supabase, { ride: updated }).catch((e) =>
+    console.error("[ride-trip] notifyBuyerRideArrived", e),
+  );
 
   return { ok: true, ride: updated };
 }
@@ -530,23 +534,50 @@ export async function disputeRide(
   return { ok: true, ride: updated as RideBookingRow };
 }
 
+function tripMatchesBuyerPool(ride: RideBookingRow, pool: string[]): boolean {
+  if (!ride.buyer_id) return false;
+  return pool.some((id) => isSameUserId(id, ride.buyer_id));
+}
+
 export async function listActiveTripsForBuyer(
   supabase: SupabaseClient,
   buyerUserId: string,
   options?: RideAccountOptions,
 ): Promise<RideBookingRow[]> {
   const pool = await expandUserAccountIdPool(supabase, buyerUserId, options);
+  if (pool.length === 0) return [];
+
+  const statuses = ["requested", "matched", "accepted", "arrived", "in_trip"] as const;
+
   const { data, error } = await supabase
     .from("ride_bookings")
     .select("*")
     .in("buyer_id", pool)
-    .in("status", ["requested", "matched", "accepted", "arrived", "in_trip"])
+    .in("status", [...statuses])
     .order("created_at", { ascending: false })
     .limit(5);
 
   if (error) {
     console.error("[ride-trip] listActiveTripsForBuyer", error);
-    return [];
   }
-  return (data ?? []) as RideBookingRow[];
+
+  let rows = ((data ?? []) as RideBookingRow[]).filter((r) => tripMatchesBuyerPool(r, pool));
+
+  if (rows.length === 0) {
+    const { data: recent, error: recentErr } = await supabase
+      .from("ride_bookings")
+      .select("*")
+      .in("status", [...statuses])
+      .order("created_at", { ascending: false })
+      .limit(40);
+
+    if (recentErr) {
+      console.error("[ride-trip] listActiveTripsForBuyer fallback", recentErr);
+    } else {
+      rows = (recent ?? []).filter((r) => tripMatchesBuyerPool(r as RideBookingRow, pool));
+    }
+  }
+
+  rows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  return rows.slice(0, 5);
 }

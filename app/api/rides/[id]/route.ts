@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminSupabase, getUserIdFromRequest, isSameUserId } from "@/lib/auth-server";
+import { createAdminSupabase, isSameUserId } from "@/lib/auth-server";
 import { isRidesEnabled } from "@/lib/rides/flags";
 import { verifyInternalSecret } from "@/lib/rides/internal-auth";
 import { getRideById } from "@/lib/rides/ride-bookings-server";
+import { ridesRouteGuard } from "@/lib/rides/ride-route-guard";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 
 export const dynamic = "force-dynamic";
@@ -15,10 +16,6 @@ export async function GET(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> }
 ) {
-  if (!isRidesEnabled()) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-
   const { id } = await ctx.params;
   const rideId = String(id ?? "").trim();
   if (!rideId) {
@@ -32,23 +29,31 @@ export async function GET(
     );
   }
 
+  if (!isRidesEnabled()) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   try {
-    const supabase = createAdminSupabase();
-    const ride = await getRideById(supabase, rideId);
+    if (verifyInternalSecret(req)) {
+      const supabase = createAdminSupabase();
+      const ride = await getRideById(supabase, rideId);
+      if (!ride) {
+        return NextResponse.json({ error: "Viaje no encontrado" }, { status: 404 });
+      }
+      return NextResponse.json({ ride });
+    }
+
+    const guard = await ridesRouteGuard(req);
+    if (!guard.ok) return guard.response;
+
+    const ride = await getRideById(guard.supabase, rideId);
     if (!ride) {
       return NextResponse.json({ error: "Viaje no encontrado" }, { status: 404 });
     }
 
-    if (verifyInternalSecret(req)) {
-      return NextResponse.json({ ride });
-    }
-
-    const userId = await getUserIdFromRequest(req);
-    if (!userId) {
-      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
-    }
-
-    const pool = await expandUserAccountIdPool(supabase, userId);
+    const pool = await expandUserAccountIdPool(guard.supabase, guard.userId, {
+      authPhone: guard.authPhone,
+    });
     const allowed =
       pool.some((uid) => isSameUserId(uid, ride.buyer_id)) ||
       (ride.driver_id && pool.some((uid) => isSameUserId(uid, ride.driver_id)));
