@@ -82,6 +82,26 @@ export async function notifyDriverRideMatched(
   await sendWhatsAppToE164Digits(phone, msg);
 }
 
+export async function notifyBuyerRideAccepted(
+  supabase: SupabaseClient,
+  args: { ride: RideBookingRow }
+): Promise<void> {
+  if (!isTwilioWhatsAppConfigured()) return;
+
+  const phone = await findUserPhoneById(supabase, args.ride.buyer_id);
+  if (!phone) return;
+
+  const viajeUrl = rideBuyerViajeUrl(args.ride.id);
+  const msg =
+    `🚕 *Conductor en camino*\n` +
+    `Tu viaje fue aceptado.\n` +
+    `Origen: ${args.ride.pickup_address}\n` +
+    `Ticket: *${args.ride.ticket_code ?? "—"}*\n\n` +
+    `Sigue el estado en la app:\n${viajeUrl}`;
+
+  await sendWhatsAppToE164Digits(phone, msg);
+}
+
 export function extractTwilioPhone(fromField: string): string {
   const raw = String(fromField ?? "").replace(/^whatsapp:/i, "").trim();
   return canonicalizeAuthPhone(normalizeAuthPhone(raw));

@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { isSameUserId } from "@/lib/auth-server";
 import { normalizeNgTicketQuery } from "@/lib/ng-ticket-normalize";
 import { appendRideEvent, getRideById, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
+import { notifyBuyerRideAccepted } from "@/lib/rides/ride-notify";
 import {
   canTransitionRideStatus,
   cancelFeeApplies,
@@ -150,10 +151,9 @@ export async function userIsDriverForRide(
   ride: RideBookingRow,
   options?: RideAccountOptions,
 ): Promise<boolean> {
-  const profile = await findActiveDriverProfileForAccount(supabase, userId, options);
-  if (profile?.user_id && ride.driver_id && isSameUserId(profile.user_id, ride.driver_id)) {
-    return true;
-  }
+  if (!ride.driver_id) return false;
+  const pool = await driverRideAccountIdPool(supabase, userId, options);
+  if (pool.some((id) => isSameUserId(id, ride.driver_id))) return true;
   return (await userCanAccessRide(supabase, userId, ride, options)) === "driver";
 }
 
@@ -178,8 +178,21 @@ export async function acceptRide(
     };
   }
 
-  const updated = await updateRideStatus(supabase, ride.id, "matched", { status: "accepted" });
-  if (!updated) return { ok: false, error: "No se pudo aceptar el viaje" };
+  let updated = await updateRideStatus(supabase, ride.id, "matched", { status: "accepted" });
+  if (!updated && ride.status === "matched") {
+    const { data: retry } = await supabase
+      .from("ride_bookings")
+      .update({ status: "accepted", updated_at: new Date().toISOString() })
+      .eq("id", ride.id)
+      .select("*")
+      .maybeSingle();
+    updated = (retry as RideBookingRow) ?? null;
+  }
+  if (!updated) {
+    const fresh = await getRideById(supabase, ride.id);
+    if (fresh?.status === "accepted") return { ok: true, ride: fresh };
+    return { ok: false, error: "No se pudo aceptar el viaje", code: "invalid_state" };
+  }
 
   await appendRideEvent(supabase, {
     rideId: ride.id,
@@ -188,6 +201,10 @@ export async function acceptRide(
     fromStatus: "matched",
     toStatus: "accepted",
   });
+
+  void notifyBuyerRideAccepted(supabase, { ride: updated }).catch((e) =>
+    console.error("[ride-trip] notifyBuyerRideAccepted", e),
+  );
 
   return { ok: true, ride: updated };
 }

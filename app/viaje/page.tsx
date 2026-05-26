@@ -96,6 +96,8 @@ function ViajePageInner() {
   const rideSectionTitle =
     ride?.status === "cancelled"
       ? t.rideCancelled
+      : ride?.status === "accepted" || ride?.status === "arrived" || ride?.status === "in_trip"
+        ? t.rideInProgress
       : ride?.driver_id || ride?.status === "matched"
         ? t.rideMatched
         : ride?.status === "requested"
@@ -365,6 +367,9 @@ function ViajePageInner() {
             )}
             {!ride.driver_id && ride.status === "requested" && (
               <p className="mt-2 text-sm text-amber-800">{t.findingDriver}</p>
+            )}
+            {ride.status === "accepted" && (
+              <p className="mt-2 text-sm text-emerald-800">{t.driverAcceptedHint}</p>
             )}
             {["requested", "matched", "accepted", "arrived"].includes(ride.status) && (
               <button

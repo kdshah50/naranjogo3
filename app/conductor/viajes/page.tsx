@@ -45,6 +45,7 @@ function ConductorViajesInner() {
   const [trips, setTrips] = useState<RideRow[]>([]);
   const [panelError, setPanelError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [ticketByRide, setTicketByRide] = useState<Record<string, string>>({});
   const [canonicalUserId, setCanonicalUserId] = useState<string | null>(null);
@@ -154,9 +155,23 @@ function ConductorViajesInner() {
     }
   };
 
+  const mergeTripFromApi = (rideId: string, row: RideRow | undefined) => {
+    if (!row?.id) return;
+    setTrips((prev) => {
+      const idx = prev.findIndex((t) => t.id === rideId);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = { ...next[idx], ...row };
+        return next;
+      }
+      return [row, ...prev];
+    });
+  };
+
   const action = async (rideId: string, path: string, body?: Record<string, unknown>) => {
     setBusy(rideId + path);
     setActionError(null);
+    setActionSuccess(null);
     try {
       const r = await fetch(`/api/rides/${rideId}/${path}`, {
         method: "POST",
@@ -169,6 +184,12 @@ function ConductorViajesInner() {
         setActionError(data?.error ?? t.actionFailed);
         return;
       }
+      const row = data.ride as RideRow | undefined;
+      mergeTripFromApi(rideId, row);
+      if (path === "accept") setActionSuccess(t.acceptSuccess);
+      else if (path === "arrive") setActionSuccess(t.arriveSuccess);
+      else if (path === "start") setActionSuccess(t.startSuccess);
+      else if (path === "complete") setActionSuccess(t.completeSuccess);
       await load();
     } finally {
       setBusy(null);
@@ -230,6 +251,15 @@ function ConductorViajesInner() {
             role="alert"
           >
             {displayError}
+          </div>
+        )}
+
+        {actionSuccess && (
+          <div
+            className="mb-4 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900"
+            role="status"
+          >
+            {actionSuccess}
           </div>
         )}
 
