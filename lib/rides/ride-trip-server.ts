@@ -4,7 +4,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { isSameUserId } from "@/lib/auth-server";
 import { normalizeNgTicketQuery } from "@/lib/ng-ticket-normalize";
 import { appendRideEvent, getRideById, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
-import { notifyBuyerRideAccepted, notifyBuyerRideArrived } from "@/lib/rides/ride-notify";
+import {
+  notifyBuyerRideAccepted,
+  notifyBuyerRideArrived,
+  notifyBuyerTripStarted,
+} from "@/lib/rides/ride-notify";
 import {
   canTransitionRideStatus,
   cancelFeeApplies,
@@ -276,6 +280,10 @@ export async function startTrip(
     toStatus: "in_trip",
     meta: { ticket_verified: true },
   });
+
+  void notifyBuyerTripStarted(supabase, { ride: updated }).catch((e) =>
+    console.error("[ride-trip] notifyBuyerTripStarted", e),
+  );
 
   return { ok: true, ride: updated };
 }

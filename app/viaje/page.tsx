@@ -95,29 +95,29 @@ function ViajePageInner() {
     rideIdRef.current = ride?.id ?? rideIdFromUrl;
   }, [ride?.id, rideIdFromUrl]);
 
-  const fetchRideById = useCallback(async (rideId: string) => {
-    const r = await fetch(`/api/rides/${rideId}`, {
-      credentials: "include",
-      cache: "no-store",
-    });
-    if (!r.ok) return;
-    const data = await r.json().catch(() => ({}));
-    const row = data.ride as RideRow | undefined;
-    if (row?.id) setRide((prev) => mergeRideRow(prev, row));
-  }, []);
-
   const refreshActiveRide = useCallback(async () => {
     const r = await fetch("/api/rides/active", { credentials: "include", cache: "no-store" });
-    if (!r.ok) return;
-    const data = await r.json().catch(() => ({}));
-    const active = (data.as_buyer?.[0] as RideRow | undefined) ?? null;
-    if (active?.id) {
-      setRide((prev) => mergeRideRow(prev, active));
-      return;
+    let active: RideRow | null = null;
+    if (r.ok) {
+      const data = await r.json().catch(() => ({}));
+      active = (data.as_buyer?.[0] as RideRow | undefined) ?? null;
     }
-    const fallbackId = rideIdRef.current ?? rideIdFromUrl;
-    if (fallbackId) await fetchRideById(fallbackId);
-  }, [fetchRideById, rideIdFromUrl]);
+
+    const rideId = active?.id ?? rideIdRef.current ?? rideIdFromUrl;
+    if (rideId) {
+      const dr = await fetch(`/api/rides/${rideId}`, {
+        credentials: "include",
+        cache: "no-store",
+      });
+      if (dr.ok) {
+        const data = await dr.json().catch(() => ({}));
+        const row = data.ride as RideRow | undefined;
+        if (row?.id) active = row;
+      }
+    }
+
+    if (active?.id) setRide((prev) => mergeRideRow(prev, active));
+  }, [rideIdFromUrl]);
 
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
@@ -132,7 +132,12 @@ function ViajePageInner() {
   useEffect(() => {
     if (authError) return;
     const terminal = ride?.status === "completed" || ride?.status === "cancelled";
-    const ms = ride && !terminal ? 3000 : 8000;
+    const ms =
+      ride?.status === "arrived" || ride?.status === "accepted"
+        ? 2000
+        : ride && !terminal
+          ? 3000
+          : 8000;
     const timer = setInterval(refreshActiveRide, ms);
     return () => clearInterval(timer);
   }, [authError, ride?.status, refreshActiveRide]);
@@ -140,13 +145,17 @@ function ViajePageInner() {
   const rideSectionTitle =
     ride?.status === "cancelled"
       ? t.rideCancelled
-      : ride?.status === "accepted" || ride?.status === "arrived" || ride?.status === "in_trip"
+      : ride?.status === "in_trip"
         ? t.rideInProgress
-      : ride?.driver_id || ride?.status === "matched"
-        ? t.rideMatched
-        : ride?.status === "requested"
-          ? t.rideActive
-          : t.rideCreated;
+        : ride?.status === "arrived"
+          ? t.rideAtPickup
+          : ride?.status === "accepted"
+            ? t.rideDriverEnRoute
+            : ride?.driver_id || ride?.status === "matched"
+              ? t.rideMatched
+              : ride?.status === "requested"
+                ? t.rideActive
+                : t.rideCreated;
 
   const canSubmit = useMemo(
     () => pickupColonia !== dropoffColonia && !authError,
@@ -420,6 +429,9 @@ function ViajePageInner() {
             )}
             {ride.status === "arrived" && (
               <p className="mt-2 text-sm text-emerald-800">{t.driverArrivedHint}</p>
+            )}
+            {ride.status === "in_trip" && (
+              <p className="mt-2 text-sm text-emerald-800">{t.driverInTripHint}</p>
             )}
             {["requested", "matched", "accepted", "arrived", "in_trip"].includes(ride.status) && (
               <p className="mt-2 text-xs text-[#1B4332]/50">{t.rideSyncHint}</p>

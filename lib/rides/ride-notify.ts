@@ -67,6 +67,26 @@ export async function notifyBuyerRideCreated(
   await sendWhatsAppToE164Digits(phone, msg);
 }
 
+export async function notifyBuyerTripStarted(
+  supabase: SupabaseClient,
+  args: { ride: RideBookingRow }
+): Promise<void> {
+  if (!isTwilioWhatsAppConfigured()) return;
+
+  const phone = await findUserPhoneById(supabase, args.ride.buyer_id);
+  if (!phone) return;
+
+  const viajeUrl = rideBuyerViajeUrl(args.ride.id);
+  const msg =
+    `🚕 *Viaje en curso*\n` +
+    `Tu viaje comenzó hacia el destino.\n` +
+    `Destino: ${args.ride.dropoff_address}\n` +
+    `Ticket: *${args.ride.ticket_code ?? "—"}*\n\n` +
+    `Sigue el estado:\n${viajeUrl}`;
+
+  await sendWhatsAppToE164Digits(phone, msg);
+}
+
 export async function notifyBuyerRideArrived(
   supabase: SupabaseClient,
   args: { ride: RideBookingRow }
