@@ -63,8 +63,14 @@ function ConductorViajesInner() {
     setOnline(data.driver ?? null);
     setTrips(Array.isArray(data.trips) ? data.trips : []);
     setCanonicalUserId(data.canonical_user_id ?? data.driver?.user_id ?? null);
-    setError(null);
-  }, [t.panelLoadFailed]);
+    if (!data.driver?.is_active_driver && data.driver !== null) {
+      setError(t.inactiveDriverShort);
+    } else if (!data.driver && !data.canonical_user_id) {
+      setError(t.noDriverProfile);
+    } else {
+      setError(null);
+    }
+  }, [t.panelLoadFailed, t.inactiveDriverShort, t.noDriverProfile]);
 
   const isOnline = Boolean(online?.is_online);
 
@@ -79,24 +85,11 @@ function ConductorViajesInner() {
     setBusy("online");
     setError(null);
     try {
-      let lat: number | undefined;
-      let lng: number | undefined;
-      if (next && typeof navigator !== "undefined" && navigator.geolocation) {
-        try {
-          const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
-            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 8000 }),
-          );
-          lat = pos.coords.latitude;
-          lng = pos.coords.longitude;
-        } catch {
-          /* GPS optional */
-        }
-      }
       const r = await fetch("/api/rides/drivers/me/online", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ online: next, lat, lng }),
+        body: JSON.stringify({ online: next }),
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) {
@@ -104,6 +97,26 @@ function ConductorViajesInner() {
         return;
       }
       await load();
+
+      if (next && typeof navigator !== "undefined" && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          async (pos) => {
+            await fetch("/api/rides/drivers/me/online", {
+              method: "POST",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                online: true,
+                lat: pos.coords.latitude,
+                lng: pos.coords.longitude,
+              }),
+            });
+            await load();
+          },
+          () => undefined,
+          { timeout: 8000 },
+        );
+      }
     } finally {
       setBusy(null);
     }

@@ -53,6 +53,30 @@ async function queryActiveDriverProfiles(
     .order("updated_at", { ascending: false });
 
   if (error) {
+    const missingOnline =
+      error.code === "42703" ||
+      String(error.message ?? "").includes("is_online") ||
+      String(error.message ?? "").includes("last_lat");
+    if (missingOnline) {
+      const fallback = await supabase
+        .from("driver_profiles")
+        .select("user_id,is_active_driver")
+        .in("user_id", idPool)
+        .eq("is_active_driver", true)
+        .order("updated_at", { ascending: false });
+      if (fallback.error) {
+        console.error("[driver-account] queryActiveDriverProfiles fallback", fallback.error);
+        return [];
+      }
+      return (fallback.data ?? []).map((row) => ({
+        user_id: String(row.user_id),
+        is_active_driver: Boolean(row.is_active_driver),
+        is_online: false,
+        last_lat: null,
+        last_lng: null,
+        last_location_at: null,
+      }));
+    }
     console.error("[driver-account] queryActiveDriverProfiles", error);
     return [];
   }

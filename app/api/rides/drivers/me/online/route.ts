@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ridesRouteGuard } from "@/lib/rides/ride-route-guard";
 import {
-  findActiveDriverProfileForAccount,
   findAnyDriverProfileForAccount,
+  pickCanonicalDriverProfile,
 } from "@/lib/rides/driver-account";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
   };
 
   const authOpts = { authPhone: guard.authPhone };
-  const profile = await findActiveDriverProfileForAccount(
+  const profile = await pickCanonicalDriverProfile(
     guard.supabase,
     guard.userId,
     authOpts,
@@ -95,7 +95,7 @@ export async function GET(req: NextRequest) {
   if (!guard.ok) return guard.response;
 
   const authOpts = { authPhone: guard.authPhone };
-  const active = await findActiveDriverProfileForAccount(
+  const active = await pickCanonicalDriverProfile(
     guard.supabase,
     guard.userId,
     authOpts,
