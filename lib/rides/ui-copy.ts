@@ -193,6 +193,8 @@ const DRIVER_TRIPS = {
     connect: "Conectar",
     profileLoadFailed: "No se pudo cargar el perfil de conductor",
     panelLoadFailed: "No se pudo cargar el panel de conductor",
+    ridesDisabled:
+      "Viajes no activos en esta URL (usa el preview de Vercel con RIDES_ENABLED=true, no naranjogo.com.mx).",
     noDriverProfile:
       "No hay perfil de conductor en la base de datos. Ejecuta rides-restore-driver-profile.sql en Supabase o regístrate de nuevo en /conductor.",
     inactiveDriverShort: "Conductor no aprobado — completa /conductor y pide aprobación admin.",
@@ -230,6 +232,8 @@ const DRIVER_TRIPS = {
     connect: "Go online",
     profileLoadFailed: "Could not load driver profile",
     panelLoadFailed: "Could not load driver panel",
+    ridesDisabled:
+      "Rides are not enabled on this URL (use the Vercel preview with RIDES_ENABLED=true, not production).",
     noDriverProfile:
       "No driver profile in the database. Run rides-restore-driver-profile.sql in Supabase or register again at /conductor.",
     inactiveDriverShort: "Driver not approved — complete /conductor and ask admin.",

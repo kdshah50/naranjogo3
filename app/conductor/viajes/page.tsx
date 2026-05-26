@@ -54,11 +54,14 @@ function ConductorViajesInner() {
       headers: { Accept: "application/json" },
     });
     const data = await r.json().catch(() => ({}));
-    if (!r.ok && r.status !== 404) {
-      setError(data?.error ?? t.panelLoadFailed);
+    if (!r.ok) {
+      setError(
+        r.status === 404
+          ? t.ridesDisabled
+          : data?.error ?? t.panelLoadFailed,
+      );
       return;
     }
-    if (!r.ok) return;
 
     setOnline(data.driver ?? null);
     setTrips(Array.isArray(data.trips) ? data.trips : []);
@@ -73,6 +76,7 @@ function ConductorViajesInner() {
   }, [t.panelLoadFailed, t.inactiveDriverShort, t.noDriverProfile]);
 
   const isOnline = Boolean(online?.is_online);
+  const canGoOnline = Boolean(online?.is_active_driver);
 
   useEffect(() => {
     load();
@@ -176,7 +180,7 @@ function ConductorViajesInner() {
             </div>
             <button
               type="button"
-              disabled={busy === "online"}
+              disabled={busy === "online" || !canGoOnline}
               onClick={() => toggleOnline(!isOnline)}
               className={`rounded-full px-5 py-2 text-sm font-medium text-white disabled:opacity-50 ${
                 isOnline ? "bg-amber-700" : "bg-[#1B4332]"
@@ -185,6 +189,9 @@ function ConductorViajesInner() {
               {busy === "online" ? "…" : isOnline ? t.disconnect : t.connect}
             </button>
           </div>
+          {!canGoOnline && (
+            <p className="mt-3 text-xs text-amber-800 leading-relaxed">{t.connectBlockedHint}</p>
+          )}
         </section>
 
         {error && <p className="mb-4 text-sm text-red-700">{error}</p>}

@@ -2,8 +2,8 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  findActiveDriverProfileForAccount,
   findAnyDriverProfileForAccount,
-  pickCanonicalDriverProfile,
   type DriverProfileOnlineRow,
 } from "@/lib/rides/driver-account";
 import type { RideBookingRow } from "@/lib/rides/ride-bookings-server";
@@ -24,9 +24,14 @@ export async function loadDriverPanel(
 ): Promise<DriverPanelState> {
   const accountOpts = { authPhone: args.authPhone };
 
-  let driver =
-    (await pickCanonicalDriverProfile(supabase, args.sessionUserId, accountOpts)) ??
-    (await findAnyDriverProfileForAccount(supabase, args.sessionUserId, accountOpts));
+  let driver = await findActiveDriverProfileForAccount(
+    supabase,
+    args.sessionUserId,
+    accountOpts,
+  );
+  if (!driver) {
+    driver = await findAnyDriverProfileForAccount(supabase, args.sessionUserId, accountOpts);
+  }
 
   const trips =
     driver?.is_active_driver && driver.user_id
