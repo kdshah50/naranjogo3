@@ -169,13 +169,17 @@ export async function findAnyDriverProfileForAccount(
   options?: { authPhone?: string | null },
 ): Promise<DriverProfileOnlineRow | null> {
   const idPool = await expandUserAccountIdPool(supabase, userId, options);
-  if (idPool.length === 0) return null;
+  const phoneIds = options?.authPhone
+    ? await userIdsForAuthPhone(supabase, options.authPhone)
+    : [];
+  const searchPool = [...new Set([...idPool, ...phoneIds.flatMap((id) => idMatchVariantsForIn(id))])];
+  if (searchPool.length === 0) return null;
 
   const { data, error } = await supabase
     .from("driver_profiles")
     .select("user_id,is_online,is_active_driver,last_lat,last_lng,last_location_at")
-    .in("user_id", idPool)
-    .order("created_at", { ascending: false })
+    .in("user_id", searchPool)
+    .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 

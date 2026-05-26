@@ -191,6 +191,8 @@ const DRIVER_TRIPS = {
     offlineHint: "Actívate para aparecer en el despacho.",
     disconnect: "Desconectar",
     connect: "Conectar",
+    connectBlockedHint:
+      "No hay conductor aprobado para esta sesión OTP. Cierra sesión en /unete, ejecuta rides-restore-driver-profile.sql en Supabase, y vuelve a entrar con 415 181 6902.",
     profileLoadFailed: "No se pudo cargar el perfil de conductor",
     panelLoadFailed: "No se pudo cargar el panel de conductor",
     ridesDisabled:
@@ -230,6 +232,8 @@ const DRIVER_TRIPS = {
     offlineHint: "Go online to appear in dispatch.",
     disconnect: "Go offline",
     connect: "Go online",
+    connectBlockedHint:
+      "No approved driver for this OTP session. Log out at /unete, run rides-restore-driver-profile.sql in Supabase, then sign in again with 415 181 6902.",
     profileLoadFailed: "Could not load driver profile",
     panelLoadFailed: "Could not load driver panel",
     ridesDisabled:
