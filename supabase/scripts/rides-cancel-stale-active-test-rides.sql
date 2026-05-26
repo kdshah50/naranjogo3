@@ -5,7 +5,7 @@ SELECT id, status, ticket_code, updated_at, pickup_address
 FROM public.ride_bookings
 WHERE status IN ('matched', 'accepted', 'arrived', 'in_trip')
   AND buyer_id IN (
-    SELECT id::text FROM public.users
+    SELECT id FROM public.users
     WHERE phone LIKE '%4151816902%'
        OR phone IN ('524151816902', '+524151816902', '5214151816902')
   )
@@ -22,7 +22,7 @@ WHERE stale.status IN ('matched', 'accepted', 'arrived', 'in_trip')
   AND stale.id <> done.id
   AND stale.buyer_id = done.buyer_id
   AND stale.buyer_id IN (
-    SELECT id::text FROM public.users
+    SELECT id FROM public.users
     WHERE phone LIKE '%4151816902%'
        OR phone IN ('524151816902', '+524151816902', '5214151816902')
   );
@@ -33,7 +33,7 @@ SET status = 'cancelled',
     updated_at = now()
 WHERE status IN ('matched', 'accepted', 'arrived', 'in_trip')
   AND buyer_id IN (
-    SELECT id::text FROM public.users
+    SELECT id FROM public.users
     WHERE phone LIKE '%4151816902%'
        OR phone IN ('524151816902', '+524151816902', '5214151816902')
   );
