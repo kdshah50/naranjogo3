@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { RidesStagingBanner } from "@/components/RidesStagingBanner";
 import { useAppLang } from "@/hooks/use-app-lang";
 import { formatCurrencyMXN } from "@/lib/locale-format";
 import { ledgerKindLabel, saldoCopy } from "@/lib/rides/ui-copy";
@@ -127,6 +128,7 @@ function SaldoPageInner() {
   return (
     <main className="min-h-screen bg-[#F8F4ED] px-4 py-10">
       <div className="mx-auto max-w-md space-y-6">
+        <RidesStagingBanner />
         <header>
           <h1 className="text-2xl font-semibold text-[#1B4332]">{t.title}</h1>
           <p className="mt-1 text-sm text-[#5C5345]">{t.subtitle}</p>

@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { withLang } from "@/components/BuyerRetentionPanel";
+import { RidesStagingBanner } from "@/components/RidesStagingBanner";
 import { useAppLang } from "@/hooks/use-app-lang";
 import { COLONIA_KEYS, COLONIAS, coloniaLabel } from "@/lib/colonias";
 import { formatCurrencyMXN } from "@/lib/locale-format";
@@ -236,6 +237,7 @@ function ViajePageInner() {
   return (
     <main className="min-h-screen bg-[#F8F4ED] text-[#1B4332]">
       <div className="mx-auto max-w-lg px-4 py-8">
+        <RidesStagingBanner />
         <div className="mb-6 flex items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold">{t.title}</h1>

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { withLang } from "@/components/BuyerRetentionPanel";
 import { useAppLang } from "@/hooks/use-app-lang";
 import { formatCurrencyMXN } from "@/lib/locale-format";
+import { RidesStagingBanner } from "@/components/RidesStagingBanner";
 import { driverTripActionHint, driverTripsCopy, rideStatusLabel } from "@/lib/rides/ui-copy";
 
 type RideRow = {
@@ -150,6 +151,8 @@ function ConductorViajesInner() {
   return (
     <main className="min-h-screen bg-[#F8F4ED] text-[#1B4332]">
       <div className="mx-auto max-w-lg px-4 py-8">
+        <RidesStagingBanner />
+
         <div className="mb-6 flex items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold">{t.title}</h1>

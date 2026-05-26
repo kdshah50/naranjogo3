@@ -13,7 +13,8 @@
     "test:full-connect": "tsx scripts/test-service-booking-full-connect.ts",
     "test:driver-onboarding": "tsx scripts/test-driver-onboarding.ts",
     "test:ride-pricing": "tsx scripts/test-ride-pricing.ts",
-    "test:ride-lifecycle": "tsx scripts/test-ride-lifecycle.ts"
+    "test:ride-lifecycle": "tsx scripts/test-ride-lifecycle.ts",
+    "test:rides-staging": "tsx scripts/test-rides-staging-health.ts"
   },
   "dependencies": {
     "@sentry/nextjs": "^8.55.1",
