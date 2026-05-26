@@ -198,7 +198,9 @@ const DRIVER_TRIPS = {
     ridesDisabled:
       "Viajes no activos en esta URL (usa el preview de Vercel con RIDES_ENABLED=true, no naranjogo.com.mx).",
     noDriverProfile:
-      "No hay perfil de conductor en la base de datos. Ejecuta rides-restore-driver-profile.sql en Supabase o regístrate de nuevo en /conductor.",
+      "No hay perfil de conductor para esta sesión. Cierra sesión en /unete y vuelve a entrar con 415 181 6902.",
+    sessionMissingPhone: "La sesión no tiene teléfono — cierra sesión y vuelve a entrar.",
+    sessionIdLabel: "Sesión:",
     inactiveDriverShort: "Conductor no aprobado — completa /conductor y pide aprobación admin.",
     tripsLoadFailed: "No se pudieron cargar los viajes asignados",
     toggleFailed: "No se pudo cambiar el estado",
@@ -239,7 +241,9 @@ const DRIVER_TRIPS = {
     ridesDisabled:
       "Rides are not enabled on this URL (use the Vercel preview with RIDES_ENABLED=true, not production).",
     noDriverProfile:
-      "No driver profile in the database. Run rides-restore-driver-profile.sql in Supabase or register again at /conductor.",
+      "No driver profile for this session. Log out at /unete and sign in again with 415 181 6902.",
+    sessionMissingPhone: "Session has no phone — log out and sign in again.",
+    sessionIdLabel: "Session:",
     inactiveDriverShort: "Driver not approved — complete /conductor and ask admin.",
     tripsLoadFailed: "Could not load assigned rides",
     toggleFailed: "Could not change status",

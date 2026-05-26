@@ -66,15 +66,27 @@ function ConductorViajesInner() {
 
     setOnline(data.driver ?? null);
     setTrips(Array.isArray(data.trips) ? data.trips : []);
+    const sessionId = data.session_user_id ?? null;
     setCanonicalUserId(data.canonical_user_id ?? data.driver?.user_id ?? null);
     if (!data.driver?.is_active_driver && data.driver !== null) {
       setError(t.inactiveDriverShort);
     } else if (!data.driver && !data.canonical_user_id) {
-      setError(t.noDriverProfile);
+      const phoneHint = data.auth_phone_set ? "" : ` ${t.sessionMissingPhone}`;
+      const sessionHint = sessionId
+        ? ` ${t.sessionIdLabel} ${String(sessionId).slice(0, 8)}…`
+        : "";
+      setError(t.noDriverProfile + phoneHint + sessionHint);
     } else {
       setError(null);
     }
-  }, [t.panelLoadFailed, t.inactiveDriverShort, t.noDriverProfile, t.ridesDisabled]);
+  }, [
+    t.panelLoadFailed,
+    t.inactiveDriverShort,
+    t.noDriverProfile,
+    t.ridesDisabled,
+    t.sessionMissingPhone,
+    t.sessionIdLabel,
+  ]);
 
   const isOnline = Boolean(online?.is_online);
   const canGoOnline = Boolean(online?.is_active_driver);
