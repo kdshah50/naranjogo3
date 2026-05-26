@@ -10,11 +10,12 @@ export function normalizeNgTicketQuery(raw: string | null | undefined): string |
     .replace(/\s+/g, "")
     .toUpperCase();
   if (!t) return null;
-  if (/^NG-[\da-f]{8}$/.test(t)) return t;
-  if (/^NG[\da-f]{8}$/.test(t)) return `NG-${t.slice(2)}`;
+  const hex8 = "[\\da-fA-F]{8}";
+  if (new RegExp(`^NG-${hex8}$`).test(t)) return t;
+  if (new RegExp(`^NG${hex8}$`).test(t)) return `NG-${t.slice(2)}`;
   /** WhatsApp / copy-paste often misreads NG- as NJ- (Naranjo). */
-  if (/^NJ-[\da-f]{8}$/.test(t)) return `NG-${t.slice(3)}`;
-  if (/^NJ[\da-f]{8}$/.test(t)) return `NG-${t.slice(2)}`;
-  if (/^[\da-f]{8}$/.test(t)) return `NG-${t}`;
+  if (new RegExp(`^NJ-${hex8}$`).test(t)) return `NG-${t.slice(3)}`;
+  if (new RegExp(`^NJ${hex8}$`).test(t)) return `NG-${t.slice(2)}`;
+  if (new RegExp(`^${hex8}$`).test(t)) return `NG-${t}`;
   return null;
 }

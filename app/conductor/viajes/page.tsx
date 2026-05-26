@@ -473,7 +473,7 @@ function ConductorViajesInner() {
                     <input
                       className="rounded-lg border border-[#1B4332]/20 px-3 py-2 text-sm font-mono"
                       placeholder={t.ticketPlaceholder}
-                      value={ticketByRide[trip.id] ?? ""}
+                      value={ticketByRide[trip.id] ?? trip.ticket_code ?? ""}
                       onChange={(e) =>
                         setTicketByRide((m) => ({ ...m, [trip.id]: e.target.value }))
                       }
@@ -482,7 +482,9 @@ function ConductorViajesInner() {
                       type="button"
                       disabled={!!busy}
                       onClick={() =>
-                        action(trip.id, "start", { ticket_code: ticketByRide[trip.id] ?? "" })
+                        action(trip.id, "start", {
+                          ticket_code: (ticketByRide[trip.id] ?? trip.ticket_code ?? "").trim(),
+                        })
                       }
                       className="rounded-full bg-[#1B4332] px-4 py-2 text-sm text-white disabled:opacity-50"
                     >
