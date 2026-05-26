@@ -7,7 +7,12 @@
  * Requires: .env.local with Supabase, JWT_SECRET, RIDES_ENABLED=true on server.
  * Optional: INTERNAL_API_SECRET (for explicit match fallback).
  */
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+
+type WalletBalanceRow = {
+  balance_mxn_cents: number;
+  held_mxn_cents: number;
+};
 import { SignJWT } from "jose";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
@@ -81,15 +86,15 @@ async function jwtFor(sub: string, phone: string): Promise<string> {
 
 /** Ensure canonical test account can request a ride (preview E2E only). */
 async function ensureTestBalance(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient,
   userId: string,
   minCents: number,
 ): Promise<void> {
-  const { data: w } = await supabase
+  const { data: w } = (await supabase
     .from("wallets")
     .select("balance_mxn_cents,held_mxn_cents")
     .eq("user_id", userId)
-    .maybeSingle();
+    .maybeSingle()) as { data: WalletBalanceRow | null };
 
   const balance = Number(w?.balance_mxn_cents ?? 0);
   const held = Number(w?.held_mxn_cents ?? 0);
@@ -185,11 +190,11 @@ async function main() {
     fail("GET /api/rides/wallet → 404 (RIDES_ENABLED=false on this deployment)");
     process.exit(1);
   }
-  const { data: wRow } = await supabase
+  const { data: wRow } = (await supabase
     .from("wallets")
     .select("balance_mxn_cents,held_mxn_cents")
     .eq("user_id", CANONICAL_ID)
-    .maybeSingle();
+    .maybeSingle()) as { data: WalletBalanceRow | null };
   const dbBal = Number(wRow?.balance_mxn_cents ?? 0);
   const dbHeld = Number(wRow?.held_mxn_cents ?? 0);
   ok(`wallet (DB) balance=$${(dbBal / 100).toFixed(2)} held=$${(dbHeld / 100).toFixed(2)}`);
