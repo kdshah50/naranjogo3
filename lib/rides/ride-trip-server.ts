@@ -4,13 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { isSameUserId } from "@/lib/auth-server";
 import { normalizeNgTicketQuery } from "@/lib/ng-ticket-normalize";
 import { appendRideEvent, getRideById, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
-import {
-  notifyBuyerRideAccepted,
-  notifyBuyerRideArrived,
-  notifyBuyerRideCompleted,
-  notifyBuyerTripStarted,
-  notifyDriverRideCompleted,
-} from "@/lib/rides/ride-notify";
+import { emitRidePhaseNotifications } from "@/lib/rides/ride-notify";
 import {
   canTransitionRideStatus,
   cancelFeeApplies,
@@ -208,9 +202,11 @@ export async function acceptRide(
     toStatus: "accepted",
   });
 
-  void notifyBuyerRideAccepted(supabase, { ride: updated }).catch((e) =>
-    console.error("[ride-trip] notifyBuyerRideAccepted", e),
-  );
+  void emitRidePhaseNotifications(supabase, {
+    ride: updated,
+    phase: "accepted",
+    driverUserId: args.driverUserId,
+  });
 
   return { ok: true, ride: updated };
 }
@@ -240,9 +236,11 @@ export async function arriveAtPickup(
     toStatus: "arrived",
   });
 
-  void notifyBuyerRideArrived(supabase, { ride: updated }).catch((e) =>
-    console.error("[ride-trip] notifyBuyerRideArrived", e),
-  );
+  void emitRidePhaseNotifications(supabase, {
+    ride: updated,
+    phase: "arrived",
+    driverUserId: args.driverUserId,
+  });
 
   return { ok: true, ride: updated };
 }
@@ -283,9 +281,11 @@ export async function startTrip(
     meta: { ticket_verified: true },
   });
 
-  void notifyBuyerTripStarted(supabase, { ride: updated }).catch((e) =>
-    console.error("[ride-trip] notifyBuyerTripStarted", e),
-  );
+  void emitRidePhaseNotifications(supabase, {
+    ride: updated,
+    phase: "in_trip",
+    driverUserId: args.driverUserId,
+  });
 
   return { ok: true, ride: updated };
 }
@@ -377,14 +377,13 @@ export async function completeTrip(
   });
 
   const completed = updated as RideBookingRow;
-  void notifyBuyerRideCompleted(supabase, { ride: completed, finalTotalMxnCents: finalTotal }).catch(
-    (e) => console.error("[ride-trip] notifyBuyerRideCompleted", e),
-  );
-  void notifyDriverRideCompleted(supabase, {
+  void emitRidePhaseNotifications(supabase, {
     ride: completed,
+    phase: "completed",
     driverUserId: driverId,
+    finalTotalMxnCents: finalTotal,
     driverPayoutMxnCents: driverPay,
-  }).catch((e) => console.error("[ride-trip] notifyDriverRideCompleted", e));
+  });
 
   return { ok: true, ride: completed };
 }

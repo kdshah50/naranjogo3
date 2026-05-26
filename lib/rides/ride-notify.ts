@@ -192,6 +192,100 @@ export async function notifyBuyerRideAccepted(
   await sendWhatsAppToE164Digits(phone, msg);
 }
 
+export async function notifyDriverRideAccepted(
+  supabase: SupabaseClient,
+  args: { ride: RideBookingRow; driverUserId: string }
+): Promise<void> {
+  if (!isTwilioWhatsAppConfigured()) return;
+
+  const phone = await findUserPhoneById(supabase, args.driverUserId);
+  if (!phone) return;
+
+  const panelUrl = rideDriverPanelUrl();
+  const msg =
+    `🚕 *Viaje aceptado*\n` +
+    `Ticket *${args.ride.ticket_code ?? "—"}* — ve al origen.\n` +
+    `${args.ride.pickup_address}\n\n` +
+    `Siguiente paso: «Llegué al origen»\n${panelUrl}`;
+
+  await sendWhatsAppToE164Digits(phone, msg);
+}
+
+export async function notifyDriverRideArrived(
+  supabase: SupabaseClient,
+  args: { ride: RideBookingRow; driverUserId: string }
+): Promise<void> {
+  if (!isTwilioWhatsAppConfigured()) return;
+
+  const phone = await findUserPhoneById(supabase, args.driverUserId);
+  if (!phone) return;
+
+  const panelUrl = rideDriverPanelUrl();
+  const msg =
+    `🚕 *En el origen*\n` +
+    `Ticket *${args.ride.ticket_code ?? "—"}* — pide el código al pasajero.\n\n` +
+    `Siguiente paso: «Iniciar viaje»\n${panelUrl}`;
+
+  await sendWhatsAppToE164Digits(phone, msg);
+}
+
+export async function notifyDriverTripStarted(
+  supabase: SupabaseClient,
+  args: { ride: RideBookingRow; driverUserId: string }
+): Promise<void> {
+  if (!isTwilioWhatsAppConfigured()) return;
+
+  const phone = await findUserPhoneById(supabase, args.driverUserId);
+  if (!phone) return;
+
+  const panelUrl = rideDriverPanelUrl();
+  const msg =
+    `🚕 *Viaje en curso*\n` +
+    `Destino: ${args.ride.dropoff_address}\n` +
+    `Ticket *${args.ride.ticket_code ?? "—"}*\n\n` +
+    `Al llegar: «Completar viaje»\n${panelUrl}`;
+
+  await sendWhatsAppToE164Digits(phone, msg);
+}
+
+export type RideNotifyPhase = "accepted" | "arrived" | "in_trip" | "completed";
+
+/** Fire buyer + driver WhatsApp for a lifecycle step (after DB commit). */
+export async function emitRidePhaseNotifications(
+  supabase: SupabaseClient,
+  args: {
+    ride: RideBookingRow;
+    phase: RideNotifyPhase;
+    driverUserId: string;
+    finalTotalMxnCents?: number;
+    driverPayoutMxnCents?: number;
+  },
+): Promise<void> {
+  const { ride, phase, driverUserId } = args;
+  try {
+    if (phase === "accepted") {
+      await notifyBuyerRideAccepted(supabase, { ride });
+      await notifyDriverRideAccepted(supabase, { ride, driverUserId });
+    } else if (phase === "arrived") {
+      await notifyBuyerRideArrived(supabase, { ride });
+      await notifyDriverRideArrived(supabase, { ride, driverUserId });
+    } else if (phase === "in_trip") {
+      await notifyBuyerTripStarted(supabase, { ride });
+      await notifyDriverTripStarted(supabase, { ride, driverUserId });
+    } else if (phase === "completed") {
+      const fare = args.finalTotalMxnCents ?? ride.final_total_mxn_cents ?? ride.estimated_total_mxn_cents;
+      await notifyBuyerRideCompleted(supabase, { ride, finalTotalMxnCents: fare });
+      await notifyDriverRideCompleted(supabase, {
+        ride,
+        driverUserId,
+        driverPayoutMxnCents: args.driverPayoutMxnCents ?? 0,
+      });
+    }
+  } catch (e) {
+    console.error("[ride-notify] emitRidePhaseNotifications", phase, e);
+  }
+}
+
 export function extractTwilioPhone(fromField: string): string {
   const raw = String(fromField ?? "").replace(/^whatsapp:/i, "").trim();
   return canonicalizeAuthPhone(normalizeAuthPhone(raw));
