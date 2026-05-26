@@ -10,6 +10,9 @@
 
 -- Canonical IDs (edit only if your §1 SELECT shows a different KEEP row)
 -- KEEP_ID: 3d5522b3-aedf-4625-80a1-8a79708bb893
+--
+-- Type note (preview DB): UUID → users.id, ride_bookings, listings.seller_id.
+-- TEXT → driver_profiles.user_id, wallets, service_bookings, messaging, etc.
 
 -- §1 — BEFORE: users + driver profiles for this phone
 SELECT 'users' AS section, id, phone, display_name, created_at
@@ -21,9 +24,9 @@ ORDER BY created_at;
 SELECT 'driver_profiles' AS section, user_id, is_active_driver, is_online, vehicle_make, updated_at
 FROM public.driver_profiles
 WHERE user_id IN (
-  '3d5522b3-aedf-4625-80a1-8a79708bb893'::uuid,
-  '94a74ff0-d2f4-46a7-b43e-85fb8f2cf524'::uuid,
-  '7003532b-1bba-4bbe-8b7e-b89e86051169'::uuid
+  '3d5522b3-aedf-4625-80a1-8a79708bb893',
+  '94a74ff0-d2f4-46a7-b43e-85fb8f2cf524',
+  '7003532b-1bba-4bbe-8b7e-b89e86051169'
 );
 
 -- §2 — Phase 4 columns (safe re-run)
@@ -69,7 +72,7 @@ INSERT INTO public.driver_profiles (
   is_online
 )
 SELECT
-  '3d5522b3-aedf-4625-80a1-8a79708bb893'::uuid,
+  '3d5522b3-aedf-4625-80a1-8a79708bb893',
   license_number,
   license_expiry,
   license_photo_url,
@@ -89,9 +92,9 @@ SELECT
   false
 FROM public.driver_profiles
 WHERE user_id IN (
-  '3d5522b3-aedf-4625-80a1-8a79708bb893'::uuid,
-  '94a74ff0-d2f4-46a7-b43e-85fb8f2cf524'::uuid,
-  '7003532b-1bba-4bbe-8b7e-b89e86051169'::uuid
+  '3d5522b3-aedf-4625-80a1-8a79708bb893',
+  '94a74ff0-d2f4-46a7-b43e-85fb8f2cf524',
+  '7003532b-1bba-4bbe-8b7e-b89e86051169'
 )
 ORDER BY is_active_driver DESC, updated_at DESC NULLS LAST
 LIMIT 1
@@ -103,8 +106,8 @@ ON CONFLICT (user_id) DO UPDATE SET
 
 DELETE FROM public.driver_profiles
 WHERE user_id IN (
-  '94a74ff0-d2f4-46a7-b43e-85fb8f2cf524'::uuid,
-  '7003532b-1bba-4bbe-8b7e-b89e86051169'::uuid
+  '94a74ff0-d2f4-46a7-b43e-85fb8f2cf524',
+  '7003532b-1bba-4bbe-8b7e-b89e86051169'
 );
 
 -- §5 — Ride listing on canonical driver (adjust listing id if yours differs)
@@ -122,40 +125,43 @@ WHERE id = 'b805f14c-2f3b-497f-bcf6-0748d84670bc'::uuid
 -- §6 — Repoint rides + wallets to canonical user, then remove duplicate users
 DO $$
 DECLARE
-  keep_id uuid := '3d5522b3-aedf-4625-80a1-8a79708bb893';
+  keep_uuid uuid := '3d5522b3-aedf-4625-80a1-8a79708bb893';
+  keep_text text := keep_uuid::text;
   drop_ids uuid[] := ARRAY[
     '94a74ff0-d2f4-46a7-b43e-85fb8f2cf524',
     '7003532b-1bba-4bbe-8b7e-b89e86051169'
   ]::uuid[];
   d uuid;
+  d_text text;
 BEGIN
   FOREACH d IN ARRAY drop_ids LOOP
-    IF d = keep_id THEN CONTINUE; END IF;
+    IF d = keep_uuid THEN CONTINUE; END IF;
+    d_text := d::text;
 
-    UPDATE public.ride_bookings SET buyer_id = keep_id WHERE buyer_id = d;
-    UPDATE public.ride_bookings SET driver_id = keep_id WHERE driver_id = d;
-    UPDATE public.driver_profiles SET user_id = keep_id WHERE user_id = d;
-    UPDATE public.listings SET seller_id = keep_id WHERE seller_id = d;
-    UPDATE public.service_bookings SET buyer_id = keep_id WHERE buyer_id = d;
-    UPDATE public.service_bookings SET seller_id = keep_id WHERE seller_id = d;
-    UPDATE public.listing_conversations SET buyer_id = keep_id WHERE buyer_id = d;
-    UPDATE public.listing_conversations SET seller_id = keep_id WHERE seller_id = d;
-    UPDATE public.listing_messages SET sender_id = keep_id WHERE sender_id = d;
-    UPDATE public.wallets SET user_id = keep_id WHERE user_id = d;
-    UPDATE public.wallet_ledger SET user_id = keep_id WHERE user_id = d;
-    UPDATE public.loyalty_accounts SET user_id = keep_id WHERE user_id = d;
-    UPDATE public.loyalty_transactions SET user_id = keep_id WHERE user_id = d;
-    UPDATE public.marketplace_orders SET buyer_id = keep_id WHERE buyer_id = d;
-    UPDATE public.marketplace_orders SET seller_id = keep_id WHERE seller_id = d;
-    UPDATE public.reports SET seller_id = keep_id WHERE seller_id = d;
-    UPDATE public.seller_reviews SET seller_id = keep_id WHERE seller_id = d;
-    UPDATE public.seller_reviews SET buyer_id = keep_id WHERE buyer_id = d;
-    UPDATE public.guarantee_claims SET buyer_id = keep_id WHERE buyer_id = d;
-    UPDATE public.guarantee_claims SET seller_id = keep_id WHERE seller_id = d;
-    UPDATE public.booking_reminders SET buyer_id = keep_id WHERE buyer_id = d;
-    UPDATE public.booking_reminders SET seller_id = keep_id WHERE seller_id = d;
-    UPDATE public.seller_strike_events SET seller_id = keep_id WHERE seller_id = d;
-    UPDATE public.users SET referred_by = keep_id WHERE referred_by = d;
+    UPDATE public.ride_bookings SET buyer_id = keep_uuid WHERE buyer_id = d;
+    UPDATE public.ride_bookings SET driver_id = keep_uuid WHERE driver_id = d;
+    UPDATE public.driver_profiles SET user_id = keep_text WHERE user_id = d_text;
+    UPDATE public.listings SET seller_id = keep_uuid WHERE seller_id = d;
+    UPDATE public.service_bookings SET buyer_id = keep_text WHERE buyer_id = d_text;
+    UPDATE public.service_bookings SET seller_id = keep_text WHERE seller_id = d_text;
+    UPDATE public.listing_conversations SET buyer_id = keep_text WHERE buyer_id = d_text;
+    UPDATE public.listing_conversations SET seller_id = keep_text WHERE seller_id = d_text;
+    UPDATE public.listing_messages SET sender_id = keep_text WHERE sender_id = d_text;
+    UPDATE public.wallets SET user_id = keep_text WHERE user_id = d_text;
+    UPDATE public.wallet_ledger SET user_id = keep_text WHERE user_id = d_text;
+    UPDATE public.loyalty_accounts SET user_id = keep_text WHERE user_id = d_text;
+    UPDATE public.loyalty_transactions SET user_id = keep_text WHERE user_id = d_text;
+    UPDATE public.marketplace_orders SET buyer_id = keep_text WHERE buyer_id = d_text;
+    UPDATE public.marketplace_orders SET seller_id = keep_text WHERE seller_id = d_text;
+    UPDATE public.reports SET seller_id = keep_text WHERE seller_id = d_text;
+    UPDATE public.seller_reviews SET seller_id = keep_text WHERE seller_id = d_text;
+    UPDATE public.seller_reviews SET buyer_id = keep_text WHERE buyer_id = d_text;
+    UPDATE public.guarantee_claims SET buyer_id = keep_text WHERE buyer_id = d_text;
+    UPDATE public.guarantee_claims SET seller_id = keep_text WHERE seller_id = d_text;
+    UPDATE public.booking_reminders SET buyer_id = keep_text WHERE buyer_id = d_text;
+    UPDATE public.booking_reminders SET seller_id = keep_text WHERE seller_id = d_text;
+    UPDATE public.seller_strike_events SET seller_id = keep_text WHERE seller_id = d_text;
+    UPDATE public.users SET referred_by = keep_uuid WHERE referred_by = d;
 
     DELETE FROM public.referral_codes WHERE user_id = d;
     DELETE FROM public.user_favorite_listings WHERE user_id = d;
@@ -180,7 +186,7 @@ ORDER BY created_at;
 
 SELECT 'driver_after' AS section, user_id, is_active_driver, is_online, vehicle_make
 FROM public.driver_profiles
-WHERE user_id = '3d5522b3-aedf-4625-80a1-8a79708bb893'::uuid;
+WHERE user_id = '3d5522b3-aedf-4625-80a1-8a79708bb893';
 
 SELECT 'open_rides_after' AS section, count(*)::int AS n
 FROM public.ride_bookings

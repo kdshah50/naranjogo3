@@ -8,6 +8,7 @@ import { RidesStagingBanner } from "@/components/RidesStagingBanner";
 import { useAppLang } from "@/hooks/use-app-lang";
 import { COLONIA_KEYS, COLONIAS, coloniaLabel } from "@/lib/colonias";
 import { formatCurrencyMXN } from "@/lib/locale-format";
+import { useRideLiveStream } from "@/hooks/use-ride-live-stream";
 import { rideStatusLabel, viajeCopy } from "@/lib/rides/ui-copy";
 
 type FareEstimate = {
@@ -177,6 +178,42 @@ function ViajePageInner() {
     });
   }, [rideIdFromUrl]);
 
+  const liveRideId =
+    ride?.id ??
+    rideIdFromUrl ??
+    (typeof sessionStorage !== "undefined"
+      ? sessionStorage.getItem(VIAJE_PINNED_RIDE_KEY)
+      : null);
+
+  const liveStreamEnabled =
+    !authError &&
+    Boolean(liveRideId) &&
+    ride?.status !== "completed" &&
+    ride?.status !== "cancelled";
+
+  useRideLiveStream({
+    streamUrl: liveRideId ? `/api/rides/${liveRideId}/stream` : null,
+    enabled: liveStreamEnabled,
+    onEvent: (payload) => {
+      const row = (payload as { ride?: RideRow }).ride;
+      if (!row?.id) return;
+      const pinnedId =
+        rideIdFromUrl ??
+        (typeof sessionStorage !== "undefined"
+          ? sessionStorage.getItem(VIAJE_PINNED_RIDE_KEY)
+          : null);
+      setRide((prev) => {
+        const next = applyRideUpdate(prev, row, pinnedId);
+        if (next?.status === "completed" && typeof sessionStorage !== "undefined") {
+          sessionStorage.setItem(VIAJE_PINNED_RIDE_KEY, next.id);
+        }
+        return next;
+      });
+    },
+    fallbackPollMs: 30_000,
+    onFallbackPoll: refreshActiveRide,
+  });
+
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
       .then((r) => r.json())
@@ -190,15 +227,11 @@ function ViajePageInner() {
   useEffect(() => {
     if (authError) return;
     const terminal = ride?.status === "completed" || ride?.status === "cancelled";
-    const ms =
-      ride?.status === "in_trip" || ride?.status === "arrived" || ride?.status === "accepted"
-        ? 2000
-        : ride && !terminal
-          ? 3000
-          : 8000;
+    if (terminal) return;
+    const ms = liveStreamEnabled ? 15_000 : 3000;
     const timer = setInterval(refreshActiveRide, ms);
     return () => clearInterval(timer);
-  }, [authError, ride?.status, refreshActiveRide]);
+  }, [authError, liveStreamEnabled, ride?.status, refreshActiveRide]);
 
   useEffect(() => {
     const onFocus = () => refreshActiveRide();

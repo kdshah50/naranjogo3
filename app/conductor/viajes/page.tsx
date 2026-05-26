@@ -6,6 +6,7 @@ import { withLang } from "@/components/BuyerRetentionPanel";
 import { useAppLang } from "@/hooks/use-app-lang";
 import { formatCurrencyMXN } from "@/lib/locale-format";
 import { RidesStagingBanner } from "@/components/RidesStagingBanner";
+import { useRideLiveStream } from "@/hooks/use-ride-live-stream";
 import {
   driverFlowStepIndex,
   driverFlowSteps,
@@ -171,12 +172,33 @@ function ConductorViajesInner() {
   const isOnline = Boolean(online?.is_online);
   const canGoOnline = Boolean(online?.is_active_driver);
 
+  const panelStreamEnabled = !panelError && Boolean(canonicalUserId ?? online?.user_id);
+
+  useRideLiveStream({
+    streamUrl: panelStreamEnabled ? "/api/rides/drivers/me/stream" : null,
+    enabled: panelStreamEnabled,
+    onEvent: (payload) => {
+      const data = payload as {
+        driver?: DriverOnline | null;
+        trips?: RideRow[];
+        canonical_user_id?: string | null;
+      };
+      if (data.driver) setOnline(data.driver);
+      if (Array.isArray(data.trips)) {
+        setTrips(sortDriverTrips(data.trips.filter(isDriverActiveTrip)));
+      }
+      if (data.canonical_user_id) setCanonicalUserId(data.canonical_user_id);
+    },
+    fallbackPollMs: 30_000,
+    onFallbackPoll: load,
+  });
+
   useEffect(() => {
     load();
-    const ms = isOnline ? 3000 : 8000;
+    const ms = panelStreamEnabled ? (isOnline ? 15_000 : 20_000) : isOnline ? 3000 : 8000;
     const timer = setInterval(load, ms);
     return () => clearInterval(timer);
-  }, [load, isOnline]);
+  }, [load, isOnline, panelStreamEnabled]);
 
   useEffect(() => {
     if (!isOnline || trips.length > 0) {

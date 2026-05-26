@@ -74,9 +74,10 @@ Driver: `/conductor/viajes` · Rider: `/viaje` · Same phones every time.
 
 ### Phase 2 — Real-time in-app (1 day dev)
 
-- Supabase Realtime on `ride_bookings` filtered by `id` (rider + driver subscribe after match)
-- Polling becomes backup (30s), not primary
-- Removes “wait 6 seconds” and flip-flop races
+- [x] Migration: `ride_bookings` on `supabase_realtime` publication
+- [x] SSE: `GET /api/rides/[id]/stream`, `GET /api/rides/drivers/me/stream` (server Realtime + cookie auth)
+- [x] `/viaje` + `/conductor/viajes` subscribe; polling backup 15–30s
+- Run migration on preview Supabase before testing live updates
 
 ### Phase 3 — Production hygiene (later)
 
