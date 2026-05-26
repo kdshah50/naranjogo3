@@ -6,7 +6,59 @@ import { withLang } from "@/components/BuyerRetentionPanel";
 import { useAppLang } from "@/hooks/use-app-lang";
 import { formatCurrencyMXN } from "@/lib/locale-format";
 import { RidesStagingBanner } from "@/components/RidesStagingBanner";
-import { driverTripActionHint, driverTripsCopy, rideStatusLabel } from "@/lib/rides/ui-copy";
+import {
+  driverFlowStepIndex,
+  driverFlowSteps,
+  driverTripActionHint,
+  driverTripsCopy,
+  rideStatusLabel,
+} from "@/lib/rides/ui-copy";
+
+const TRIP_STATUS_RANK: Record<string, number> = {
+  requested: 0,
+  matched: 1,
+  accepted: 2,
+  arrived: 3,
+  in_trip: 4,
+  completed: 5,
+};
+
+function mergeDriverTripLists(prev: RideRow[], next: RideRow[]): RideRow[] {
+  if (next.length === 0) return prev.length > 0 ? prev : [];
+  const byId = new Map<string, RideRow>();
+  for (const row of [...next, ...prev]) {
+    const cur = byId.get(row.id);
+    if (!cur) {
+      byId.set(row.id, row);
+      continue;
+    }
+    const rankRow = TRIP_STATUS_RANK[row.status] ?? 0;
+    const rankCur = TRIP_STATUS_RANK[cur.status] ?? 0;
+    byId.set(row.id, rankRow >= rankCur ? { ...cur, ...row } : cur);
+  }
+  return [...byId.values()].sort(
+    (a, b) => (TRIP_STATUS_RANK[b.status] ?? 0) - (TRIP_STATUS_RANK[a.status] ?? 0),
+  );
+}
+
+function debugRideToRow(
+  r: {
+    id: string;
+    status: string;
+    ticket_code: string | null;
+    pickup_address: string;
+    dropoff_address: string;
+  },
+): RideRow {
+  return {
+    id: r.id,
+    status: r.status,
+    pickup_address: r.pickup_address,
+    dropoff_address: r.dropoff_address,
+    ticket_code: r.ticket_code,
+    estimated_total_mxn_cents: 0,
+  };
+}
 
 type RideRow = {
   id: string;
@@ -68,7 +120,8 @@ function ConductorViajesInner() {
     }
 
     if (data.driver) setOnline(data.driver as DriverOnline);
-    setTrips(Array.isArray(data.trips) ? data.trips : []);
+    const nextTrips = Array.isArray(data.trips) ? (data.trips as RideRow[]) : [];
+    setTrips((prev) => mergeDriverTripLists(prev, nextTrips));
     const sessionId = data.session_user_id ?? null;
     setCanonicalUserId(data.canonical_user_id ?? data.driver?.user_id ?? null);
     if (!data.driver?.is_active_driver && data.driver !== null) {
@@ -102,6 +155,51 @@ function ConductorViajesInner() {
     const timer = setInterval(load, ms);
     return () => clearInterval(timer);
   }, [load, isOnline]);
+
+  useEffect(() => {
+    if (!isOnline || trips.length > 0) {
+      setTripDebugHint(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const r = await fetch("/api/rides-drivers-trips-debug", {
+        credentials: "include",
+        cache: "no-store",
+      });
+      const data = await r.json().catch(() => ({}));
+      if (cancelled || !r.ok) return;
+
+      const profileId = (data.profile_user_id as string | null)?.toLowerCase();
+      const dbRides = (data.db_active_rides ?? []) as Array<{
+        id: string;
+        status: string;
+        ticket_code: string | null;
+        driver_id: string;
+        pickup_address: string;
+        dropoff_address: string;
+      }>;
+
+      const mine = profileId
+        ? dbRides.filter((row) => row.driver_id?.toLowerCase() === profileId)
+        : [];
+      if (mine.length > 0) {
+        setTrips((prev) => mergeDriverTripLists(prev, mine.map(debugRideToRow)));
+        setTripDebugHint(t.tripRecoveredHint);
+      }
+
+      const checks = Array.isArray(data.checks) ? (data.checks as string[]).join(" ") : "";
+      const ticket = dbRides[0]?.ticket_code;
+      if (checks) {
+        setTripDebugHint(
+          ticket ? `${t.tripAssignedHint} ${ticket}). ${checks}` : checks,
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOnline, trips.length, t.tripAssignedHint, t.tripRecoveredHint]);
 
   const toggleOnline = async (next: boolean) => {
     setBusy("online");
@@ -245,6 +343,38 @@ function ConductorViajesInner() {
           )}
         </section>
 
+        {isOnline && (
+          <section className="mb-6 rounded-2xl border border-[#1B4332]/15 bg-white/80 p-4 text-sm">
+            <p className="font-medium">{t.flowGuideTitle}</p>
+            <p className="mt-1 text-xs text-[#1B4332]/60 leading-relaxed">{t.flowWhereHint}</p>
+            <ol className="mt-3 space-y-2">
+              {driverFlowSteps(lang).map((step, i) => {
+                const activeIdx =
+                  trips.length > 0
+                    ? Math.max(...trips.map((tr) => driverFlowStepIndex(tr.status)))
+                    : -1;
+                const isCurrent = i === activeIdx;
+                const isDone = activeIdx >= 0 && i < activeIdx;
+                return (
+                  <li
+                    key={step.key}
+                    className={`flex gap-2 rounded-lg px-2 py-1 ${
+                      isCurrent
+                        ? "bg-emerald-50 font-medium text-emerald-900"
+                        : isDone
+                          ? "text-[#1B4332]/50 line-through"
+                          : "text-[#1B4332]/80"
+                    }`}
+                  >
+                    <span className="font-mono text-xs w-5 shrink-0">{i + 1}.</span>
+                    <span>{step.label}</span>
+                  </li>
+                );
+              })}
+            </ol>
+          </section>
+        )}
+
         {displayError && (
           <div
             className="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800"
@@ -288,8 +418,17 @@ function ConductorViajesInner() {
           </div>
         ) : (
           <ul className="space-y-4">
-            {trips.map((trip) => (
+            {trips.map((trip) => {
+              const stepIdx = driverFlowStepIndex(trip.status);
+              const currentStep =
+                stepIdx >= 0 ? driverFlowSteps(lang)[stepIdx] : null;
+              return (
               <li key={trip.id} className="rounded-2xl bg-white p-5 shadow-sm space-y-3">
+                {currentStep && (
+                  <p className="text-xs font-semibold text-emerald-800">
+                    Paso {stepIdx + 1}: {currentStep.buttonLabel}
+                  </p>
+                )}
                 <p className="text-xs uppercase tracking-wide text-[#1B4332]/60">
                   {rideStatusLabel(trip.status, lang)}
                 </p>
@@ -362,7 +501,8 @@ function ConductorViajesInner() {
                   </button>
                 )}
               </li>
-            ))}
+            );
+            })}
           </ul>
         )}
       </div>

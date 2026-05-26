@@ -38,6 +38,52 @@ export function driverTripActionHint(status: string, lang: Lang): string {
   return map[status]?.[lang] ?? "";
 }
 
+export type DriverFlowStep = {
+  key: "accept" | "arrive" | "start" | "complete";
+  statuses: string[];
+  label: string;
+  buttonLabel: string;
+};
+
+export function driverFlowSteps(lang: Lang): DriverFlowStep[] {
+  const steps: Record<DriverFlowStep["key"], { es: string; en: string; button: { es: string; en: string } }> = {
+    accept: {
+      es: "Aceptar viaje",
+      en: "Accept ride",
+      button: { es: "Aceptar viaje", en: "Accept ride" },
+    },
+    arrive: {
+      es: "En el origen → Llegué al origen",
+      en: "At pickup → Arrived at pickup",
+      button: { es: "Llegué al origen", en: "Arrived at pickup" },
+    },
+    start: {
+      es: "Código del pasajero → Iniciar viaje",
+      en: "Passenger code → Start ride",
+      button: { es: "Iniciar viaje", en: "Start ride" },
+    },
+    complete: {
+      es: "En destino → Completar viaje",
+      en: "At destination → Complete ride",
+      button: { es: "Completar viaje", en: "Complete ride" },
+    },
+  };
+  return [
+    { key: "accept", statuses: ["matched"], label: steps.accept[lang], buttonLabel: steps.accept.button[lang] },
+    { key: "arrive", statuses: ["accepted"], label: steps.arrive[lang], buttonLabel: steps.arrive.button[lang] },
+    { key: "start", statuses: ["arrived"], label: steps.start[lang], buttonLabel: steps.start.button[lang] },
+    { key: "complete", statuses: ["in_trip"], label: steps.complete[lang], buttonLabel: steps.complete.button[lang] },
+  ];
+}
+
+export function driverFlowStepIndex(status: string): number {
+  if (status === "matched") return 0;
+  if (status === "accepted") return 1;
+  if (status === "arrived") return 2;
+  if (status === "in_trip") return 3;
+  return -1;
+}
+
 const VIAJE = {
   es: {
     title: "Pedir viaje",
@@ -78,6 +124,8 @@ const VIAJE = {
     rideMatched: "Conductor asignado",
     rideInProgress: "Viaje en curso",
     driverAcceptedHint: "El conductor aceptó y va hacia el origen. Ten listo tu código de ticket.",
+    driverMatchedHint:
+      "Conductor asignado — espera a que acepte en su panel. Cuando acepte verás «Aceptado» aquí y un WhatsApp «Conductor en camino».",
     cancelRide: "Cancelar viaje",
     tipMxn: "Propina (MXN)",
     sendTip: "Enviar propina",
@@ -125,6 +173,8 @@ const VIAJE = {
     rideMatched: "Driver assigned",
     rideInProgress: "Ride in progress",
     driverAcceptedHint: "Driver accepted and is heading to pickup. Have your ticket code ready.",
+    driverMatchedHint:
+      "Driver assigned — wait for them to accept in their panel. When they accept you will see «Accepted» here and a WhatsApp «Driver on the way».",
     cancelRide: "Cancel ride",
     tipMxn: "Tip (MXN)",
     sendTip: "Send tip",
@@ -232,6 +282,10 @@ const DRIVER_TRIPS = {
     ticketPlaceholder: "NG-XXXXXXXX",
     startRide: "Iniciar viaje",
     completeRide: "Completar viaje",
+    flowGuideTitle: "Pasos del viaje (en la tarjeta de abajo)",
+    flowWhereHint:
+      "Los botones aparecen en cada viaje activo — no en Conectar. Si no ves viajes, espera o revisa el aviso amarillo.",
+    tripRecoveredHint: "Viaje recuperado de la base de datos — continúa con el paso actual.",
   },
   en: {
     title: "Assigned rides",
@@ -282,6 +336,10 @@ const DRIVER_TRIPS = {
     ticketPlaceholder: "NG-XXXXXXXX",
     startRide: "Start ride",
     completeRide: "Complete ride",
+    flowGuideTitle: "Trip steps (on the ride card below)",
+    flowWhereHint:
+      "Buttons appear on each active ride card — not on Go online. If you see no rides, wait or check the yellow notice.",
+    tripRecoveredHint: "Ride recovered from the database — continue with the current step.",
   },
 } as const;
 

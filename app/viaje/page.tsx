@@ -368,6 +368,9 @@ function ViajePageInner() {
             {!ride.driver_id && ride.status === "requested" && (
               <p className="mt-2 text-sm text-amber-800">{t.findingDriver}</p>
             )}
+            {ride.status === "matched" && ride.driver_id && (
+              <p className="mt-2 text-sm text-amber-800">{t.driverMatchedHint}</p>
+            )}
             {ride.status === "accepted" && (
               <p className="mt-2 text-sm text-emerald-800">{t.driverAcceptedHint}</p>
             )}
