@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ridesRouteGuard } from "@/lib/rides/ride-route-guard";
-import {
-  findActiveDriverProfileForAccount,
-  findAnyDriverProfileForAccount,
-} from "@/lib/rides/driver-account";
+import { findAnyDriverProfileForAccount } from "@/lib/rides/driver-account";
+import { resolveDriverProfileForSession } from "@/lib/rides/resolve-driver-session";
 
 export const dynamic = "force-dynamic";
 
@@ -22,12 +20,11 @@ export async function POST(req: NextRequest) {
   };
 
   const authOpts = { authPhone: guard.authPhone };
-  const profile = await findActiveDriverProfileForAccount(
-    guard.supabase,
-    guard.userId,
-    authOpts,
-  );
-  if (!profile?.user_id) {
+  const profile = await resolveDriverProfileForSession(guard.supabase, {
+    sessionUserId: guard.userId,
+    authPhone: guard.authPhone,
+  });
+  if (!profile?.user_id || !profile.is_active_driver) {
     const any = await findAnyDriverProfileForAccount(guard.supabase, guard.userId, authOpts);
     if (any && !any.is_active_driver) {
       return NextResponse.json(
@@ -86,6 +83,21 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  if (Boolean(updated.is_online) !== online) {
+    console.error("[rides/drivers/me/online] POST state mismatch", {
+      wanted: online,
+      got: updated.is_online,
+      user_id: updated.user_id,
+    });
+    return NextResponse.json(
+      {
+        error: "No se guardó el estado en línea. Ejecuta rides-restore-driver-profile.sql e intenta de nuevo.",
+        code: "state_mismatch",
+      },
+      { status: 500 },
+    );
+  }
+
   return NextResponse.json({ driver: updated });
 }
 
@@ -94,16 +106,9 @@ export async function GET(req: NextRequest) {
   const guard = await ridesRouteGuard(req);
   if (!guard.ok) return guard.response;
 
-  const authOpts = { authPhone: guard.authPhone };
-  const active = await findActiveDriverProfileForAccount(
-    guard.supabase,
-    guard.userId,
-    authOpts,
-  );
-  if (active) {
-    return NextResponse.json({ driver: active });
-  }
-
-  const any = await findAnyDriverProfileForAccount(guard.supabase, guard.userId, authOpts);
-  return NextResponse.json({ driver: any });
+  const driver = await resolveDriverProfileForSession(guard.supabase, {
+    sessionUserId: guard.userId,
+    authPhone: guard.authPhone,
+  });
+  return NextResponse.json({ driver });
 }

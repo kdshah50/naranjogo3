@@ -1,13 +1,8 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import {
-  findActiveDriverProfileForAccount,
-  findAnyDriverProfileForAccount,
-  pickCanonicalDriverProfile,
-  type DriverProfileOnlineRow,
-} from "@/lib/rides/driver-account";
-import { userIdsForAuthPhone } from "@/lib/resolve-login-user";
+import type { DriverProfileOnlineRow } from "@/lib/rides/driver-account";
+import { resolveDriverProfileForSession } from "@/lib/rides/resolve-driver-session";
 import type { RideBookingRow } from "@/lib/rides/ride-bookings-server";
 import { listActiveTripsForDriverProfile } from "@/lib/rides/ride-trip-server";
 
@@ -25,27 +20,7 @@ export async function loadDriverPanel(
   args: { sessionUserId: string; authPhone: string | null },
 ): Promise<DriverPanelState> {
   const accountOpts = { authPhone: args.authPhone };
-
-  let driver = await findActiveDriverProfileForAccount(
-    supabase,
-    args.sessionUserId,
-    accountOpts,
-  );
-  if (!driver) {
-    driver = await findAnyDriverProfileForAccount(supabase, args.sessionUserId, accountOpts);
-  }
-
-  // Duplicate OTP users: always bind to the approved profile for this phone.
-  if (args.authPhone && !driver?.is_active_driver) {
-    const phoneIds = await userIdsForAuthPhone(supabase, args.authPhone);
-    for (const pid of phoneIds) {
-      const candidate = await pickCanonicalDriverProfile(supabase, pid, accountOpts);
-      if (candidate?.is_active_driver) {
-        driver = candidate;
-        break;
-      }
-    }
-  }
+  const driver = await resolveDriverProfileForSession(supabase, args);
 
   const trips =
     driver?.is_active_driver && driver.user_id

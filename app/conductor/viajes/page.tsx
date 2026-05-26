@@ -43,7 +43,8 @@ function ConductorViajesInner() {
 
   const [online, setOnline] = useState<DriverOnline | null>(null);
   const [trips, setTrips] = useState<RideRow[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [panelError, setPanelError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [ticketByRide, setTicketByRide] = useState<Record<string, string>>({});
   const [canonicalUserId, setCanonicalUserId] = useState<string | null>(null);
@@ -56,7 +57,7 @@ function ConductorViajesInner() {
     });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) {
-      setError(
+      setPanelError(
         r.status === 404
           ? t.ridesDisabled
           : data?.error ?? t.panelLoadFailed,
@@ -64,20 +65,20 @@ function ConductorViajesInner() {
       return;
     }
 
-    setOnline(data.driver ?? null);
+    if (data.driver) setOnline(data.driver as DriverOnline);
     setTrips(Array.isArray(data.trips) ? data.trips : []);
     const sessionId = data.session_user_id ?? null;
     setCanonicalUserId(data.canonical_user_id ?? data.driver?.user_id ?? null);
     if (!data.driver?.is_active_driver && data.driver !== null) {
-      setError(t.inactiveDriverShort);
+      setPanelError(t.inactiveDriverShort);
     } else if (!data.driver && !data.canonical_user_id) {
       const phoneHint = data.auth_phone_set ? "" : ` ${t.sessionMissingPhone}`;
       const sessionHint = sessionId
         ? ` ${t.sessionIdLabel} ${String(sessionId).slice(0, 8)}…`
         : "";
-      setError(t.noDriverProfile + phoneHint + sessionHint);
+      setPanelError(t.noDriverProfile + phoneHint + sessionHint);
     } else {
-      setError(null);
+      setPanelError(null);
     }
   }, [
     t.panelLoadFailed,
@@ -87,6 +88,8 @@ function ConductorViajesInner() {
     t.sessionMissingPhone,
     t.sessionIdLabel,
   ]);
+
+  const displayError = actionError ?? panelError;
 
   const isOnline = Boolean(online?.is_online);
   const canGoOnline = Boolean(online?.is_active_driver);
@@ -100,7 +103,7 @@ function ConductorViajesInner() {
 
   const toggleOnline = async (next: boolean) => {
     setBusy("online");
-    setError(null);
+    setActionError(null);
     try {
       const r = await fetch("/api/rides/drivers/me/online", {
         method: "POST",
@@ -110,15 +113,18 @@ function ConductorViajesInner() {
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) {
-        setError(data?.error ?? t.toggleFailed);
+        setActionError(data?.error ?? t.toggleFailed);
         return;
       }
+      const driver = data.driver as DriverOnline | undefined;
+      if (driver) setOnline(driver);
+      setActionError(null);
       await load();
 
       if (next && typeof navigator !== "undefined" && navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           async (pos) => {
-            await fetch("/api/rides/drivers/me/online", {
+            const gps = await fetch("/api/rides/drivers/me/online", {
               method: "POST",
               credentials: "include",
               headers: { "Content-Type": "application/json" },
@@ -128,9 +134,17 @@ function ConductorViajesInner() {
                 lng: pos.coords.longitude,
               }),
             });
+            const gpsData = await gps.json().catch(() => ({}));
+            if (!gps.ok) {
+              setActionError(gpsData?.error ?? t.gpsPingFailed);
+              return;
+            }
+            if (gpsData.driver) setOnline(gpsData.driver as DriverOnline);
             await load();
           },
-          () => undefined,
+          () => {
+            setActionError(t.gpsDenied);
+          },
           { timeout: 8000 },
         );
       }
@@ -141,7 +155,7 @@ function ConductorViajesInner() {
 
   const action = async (rideId: string, path: string, body?: Record<string, unknown>) => {
     setBusy(rideId + path);
-    setError(null);
+    setActionError(null);
     try {
       const r = await fetch(`/api/rides/${rideId}/${path}`, {
         method: "POST",
@@ -151,7 +165,7 @@ function ConductorViajesInner() {
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) {
-        setError(data?.error ?? t.actionFailed);
+        setActionError(data?.error ?? t.actionFailed);
         return;
       }
       await load();
@@ -209,7 +223,14 @@ function ConductorViajesInner() {
           )}
         </section>
 
-        {error && <p className="mb-4 text-sm text-red-700">{error}</p>}
+        {displayError && (
+          <div
+            className="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800"
+            role="alert"
+          >
+            {displayError}
+          </div>
+        )}
 
         {trips.length === 0 ? (
           <div className="space-y-2">
