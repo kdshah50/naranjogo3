@@ -74,7 +74,7 @@ function ConductorViajesInner() {
     } else {
       setError(null);
     }
-  }, [t.panelLoadFailed, t.inactiveDriverShort, t.noDriverProfile]);
+  }, [t.panelLoadFailed, t.inactiveDriverShort, t.noDriverProfile, t.ridesDisabled]);
 
   const isOnline = Boolean(online?.is_online);
   const canGoOnline = Boolean(online?.is_active_driver);

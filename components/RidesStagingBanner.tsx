@@ -9,10 +9,11 @@ const VERCEL_ENV = process.env.NEXT_PUBLIC_VERCEL_ENV ?? "";
  * Preview/local hint: bookmark the stable branch URL so OTP cookies survive redeploys.
  */
 export function RidesStagingBanner() {
+  const lang = useAppLang();
+
   if (VERCEL_ENV !== "preview" && VERCEL_ENV !== "development") return null;
   if (!STABLE_ORIGIN && VERCEL_ENV !== "development") return null;
 
-  const lang = useAppLang();
   const es = lang === "es";
 
   const title = es ? "Prueba de viajes (staging)" : "Rides staging";
