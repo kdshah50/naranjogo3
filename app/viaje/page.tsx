@@ -151,20 +151,26 @@ function ViajePageInner() {
     setRide(row);
   }, []);
 
-  const refreshActiveRide = useCallback(async () => {
-    const pinnedId = resolvePinnedRideId();
-
-    if (pinnedId) {
-      const pinnedTruth = await fetchBuyerRideRow(pinnedId);
-      if (pinnedTruth?.id) {
-        if (pinnedTruth.status === "cancelled" || pinnedTruth.status === "completed") {
-          applyResolvedRide(pinnedTruth);
-          return;
-        }
+  const clearStaleRideUi = useCallback(() => {
+    clearPinnedRideId();
+    rideIdRef.current = null;
+    setRide(null);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      if (url.searchParams.has("ride")) {
+        url.searchParams.delete("ride");
+        window.history.replaceState(null, "", url.toString());
       }
     }
+  }, []);
 
-    const r = await fetch("/api/rides/active", { credentials: "include", cache: "no-store" });
+  const refreshActiveRide = useCallback(async () => {
+    const pinnedId = resolvePinnedRideId();
+    const activeUrl = pinnedId
+      ? `/api/rides/active?reconcile_ride_id=${encodeURIComponent(pinnedId)}`
+      : "/api/rides/active";
+
+    const r = await fetch(activeUrl, { credentials: "include", cache: "no-store" });
     if (!r.ok) {
       if (pinnedId) {
         const row = await fetchBuyerRideRow(pinnedId);
@@ -173,17 +179,24 @@ function ViajePageInner() {
           return;
         }
       }
+      clearStaleRideUi();
       return;
     }
     const data = await r.json().catch(() => ({}));
+
+    const reconciled = data.reconciled_ride as RideRow | undefined;
+    if (reconciled?.id) {
+      applyResolvedRide(reconciled);
+      return;
+    }
 
     const activeList = (
       Array.isArray(data.as_buyer) ? (data.as_buyer as RideRow[]) : []
     ).filter((row) => row?.id && isBuyerActiveStatus(row.status));
 
     if (activeList.length > 0) {
-      const reconciled = await reconcileWithServer(activeList[0]);
-      applyResolvedRide(reconciled);
+      const row = await reconcileWithServer(activeList[0]);
+      applyResolvedRide(row);
       return;
     }
 
@@ -202,9 +215,8 @@ function ViajePageInner() {
       }
     }
 
-    setRide(null);
-    clearPinnedRideId();
-  }, [applyResolvedRide, reconcileWithServer, resolvePinnedRideId]);
+    clearStaleRideUi();
+  }, [applyResolvedRide, clearStaleRideUi, reconcileWithServer, resolvePinnedRideId]);
 
   const liveRideId =
     ride?.id && isBuyerActiveStatus(ride.status) ? ride.id : rideIdFromUrl?.trim() || null;
@@ -247,6 +259,14 @@ function ViajePageInner() {
     const onFocus = () => refreshActiveRide();
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
+  }, [refreshActiveRide]);
+
+  useEffect(() => {
+    const onPageShow = (ev: PageTransitionEvent) => {
+      if (ev.persisted) void refreshActiveRide();
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
   }, [refreshActiveRide]);
 
   const rideSectionTitle =
@@ -577,18 +597,26 @@ function ViajePageInner() {
                 )}
               </p>
             )}
-            {["requested", "matched", "accepted", "arrived", "in_trip"].includes(ride.status) && (
-              <p className="mt-2 text-xs text-[#1B4332]/50">
-                {t.rideSyncHint}{" "}
-                <button
-                  type="button"
-                  className="underline"
-                  onClick={() => void refreshActiveRide()}
-                >
-                  {t.refreshStatusNow}
-                </button>
-              </p>
-            )}
+            <p className="mt-2 text-xs text-[#1B4332]/50">
+              {["requested", "matched", "accepted", "arrived", "in_trip"].includes(ride.status)
+                ? t.rideSyncHint
+                : null}{" "}
+              <button
+                type="button"
+                className="underline"
+                onClick={() => void refreshActiveRide()}
+              >
+                {t.refreshStatusNow}
+              </button>
+              {" · "}
+              <button
+                type="button"
+                className="underline"
+                onClick={clearStaleRideUi}
+              >
+                {t.clearRideScreen}
+              </button>
+            </p>
             {["requested", "matched", "accepted", "arrived"].includes(ride.status) && (
               <button
                 type="button"

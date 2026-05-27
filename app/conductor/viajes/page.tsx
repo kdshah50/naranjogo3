@@ -145,7 +145,7 @@ function ConductorViajesInner() {
       (Array.isArray(data.trips) ? (data.trips as RideRow[]) : []).filter(isDriverActiveTrip),
     );
     if (nextTrips.length > 0) {
-      setTrips((prev) => mergeDriverTripLists(prev, nextTrips));
+      setTrips(sortDriverTrips(nextTrips));
     } else {
       const staleActive = tripsRef.current.filter(isDriverActiveTrip);
       if (staleActive.length === 0) {
@@ -205,8 +205,7 @@ function ConductorViajesInner() {
       };
       if (data.driver) setOnline(data.driver);
       if (Array.isArray(data.trips)) {
-        const incoming = sortDriverTrips(data.trips.filter(isDriverActiveTrip));
-        setTrips((prev) => mergeDriverTripLists(prev, incoming));
+        setTrips(sortDriverTrips(data.trips.filter(isDriverActiveTrip)));
       }
       if (data.canonical_user_id) setCanonicalUserId(data.canonical_user_id);
     },
