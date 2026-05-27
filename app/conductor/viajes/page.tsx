@@ -118,6 +118,7 @@ function ConductorViajesInner() {
   const [trips, setTrips] = useState<RideRow[]>([]);
   const [panelError, setPanelError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [gpsNotice, setGpsNotice] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [ticketByRide, setTicketByRide] = useState<Record<string, string>>({});
@@ -250,9 +251,20 @@ function ConductorViajesInner() {
     };
   }, [isOnline, trips.length, t.tripAssignedHint, t.tripRecoveredHint]);
 
+  const refreshOnlineStatus = useCallback(async () => {
+    const r = await fetch("/api/rides/drivers/me/online", {
+      credentials: "include",
+      cache: "no-store",
+    });
+    const data = await r.json().catch(() => ({}));
+    if (data.driver) setOnline(data.driver as DriverOnline);
+    return data.driver as DriverOnline | undefined;
+  }, []);
+
   const toggleOnline = async (next: boolean) => {
     setBusy("online");
     setActionError(null);
+    setGpsNotice(null);
     try {
       const r = await fetch("/api/rides/drivers/me/online", {
         method: "POST",
@@ -266,37 +278,47 @@ function ConductorViajesInner() {
         return;
       }
       const driver = data.driver as DriverOnline | undefined;
-      if (driver) setOnline(driver);
-      setActionError(null);
+      if (driver) {
+        setOnline({ ...driver, is_online: next });
+      }
       await load();
 
-      if (next && typeof navigator !== "undefined" && navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          async (pos) => {
-            const gps = await fetch("/api/rides/drivers/me/online", {
-              method: "POST",
-              credentials: "include",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                online: true,
-                lat: pos.coords.latitude,
-                lng: pos.coords.longitude,
-              }),
-            });
-            const gpsData = await gps.json().catch(() => ({}));
-            if (!gps.ok) {
-              setActionError(gpsData?.error ?? t.gpsPingFailed);
-              return;
-            }
-            if (gpsData.driver) setOnline(gpsData.driver as DriverOnline);
-            await load();
-          },
-          () => {
-            setActionError(t.gpsDenied);
-          },
-          { timeout: 8000 },
-        );
+      if (!next) return;
+
+      if (typeof navigator === "undefined" || !navigator.geolocation) {
+        setGpsNotice(t.gpsDenied);
+        await refreshOnlineStatus();
+        return;
       }
+
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          const gps = await fetch("/api/rides/drivers/me/online", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              online: true,
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+            }),
+          });
+          const gpsData = await gps.json().catch(() => ({}));
+          if (!gps.ok) {
+            setGpsNotice(gpsData?.error ?? t.gpsPingFailed);
+            await refreshOnlineStatus();
+            return;
+          }
+          if (gpsData.driver) setOnline(gpsData.driver as DriverOnline);
+          setGpsNotice(null);
+          await load();
+        },
+        async () => {
+          setGpsNotice(t.gpsDenied);
+          await refreshOnlineStatus();
+        },
+        { enableHighAccuracy: true, timeout: 12_000, maximumAge: 60_000 },
+      );
     } finally {
       setBusy(null);
     }
@@ -422,6 +444,15 @@ function ConductorViajesInner() {
               })}
             </ol>
           </section>
+        )}
+
+        {gpsNotice && (
+          <div
+            className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+            role="status"
+          >
+            {gpsNotice}
+          </div>
         )}
 
         {displayError && (

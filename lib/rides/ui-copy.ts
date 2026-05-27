@@ -279,7 +279,8 @@ const DRIVER_TRIPS = {
     tripsLoadFailed: "No se pudieron cargar los viajes asignados",
     toggleFailed: "No se pudo cambiar el estado",
     gpsPingFailed: "En línea, pero no se pudo enviar ubicación GPS.",
-    gpsDenied: "En línea sin GPS — permite ubicación en el navegador para despacho.",
+    gpsDenied:
+      "Estás en línea, pero el navegador no compartió GPS. En Ajustes → Safari/Chrome → Ubicación, permite este sitio. Puedes recibir viajes igual.",
     notApproved: "Tu conductor aún no está aprobado por admin.",
     wrongSession:
       "No encontramos conductor activo para esta sesión. Cierra sesión en /unete e inicia con el mismo WhatsApp del registro (415 181 6902).",
@@ -333,7 +334,8 @@ const DRIVER_TRIPS = {
     tripsLoadFailed: "Could not load assigned rides",
     toggleFailed: "Could not change status",
     gpsPingFailed: "Online, but GPS location could not be sent.",
-    gpsDenied: "Online without GPS — allow location in the browser for dispatch.",
+    gpsDenied:
+      "You are online, but the browser did not share GPS. In Settings → Safari/Chrome → Location, allow this site. You can still receive rides.",
     notApproved: "Your driver account is not approved by admin yet.",
     wrongSession:
       "No active driver for this session. Log out at /unete and sign in with the same WhatsApp used for driver signup (415 181 6902).",

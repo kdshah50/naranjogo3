@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ridesRouteGuard } from "@/lib/rides/ride-route-guard";
+import { driverProfileUserIdVariants } from "@/lib/user-id-variants";
 import { findAnyDriverProfileForAccount } from "@/lib/rides/driver-account";
 import { resolveDriverProfileForSession } from "@/lib/rides/resolve-driver-session";
 
@@ -59,11 +60,14 @@ export async function POST(req: NextRequest) {
     patch.last_location_at = new Date().toISOString();
   }
 
+  const profileIds = driverProfileUserIdVariants(String(profile.user_id));
+
   const { data: updated, error } = await guard.supabase
     .from("driver_profiles")
     .update(patch)
-    .eq("user_id", profile.user_id)
+    .in("user_id", profileIds)
     .select("user_id,is_online,is_active_driver,last_lat,last_lng,last_location_at")
+    .limit(1)
     .maybeSingle();
 
   if (error || !updated) {

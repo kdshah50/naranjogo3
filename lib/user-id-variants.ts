@@ -8,6 +8,11 @@ export function idMatchVariantsForIn(id: string): string[] {
   return Array.from(new Set([t, t.toLowerCase(), t.toUpperCase()]));
 }
 
+/** `driver_profiles.user_id` is TEXT — normalize case for PostgREST `.in` filters. */
+export function driverProfileUserIdVariants(id: string): string[] {
+  return [...new Set(idMatchVariantsForIn(id).map((v) => v.toLowerCase()))];
+}
+
 /** When `.in("id", pool)` returns merged accounts, prefer the row matching the booking’s canonical user id. */
 export function sortRowsWithPreferredUserId<T extends { id: string }>(rows: T[], preferredUserId: string): T[] {
   const pref = new Set(idMatchVariantsForIn(String(preferredUserId)));

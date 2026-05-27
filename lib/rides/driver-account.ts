@@ -4,7 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { userIdsForAuthPhone } from "@/lib/resolve-login-user";
 import { resolveDriverProfileForSession } from "@/lib/rides/resolve-driver-session";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
-import { idMatchVariantsForIn } from "@/lib/user-id-variants";
+import { driverProfileUserIdVariants, idMatchVariantsForIn } from "@/lib/user-id-variants";
 
 export type DriverProfileOnlineRow = {
   user_id: string;
@@ -50,10 +50,14 @@ async function queryActiveDriverProfiles(
 ): Promise<DriverProfileOnlineRow[]> {
   if (idPool.length === 0) return [];
 
+  const profileIdPool = [
+    ...new Set(idPool.flatMap((id) => driverProfileUserIdVariants(id))),
+  ];
+
   const { data, error } = await supabase
     .from("driver_profiles")
     .select("user_id,is_online,is_active_driver,last_lat,last_lng,last_location_at")
-    .in("user_id", idPool)
+    .in("user_id", profileIdPool)
     .eq("is_active_driver", true)
     .order("updated_at", { ascending: false });
 
@@ -66,7 +70,7 @@ async function queryActiveDriverProfiles(
       const fallback = await supabase
         .from("driver_profiles")
         .select("user_id,is_active_driver")
-        .in("user_id", idPool)
+        .in("user_id", profileIdPool)
         .eq("is_active_driver", true)
         .order("updated_at", { ascending: false });
       if (fallback.error) {
@@ -180,10 +184,14 @@ export async function findAnyDriverProfileForAccount(
   const searchPool = [...new Set([...idPool, ...phoneIds.flatMap((id) => idMatchVariantsForIn(id))])];
   if (searchPool.length === 0) return null;
 
+  const profileSearchPool = [
+    ...new Set(searchPool.flatMap((id) => driverProfileUserIdVariants(id))),
+  ];
+
   const { data, error } = await supabase
     .from("driver_profiles")
     .select("user_id,is_online,is_active_driver,last_lat,last_lng,last_location_at")
-    .in("user_id", searchPool)
+    .in("user_id", profileSearchPool)
     .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
