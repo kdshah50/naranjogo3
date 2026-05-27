@@ -31,6 +31,12 @@ function isDriverActiveTrip(row: RideRow): boolean {
   return DRIVER_ACTIVE_STATUSES.has(row.status);
 }
 
+function mergeTripRow(prev: RideRow, row: RideRow): RideRow {
+  const rankRow = TRIP_STATUS_RANK[row.status] ?? 0;
+  const rankPrev = TRIP_STATUS_RANK[prev.status] ?? 0;
+  return rankRow >= rankPrev ? { ...prev, ...row } : prev;
+}
+
 function sortDriverTrips(rows: RideRow[]): RideRow[] {
   return [...rows].sort((a, b) => {
     const rDiff = (TRIP_STATUS_RANK[b.status] ?? 0) - (TRIP_STATUS_RANK[a.status] ?? 0);
@@ -145,7 +151,7 @@ function ConductorViajesInner() {
     const nextTrips = sortDriverTrips(
       (Array.isArray(data.trips) ? (data.trips as RideRow[]) : []).filter(isDriverActiveTrip),
     );
-    setTrips(nextTrips);
+    setTrips((prev) => mergeDriverTripLists(prev, nextTrips));
     const sessionId = data.session_user_id ?? null;
     setCanonicalUserId(data.canonical_user_id ?? data.driver?.user_id ?? null);
     if (!data.driver?.is_active_driver && data.driver !== null) {
@@ -186,7 +192,8 @@ function ConductorViajesInner() {
       };
       if (data.driver) setOnline(data.driver);
       if (Array.isArray(data.trips)) {
-        setTrips(sortDriverTrips(data.trips.filter(isDriverActiveTrip)));
+        const incoming = sortDriverTrips(data.trips.filter(isDriverActiveTrip));
+        setTrips((prev) => mergeDriverTripLists(prev, incoming));
       }
       if (data.canonical_user_id) setCanonicalUserId(data.canonical_user_id);
     },
@@ -233,7 +240,7 @@ function ConductorViajesInner() {
           mine.filter((r) => DRIVER_ACTIVE_STATUSES.has(r.status)).map(debugRideToRow),
         );
         if (recovered.length > 0) {
-          setTrips(recovered);
+          setTrips((prev) => mergeDriverTripLists(prev, recovered));
           setTripDebugHint(t.tripRecoveredHint);
         }
       }
@@ -330,10 +337,10 @@ function ConductorViajesInner() {
       const idx = prev.findIndex((t) => t.id === rideId);
       if (idx >= 0) {
         const next = [...prev];
-        next[idx] = { ...next[idx], ...row };
-        return next;
+        next[idx] = mergeTripRow(next[idx], row);
+        return sortDriverTrips(next);
       }
-      return [row, ...prev];
+      return sortDriverTrips([row, ...prev]);
     });
   };
 
@@ -359,7 +366,8 @@ function ConductorViajesInner() {
       else if (path === "arrive") setActionSuccess(t.arriveSuccess);
       else if (path === "start") setActionSuccess(t.startSuccess);
       else if (path === "complete") setActionSuccess(t.completeSuccess);
-      await load();
+      // Panel poll can lag behind accept; merge keeps higher status from API response.
+      void load();
     } finally {
       setBusy(null);
     }
