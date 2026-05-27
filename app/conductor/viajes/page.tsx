@@ -8,6 +8,11 @@ import { formatCurrencyMXN } from "@/lib/locale-format";
 import { RidesStagingBanner } from "@/components/RidesStagingBanner";
 import { useRideLiveStream } from "@/hooks/use-ride-live-stream";
 import {
+  mergeRideListsByStatus,
+  mergeRideStatusRow,
+  rideStatusRank,
+} from "@/lib/rides/ride-status-merge";
+import {
   driverFlowStepIndex,
   driverFlowSteps,
   driverTripActionHint,
@@ -17,29 +22,13 @@ import {
 
 const DRIVER_ACTIVE_STATUSES = new Set(["matched", "accepted", "arrived", "in_trip"]);
 
-const TRIP_STATUS_RANK: Record<string, number> = {
-  requested: 0,
-  matched: 1,
-  accepted: 2,
-  arrived: 3,
-  in_trip: 4,
-  completed: 5,
-  cancelled: -1,
-};
-
 function isDriverActiveTrip(row: RideRow): boolean {
   return DRIVER_ACTIVE_STATUSES.has(row.status);
 }
 
-function mergeTripRow(prev: RideRow, row: RideRow): RideRow {
-  const rankRow = TRIP_STATUS_RANK[row.status] ?? 0;
-  const rankPrev = TRIP_STATUS_RANK[prev.status] ?? 0;
-  return rankRow >= rankPrev ? { ...prev, ...row } : prev;
-}
-
 function sortDriverTrips(rows: RideRow[]): RideRow[] {
   return [...rows].sort((a, b) => {
-    const rDiff = (TRIP_STATUS_RANK[b.status] ?? 0) - (TRIP_STATUS_RANK[a.status] ?? 0);
+    const rDiff = rideStatusRank(b.status) - rideStatusRank(a.status);
     if (rDiff !== 0) return rDiff;
     const tA = a.updated_at ?? a.created_at ?? "";
     const tB = b.updated_at ?? b.created_at ?? "";
@@ -47,23 +36,12 @@ function sortDriverTrips(rows: RideRow[]): RideRow[] {
   });
 }
 
-/** Merge for optimistic action updates only — never keep completed/cancelled rows. */
+/** Never downgrade status when panel poll/SSE returns stale rows (same rule as /viaje). */
 function mergeDriverTripLists(prev: RideRow[], next: RideRow[]): RideRow[] {
   const activePrev = prev.filter(isDriverActiveTrip);
-  if (next.length === 0) return activePrev;
-  const byId = new Map<string, RideRow>();
-  for (const row of [...next, ...activePrev]) {
-    if (!isDriverActiveTrip(row)) continue;
-    const cur = byId.get(row.id);
-    if (!cur) {
-      byId.set(row.id, row);
-      continue;
-    }
-    const rankRow = TRIP_STATUS_RANK[row.status] ?? 0;
-    const rankCur = TRIP_STATUS_RANK[cur.status] ?? 0;
-    byId.set(row.id, rankRow >= rankCur ? { ...cur, ...row } : cur);
-  }
-  return sortDriverTrips([...byId.values()]);
+  const activeNext = next.filter(isDriverActiveTrip);
+  if (activeNext.length === 0) return activePrev;
+  return sortDriverTrips(mergeRideListsByStatus(activePrev, activeNext));
 }
 
 function debugRideToRow(
@@ -334,10 +312,13 @@ function ConductorViajesInner() {
   const mergeTripFromApi = (rideId: string, row: RideRow | undefined) => {
     if (!row?.id) return;
     setTrips((prev) => {
+      if (!isDriverActiveTrip(row)) {
+        return prev.filter((t) => t.id !== rideId);
+      }
       const idx = prev.findIndex((t) => t.id === rideId);
       if (idx >= 0) {
         const next = [...prev];
-        next[idx] = mergeTripRow(next[idx], row);
+        next[idx] = mergeRideStatusRow(next[idx], row);
         return sortDriverTrips(next);
       }
       return sortDriverTrips([row, ...prev]);
@@ -365,9 +346,8 @@ function ConductorViajesInner() {
       if (path === "accept") setActionSuccess(t.acceptSuccess);
       else if (path === "arrive") setActionSuccess(t.arriveSuccess);
       else if (path === "start") setActionSuccess(t.startSuccess);
-      else if (path === "complete") setActionSuccess(t.completeSuccess);
-      // Panel poll can lag behind accept; merge keeps higher status from API response.
-      void load();
+      else       if (path === "complete") setActionSuccess(t.completeSuccess);
+      // Do not load() here — a fast panel poll can return stale "matched" and confuse buttons.
     } finally {
       setBusy(null);
     }

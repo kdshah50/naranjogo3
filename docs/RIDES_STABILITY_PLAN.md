@@ -67,7 +67,8 @@ Driver: `/conductor/viajes` · Rider: `/viaje` · Same phones every time.
 ### Phase 1 — Code hardening (1–2 days dev)
 
 - [x] Rider: pin ride id, no status downgrade, completed in `/active` display
-- [x] Driver: replace trip list from API (no stale merge)
+- [x] Driver + rider: merge trip status by rank (never downgrade on poll/SSE)
+- [x] Driver: do not `load()` immediately after accept/arrive/start (stale panel race)
 - [ ] **Central `notifyRidePhase(ride, phase)`** — buyer + driver, every transition
 - [ ] **Single sync endpoint** `GET /api/rides/sync?ride_id=` used by both UIs
 - [ ] **Automated E2E** — `npm run test:rides-full` in CI on `rides-setup`
@@ -85,6 +86,19 @@ Driver: `/conductor/viajes` · Rider: `/viaje` · Same phones every time.
 - On match: auto-cancel other `matched` for same driver (already in code)
 - Merge users at **signup** (no new duplicates)
 - Twilio send log table + retry
+
+### Phase 3b — Rider “who is picking me up?” card (Uber-style, after E2E test passes)
+
+Show on `/viaje` once `matched` (and through trip): driver photo, name, car color, license plate, vehicle make/model.
+
+| Field | Source today | Notes |
+|-------|----------------|-------|
+| Driver name | `users.display_name` | Already on user row |
+| Car color / plates / make / model | `driver_profiles` | Already collected at `/conductor` signup |
+| Driver photo | Listing `photo_urls` or new `driver_avatar_url` | No dedicated headshot column yet; decide vs reusing ride listing photo |
+| API | Extend `GET /api/rides/[id]` + stream payload with `driver_public` (no license/insurance doc URLs) | Signed URLs only for approved public fields |
+
+Optional later: star rating, trip count, “verified driver” badge. Not required for v1 card.
 
 ---
 
