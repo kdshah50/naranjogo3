@@ -316,9 +316,9 @@ export async function matchRideToDriver(
 
   const canonical = await pickCanonicalDriverProfile(supabase, String(driverUserId));
   if (canonical?.user_id) {
-    driverUserId = String(canonical.user_id).trim().toLowerCase();
+    driverUserId = String(canonical.user_id).trim();
   } else {
-    driverUserId = String(driverUserId).trim().toLowerCase();
+    driverUserId = String(driverUserId).trim();
   }
 
   const ticketCode = await ensureUniqueTicketCode(supabase);

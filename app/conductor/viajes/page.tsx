@@ -40,8 +40,8 @@ function sortDriverTrips(rows: RideRow[]): RideRow[] {
 function mergeDriverTripLists(prev: RideRow[], next: RideRow[]): RideRow[] {
   const activePrev = prev.filter(isDriverActiveTrip);
   const activeNext = next.filter(isDriverActiveTrip);
-  // Server returned no active trips (e.g. after complete) — clear stale cards; do not keep old prev.
-  if (activeNext.length === 0) return [];
+  // API returned 0 but we already have a trip (accept / debug recovery) — keep until server catches up.
+  if (activeNext.length === 0) return activePrev;
   return sortDriverTrips(mergeRideListsByStatus(activePrev, activeNext));
 }
 
@@ -130,11 +130,7 @@ function ConductorViajesInner() {
     const nextTrips = sortDriverTrips(
       (Array.isArray(data.trips) ? (data.trips as RideRow[]) : []).filter(isDriverActiveTrip),
     );
-    setTrips((prev) => {
-      if (nextTrips.length === 0) return [];
-      if (prev.length === 0) return nextTrips;
-      return mergeDriverTripLists(prev, nextTrips);
-    });
+    setTrips((prev) => mergeDriverTripLists(prev, nextTrips));
     const sessionId = data.session_user_id ?? null;
     setCanonicalUserId(data.canonical_user_id ?? data.driver?.user_id ?? null);
     if (!data.driver?.is_active_driver && data.driver !== null) {
@@ -176,11 +172,7 @@ function ConductorViajesInner() {
       if (data.driver) setOnline(data.driver);
       if (Array.isArray(data.trips)) {
         const incoming = sortDriverTrips(data.trips.filter(isDriverActiveTrip));
-        setTrips((prev) => {
-          if (incoming.length === 0) return [];
-          if (prev.length === 0) return incoming;
-          return mergeDriverTripLists(prev, incoming);
-        });
+        setTrips((prev) => mergeDriverTripLists(prev, incoming));
       }
       if (data.canonical_user_id) setCanonicalUserId(data.canonical_user_id);
     },
@@ -361,10 +353,12 @@ function ConductorViajesInner() {
               (!row?.ticket_code || t.ticket_code !== row.ticket_code),
           ),
         );
-      } else if (path === "accept") setActionSuccess(t.acceptSuccess);
-      else if (path === "arrive") setActionSuccess(t.arriveSuccess);
-      else if (path === "start") setActionSuccess(t.startSuccess);
-      // Do not load() here — poll/SSE merge must not resurrect completed trips (see mergeDriverTripLists).
+      } else {
+        if (path === "accept") setActionSuccess(t.acceptSuccess);
+        else if (path === "arrive") setActionSuccess(t.arriveSuccess);
+        else if (path === "start") setActionSuccess(t.startSuccess);
+        void load();
+      }
     } finally {
       setBusy(null);
     }

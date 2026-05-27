@@ -50,6 +50,14 @@ function tripMatchesDriverPool(ride: RideBookingRow, pool: string[]): boolean {
   return pool.some((id) => isSameUserId(id, ride.driver_id));
 }
 
+function rideMatchesDriverPool(ride: RideBookingRow, pool: string[]): boolean {
+  if (!ride.driver_id || pool.length === 0) return false;
+  const driverNorm = String(ride.driver_id).trim().toLowerCase();
+  const poolNorm = new Set(pool.map((id) => id.trim().toLowerCase()));
+  if (poolNorm.has(driverNorm)) return true;
+  return tripMatchesDriverPool(ride, pool);
+}
+
 /** Active trips for driver account pool (duplicate phone users share assignments). */
 export async function listActiveTripsForDriverProfile(
   supabase: SupabaseClient,
@@ -62,38 +70,24 @@ export async function listActiveTripsForDriverProfile(
   const driverPool = [...new Set(driverIds.flatMap((id) => idMatchVariantsForIn(id)))];
   const statuses = [...ACTIVE_DRIVER_TRIP_STATUSES];
 
-  const { data, error } = await supabase
+  // Scan recent actives + filter in JS (same approach as rides-drivers-trips-debug).
+  // PostgREST .in("driver_id", text[]) is unreliable against UUID columns on preview.
+  const { data: recent, error } = await supabase
     .from("ride_bookings")
     .select("*")
-    .in("driver_id", driverPool)
-    .in("status", statuses)
+    .in("status", [...statuses])
+    .not("driver_id", "is", null)
     .order("created_at", { ascending: false })
-    .limit(20);
+    .limit(60);
 
   if (error) {
     console.error("[ride-trip] listActiveTripsForDriverProfile", error);
+    return [];
   }
 
-  let rows = ((data ?? []) as RideBookingRow[]).filter((r) =>
-    tripMatchesDriverPool(r, driverPool),
+  const rows = ((recent ?? []) as RideBookingRow[]).filter((r) =>
+    rideMatchesDriverPool(r, driverPool),
   );
-
-  // PostgREST .in() can miss UUID rows when casing/format differs — scan recent actives.
-  if (rows.length === 0) {
-    const { data: recent, error: recentErr } = await supabase
-      .from("ride_bookings")
-      .select("*")
-      .in("status", statuses)
-      .not("driver_id", "is", null)
-      .order("created_at", { ascending: false })
-      .limit(40);
-
-    if (recentErr) {
-      console.error("[ride-trip] listActiveTripsForDriverProfile fallback", recentErr);
-    } else {
-      rows = (recent ?? []).filter((r) => tripMatchesDriverPool(r as RideBookingRow, driverPool));
-    }
-  }
 
   rows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   return rows.slice(0, 20);
