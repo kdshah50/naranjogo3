@@ -69,6 +69,8 @@ Driver: `/conductor/viajes` · Rider: `/viaje` · Same phones every time.
 - [x] Rider: pin ride id, no status downgrade, completed in `/active` display
 - [x] Driver + rider: merge trip status by rank (never downgrade on poll/SSE)
 - [x] Driver: do not `load()` immediately after accept/arrive/start (stale panel race)
+- [x] Rider: always prefer **active** trip over pinned completed; poll after complete for new request
+- [x] Buyer/driver trip queries: UUID id pool variants for PostgREST `.in()`
 - [ ] **Central `notifyRidePhase(ride, phase)`** — buyer + driver, every transition
 - [ ] **Single sync endpoint** `GET /api/rides/sync?ride_id=` used by both UIs
 - [ ] **Automated E2E** — `npm run test:rides-full` in CI on `rides-setup`

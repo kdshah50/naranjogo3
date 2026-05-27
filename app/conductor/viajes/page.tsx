@@ -130,7 +130,11 @@ function ConductorViajesInner() {
     const nextTrips = sortDriverTrips(
       (Array.isArray(data.trips) ? (data.trips as RideRow[]) : []).filter(isDriverActiveTrip),
     );
-    setTrips((prev) => mergeDriverTripLists(prev, nextTrips));
+    setTrips((prev) => {
+      if (nextTrips.length === 0) return [];
+      if (prev.length === 0) return nextTrips;
+      return mergeDriverTripLists(prev, nextTrips);
+    });
     const sessionId = data.session_user_id ?? null;
     setCanonicalUserId(data.canonical_user_id ?? data.driver?.user_id ?? null);
     if (!data.driver?.is_active_driver && data.driver !== null) {
@@ -172,7 +176,11 @@ function ConductorViajesInner() {
       if (data.driver) setOnline(data.driver);
       if (Array.isArray(data.trips)) {
         const incoming = sortDriverTrips(data.trips.filter(isDriverActiveTrip));
-        setTrips((prev) => mergeDriverTripLists(prev, incoming));
+        setTrips((prev) => {
+          if (incoming.length === 0) return [];
+          if (prev.length === 0) return incoming;
+          return mergeDriverTripLists(prev, incoming);
+        });
       }
       if (data.canonical_user_id) setCanonicalUserId(data.canonical_user_id);
     },

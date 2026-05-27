@@ -59,12 +59,13 @@ export async function listActiveTripsForDriverProfile(
   const driverIds = await driverIdPoolForTrips(supabase, profileUserId, options);
   if (driverIds.length === 0) return [];
 
+  const driverPool = [...new Set(driverIds.flatMap((id) => idMatchVariantsForIn(id)))];
   const statuses = [...ACTIVE_DRIVER_TRIP_STATUSES];
 
   const { data, error } = await supabase
     .from("ride_bookings")
     .select("*")
-    .in("driver_id", driverIds)
+    .in("driver_id", driverPool)
     .in("status", statuses)
     .order("created_at", { ascending: false })
     .limit(20);
@@ -74,7 +75,7 @@ export async function listActiveTripsForDriverProfile(
   }
 
   let rows = ((data ?? []) as RideBookingRow[]).filter((r) =>
-    tripMatchesDriverPool(r, driverIds),
+    tripMatchesDriverPool(r, driverPool),
   );
 
   // PostgREST .in() can miss UUID rows when casing/format differs — scan recent actives.
@@ -90,7 +91,7 @@ export async function listActiveTripsForDriverProfile(
     if (recentErr) {
       console.error("[ride-trip] listActiveTripsForDriverProfile fallback", recentErr);
     } else {
-      rows = (recent ?? []).filter((r) => tripMatchesDriverPool(r as RideBookingRow, driverIds));
+      rows = (recent ?? []).filter((r) => tripMatchesDriverPool(r as RideBookingRow, driverPool));
     }
   }
 
@@ -566,12 +567,13 @@ export async function listActiveTripsForBuyer(
   const pool = await expandUserAccountIdPool(supabase, buyerUserId, options);
   if (pool.length === 0) return [];
 
+  const buyerPool = [...new Set(pool.flatMap((id) => idMatchVariantsForIn(id)))];
   const statuses = ["requested", "matched", "accepted", "arrived", "in_trip"] as const;
 
   const { data, error } = await supabase
     .from("ride_bookings")
     .select("*")
-    .in("buyer_id", pool)
+    .in("buyer_id", buyerPool)
     .in("status", [...statuses])
     .order("created_at", { ascending: false })
     .limit(5);
@@ -615,40 +617,22 @@ const BUYER_DISPLAY_STATUSES = [
 function pickLatestBuyerRideRow(rows: RideBookingRow[]): RideBookingRow | null {
   if (rows.length === 0) return null;
 
-  const completed = rows.filter((r) => r.status === "completed");
   const active = rows.filter((r) => r.status !== "completed" && r.status !== "cancelled");
-
-  const latestCompleted = [...completed].sort(
-    (a, b) =>
-      new Date(b.trip_ended_at ?? b.updated_at ?? b.created_at).getTime() -
-      new Date(a.trip_ended_at ?? a.updated_at ?? a.created_at).getTime(),
-  )[0];
-
-  if (!latestCompleted) {
+  if (active.length > 0) {
     return [...active].sort(
       (a, b) =>
-        new Date(b.updated_at ?? b.created_at).getTime() -
-        new Date(a.updated_at ?? a.created_at).getTime(),
-    )[0] ?? null;
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    )[0];
   }
 
-  if (active.length === 0) return latestCompleted;
-
-  const latestActive = [...active].sort(
-    (a, b) =>
-      new Date(b.updated_at ?? b.created_at).getTime() -
-      new Date(a.updated_at ?? a.created_at).getTime(),
-  )[0];
-
-  const completedAt = new Date(
-    latestCompleted.trip_ended_at ?? latestCompleted.updated_at ?? latestCompleted.created_at,
-  ).getTime();
-  const activeCreated = new Date(latestActive.created_at).getTime();
-
-  // Only show a new active ride if it was created after this trip finished (not a stale zombie row).
-  if (activeCreated > completedAt + 60_000) return latestActive;
-
-  return latestCompleted;
+  const terminal = rows.filter((r) => r.status === "completed" || r.status === "cancelled");
+  return (
+    [...terminal].sort(
+      (a, b) =>
+        new Date(b.trip_ended_at ?? b.updated_at ?? b.created_at).getTime() -
+        new Date(a.trip_ended_at ?? a.updated_at ?? a.created_at).getTime(),
+    )[0] ?? null
+  );
 }
 
 /**
@@ -663,13 +647,14 @@ export async function latestBuyerRideForDisplay(
   const pool = await expandUserAccountIdPool(supabase, buyerUserId, options);
   if (pool.length === 0) return null;
 
+  const buyerPool = [...new Set(pool.flatMap((id) => idMatchVariantsForIn(id)))];
   const since = new Date(Date.now() - BUYER_DISPLAY_LOOKBACK_MS).toISOString();
   const statuses = [...BUYER_DISPLAY_STATUSES];
 
   const { data, error } = await supabase
     .from("ride_bookings")
     .select("*")
-    .in("buyer_id", pool)
+    .in("buyer_id", buyerPool)
     .in("status", statuses)
     .gte("updated_at", since)
     .order("updated_at", { ascending: false })

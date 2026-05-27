@@ -30,8 +30,11 @@ export async function GET(req: NextRequest) {
     asDriver ? listActiveTripsForDriver(guard.supabase, guard.userId, accountOpts) : Promise.resolve([]),
   ]);
 
+  const primaryBuyerActive = buyerTrips[0] ?? null;
+
   return NextResponse.json({
     as_buyer: buyerTrips,
+    as_buyer_active: primaryBuyerActive,
     as_buyer_display: buyerDisplay,
     as_driver: driverTrips,
   });
