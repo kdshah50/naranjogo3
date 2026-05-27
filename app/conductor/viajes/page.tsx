@@ -40,7 +40,8 @@ function sortDriverTrips(rows: RideRow[]): RideRow[] {
 function mergeDriverTripLists(prev: RideRow[], next: RideRow[]): RideRow[] {
   const activePrev = prev.filter(isDriverActiveTrip);
   const activeNext = next.filter(isDriverActiveTrip);
-  if (activeNext.length === 0) return activePrev;
+  // Server returned no active trips (e.g. after complete) — clear stale cards; do not keep old prev.
+  if (activeNext.length === 0) return [];
   return sortDriverTrips(mergeRideListsByStatus(activePrev, activeNext));
 }
 
@@ -343,11 +344,19 @@ function ConductorViajesInner() {
       }
       const row = data.ride as RideRow | undefined;
       mergeTripFromApi(rideId, row);
-      if (path === "accept") setActionSuccess(t.acceptSuccess);
+      if (path === "complete") {
+        setActionSuccess(t.completeSuccess);
+        setTrips((prev) =>
+          prev.filter(
+            (t) =>
+              t.id !== rideId &&
+              (!row?.ticket_code || t.ticket_code !== row.ticket_code),
+          ),
+        );
+      } else if (path === "accept") setActionSuccess(t.acceptSuccess);
       else if (path === "arrive") setActionSuccess(t.arriveSuccess);
       else if (path === "start") setActionSuccess(t.startSuccess);
-      else       if (path === "complete") setActionSuccess(t.completeSuccess);
-      // Do not load() here — a fast panel poll can return stale "matched" and confuse buttons.
+      // Do not load() here — poll/SSE merge must not resurrect completed trips (see mergeDriverTripLists).
     } finally {
       setBusy(null);
     }
