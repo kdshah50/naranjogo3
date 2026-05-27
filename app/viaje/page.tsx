@@ -61,6 +61,14 @@ function clearPinnedRideId() {
   sessionStorage.removeItem(VIAJE_PINNED_RIDE_KEY);
 }
 
+function stripRideIdFromBrowserUrl() {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has("ride")) return;
+  url.searchParams.delete("ride");
+  window.history.replaceState(null, "", url.toString());
+}
+
 async function fetchBuyerRideRow(rideId: string): Promise<RideRow | null> {
   const r = await fetch(`/api/rides/${rideId}`, {
     credentials: "include",
@@ -120,13 +128,11 @@ function ViajePageInner() {
   }, [ride?.id, rideIdFromUrl]);
 
   const resolvePinnedRideId = useCallback(() => {
-    return (
-      rideIdRef.current ??
-      rideIdFromUrl?.trim() ??
-      (typeof sessionStorage !== "undefined"
+    const fromStorage =
+      typeof sessionStorage !== "undefined"
         ? sessionStorage.getItem(VIAJE_PINNED_RIDE_KEY)
-        : null)
-    );
+        : null;
+    return rideIdRef.current ?? fromStorage ?? rideIdFromUrl?.trim() ?? null;
   }, [rideIdFromUrl]);
 
   /** GET /api/rides/:id is source of truth; active list can lag behind cancel. */
@@ -137,13 +143,15 @@ function ViajePageInner() {
 
   const applyResolvedRide = useCallback((row: RideRow) => {
     rideIdRef.current = row.id;
-    if (row.status === "cancelled") {
+    if (row.status === "cancelled" || row.status === "completed") {
       clearPinnedRideId();
+      stripRideIdFromBrowserUrl();
       setRide(row);
       return;
     }
     if (!isBuyerActiveStatus(row.status)) {
       clearPinnedRideId();
+      stripRideIdFromBrowserUrl();
       setRide(row);
       return;
     }
@@ -153,15 +161,9 @@ function ViajePageInner() {
 
   const clearStaleRideUi = useCallback(() => {
     clearPinnedRideId();
+    stripRideIdFromBrowserUrl();
     rideIdRef.current = null;
     setRide(null);
-    if (typeof window !== "undefined") {
-      const url = new URL(window.location.href);
-      if (url.searchParams.has("ride")) {
-        url.searchParams.delete("ride");
-        window.history.replaceState(null, "", url.toString());
-      }
-    }
   }, []);
 
   const refreshActiveRide = useCallback(async () => {
@@ -218,8 +220,9 @@ function ViajePageInner() {
     clearStaleRideUi();
   }, [applyResolvedRide, clearStaleRideUi, reconcileWithServer, resolvePinnedRideId]);
 
+  // Do not use ?ride= in the URL for SSE — it re-attaches ghost trips after refresh.
   const liveRideId =
-    ride?.id && isBuyerActiveStatus(ride.status) ? ride.id : rideIdFromUrl?.trim() || null;
+    ride?.id && isBuyerActiveStatus(ride.status) ? ride.id : null;
 
   const liveStreamEnabled = !authError && Boolean(liveRideId);
 
