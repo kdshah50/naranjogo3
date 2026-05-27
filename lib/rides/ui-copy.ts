@@ -120,6 +120,8 @@ const VIAJE = {
     noDriversAvailable:
       "No hay conductores disponibles. Un conductor debe completar /conductor, ser aprobado por admin, y servir tu colonia de origen. Pide al conductor que abra /conductor/viajes y toque Conectar, luego intenta de nuevo.",
     rideCancelled: "Viaje cancelado",
+    rideCancelledHint:
+      "Este viaje fue cancelado en el sistema. Si no lo cancelaste tú, puede ser limpieza de prueba o sin conductores. Puedes pedir otro viaje abajo.",
     rideActive: "Tu viaje",
     rideMatched: "Conductor asignado",
     rideInProgress: "Viaje en curso",
@@ -179,6 +181,8 @@ const VIAJE = {
     noDriversAvailable:
       "No drivers available. A driver must complete /conductor, be approved by admin, and serve your pickup neighborhood. Ask them to open /conductor/viajes and go online, then try again.",
     rideCancelled: "Ride cancelled",
+    rideCancelledHint:
+      "This trip was cancelled in the system. If you did not cancel it, it may be test cleanup or no drivers. You can request a new ride below.",
     rideActive: "Your ride",
     rideMatched: "Driver assigned",
     rideInProgress: "Ride in progress",

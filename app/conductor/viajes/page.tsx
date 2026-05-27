@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { withLang } from "@/components/BuyerRetentionPanel";
 import { useAppLang } from "@/hooks/use-app-lang";
@@ -36,13 +36,22 @@ function sortDriverTrips(rows: RideRow[]): RideRow[] {
   });
 }
 
-/** Never downgrade status when panel poll/SSE returns stale rows (same rule as /viaje). */
+/** Never downgrade in-trip status when panel poll/SSE returns stale rows (same rule as /viaje). */
 function mergeDriverTripLists(prev: RideRow[], next: RideRow[]): RideRow[] {
   const activePrev = prev.filter(isDriverActiveTrip);
   const activeNext = next.filter(isDriverActiveTrip);
-  // API returned 0 but we already have a trip (accept / debug recovery) — keep until server catches up.
   if (activeNext.length === 0) return activePrev;
   return sortDriverTrips(mergeRideListsByStatus(activePrev, activeNext));
+}
+
+async function fetchDriverRideRow(rideId: string): Promise<RideRow | null> {
+  const r = await fetch(`/api/rides/${rideId}`, {
+    credentials: "include",
+    cache: "no-store",
+  });
+  if (!r.ok) return null;
+  const data = (await r.json().catch(() => ({}))) as { ride?: RideRow };
+  return data.ride?.id ? data.ride : null;
 }
 
 function debugRideToRow(
@@ -109,6 +118,11 @@ function ConductorViajesInner() {
   const [ticketByRide, setTicketByRide] = useState<Record<string, string>>({});
   const [canonicalUserId, setCanonicalUserId] = useState<string | null>(null);
   const [tripDebugHint, setTripDebugHint] = useState<string | null>(null);
+  const tripsRef = useRef<RideRow[]>([]);
+
+  useEffect(() => {
+    tripsRef.current = trips;
+  }, [trips]);
 
   const load = useCallback(async () => {
     const r = await fetch("/api/rides/drivers/me/panel", {
@@ -130,7 +144,27 @@ function ConductorViajesInner() {
     const nextTrips = sortDriverTrips(
       (Array.isArray(data.trips) ? (data.trips as RideRow[]) : []).filter(isDriverActiveTrip),
     );
-    setTrips((prev) => mergeDriverTripLists(prev, nextTrips));
+    if (nextTrips.length > 0) {
+      setTrips((prev) => mergeDriverTripLists(prev, nextTrips));
+    } else {
+      const staleActive = tripsRef.current.filter(isDriverActiveTrip);
+      if (staleActive.length === 0) {
+        setTrips([]);
+      } else {
+        const verified = (
+          await Promise.all(
+            staleActive.map(async (trip) => {
+              const row = await fetchDriverRideRow(trip.id);
+              if (row && isDriverActiveTrip(row)) {
+                return mergeRideStatusRow(trip, row);
+              }
+              return null;
+            }),
+          )
+        ).filter((row): row is RideRow => row !== null);
+        setTrips(sortDriverTrips(verified));
+      }
+    }
     const sessionId = data.session_user_id ?? null;
     setCanonicalUserId(data.canonical_user_id ?? data.driver?.user_id ?? null);
     if (!data.driver?.is_active_driver && data.driver !== null) {

@@ -606,6 +606,7 @@ const BUYER_DISPLAY_STATUSES = [
   "arrived",
   "in_trip",
   "completed",
+  "cancelled",
 ] as const;
 
 function pickLatestBuyerRideRow(rows: RideBookingRow[]): RideBookingRow | null {

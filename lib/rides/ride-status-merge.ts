@@ -18,10 +18,18 @@ export function rideStatusRank(status: string): number {
   return RIDE_STATUS_RANK[status] ?? 0;
 }
 
+export function isTerminalRideStatus(status: string): boolean {
+  return status === "cancelled" || status === "completed" || status === "disputed";
+}
+
 export type RideStatusRow = { id: string; status: string; updated_at?: string | null };
 
-/** Merge two rows for the same ride id; keeps the ahead status (never downgrade). */
+/** Merge two rows for the same ride id; keeps the ahead status (never downgrade in-trip). */
 export function mergeRideStatusRow<T extends RideStatusRow>(prev: T, next: T): T {
+  if (prev.id === next.id) {
+    if (isTerminalRideStatus(next.status)) return { ...prev, ...next };
+    if (isTerminalRideStatus(prev.status)) return prev;
+  }
   const rankNext = rideStatusRank(next.status);
   const rankPrev = rideStatusRank(prev.status);
   if (rankNext > rankPrev) return { ...prev, ...next };

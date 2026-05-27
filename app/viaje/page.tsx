@@ -9,6 +9,7 @@ import { useAppLang } from "@/hooks/use-app-lang";
 import { COLONIA_KEYS, COLONIAS, coloniaLabel } from "@/lib/colonias";
 import { formatCurrencyMXN } from "@/lib/locale-format";
 import { useRideLiveStream } from "@/hooks/use-ride-live-stream";
+import { mergeRideStatusRow } from "@/lib/rides/ride-status-merge";
 import { rideStatusLabel, viajeCopy } from "@/lib/rides/ui-copy";
 
 type FareEstimate = {
@@ -36,16 +37,6 @@ const COLONIAS_LIST = COLONIA_KEYS.map((key) => ({
   label: COLONIAS[key].label,
 }));
 
-const RIDE_STATUS_RANK: Record<string, number> = {
-  requested: 0,
-  matched: 1,
-  accepted: 2,
-  arrived: 3,
-  in_trip: 4,
-  completed: 5,
-  cancelled: -1,
-};
-
 const VIAJE_PINNED_RIDE_KEY = "ng_viaje_pinned_ride_id";
 
 const BUYER_ACTIVE_STATUSES = new Set([
@@ -60,10 +51,6 @@ function isBuyerActiveStatus(status: string): boolean {
   return BUYER_ACTIVE_STATUSES.has(status);
 }
 
-function rideRank(status: string): number {
-  return RIDE_STATUS_RANK[status] ?? 0;
-}
-
 function pinRideId(rideId: string) {
   if (typeof sessionStorage === "undefined") return;
   sessionStorage.setItem(VIAJE_PINNED_RIDE_KEY, rideId);
@@ -74,24 +61,27 @@ function clearPinnedRideId() {
   sessionStorage.removeItem(VIAJE_PINNED_RIDE_KEY);
 }
 
-function mergeRideRow(prev: RideRow | null, next: RideRow | null): RideRow | null {
+function applyRideUpdate(prev: RideRow | null, next: RideRow | null): RideRow | null {
   if (!next) return prev;
   if (!prev) return next;
   if (prev.id !== next.id) {
     const prevActive = isBuyerActiveStatus(prev.status);
     const nextActive = isBuyerActiveStatus(next.status);
     if (nextActive && !prevActive) return next;
-    if (prevActive && !nextActive) return prev;
-    return rideRank(next.status) >= rideRank(prev.status) ? next : prev;
+    if (prevActive && !nextActive) return next;
+    return next;
   }
-  return rideRank(next.status) >= rideRank(prev.status) ? { ...prev, ...next } : prev;
+  return mergeRideStatusRow(prev, next);
 }
 
-function applyRideUpdate(prev: RideRow | null, next: RideRow | null): RideRow | null {
-  const merged = mergeRideRow(prev, next);
-  if (!merged) return prev;
-  if (prev && rideRank(merged.status) < rideRank(prev.status)) return prev;
-  return merged;
+async function fetchBuyerRideRow(rideId: string): Promise<RideRow | null> {
+  const r = await fetch(`/api/rides/${rideId}`, {
+    credentials: "include",
+    cache: "no-store",
+  });
+  if (!r.ok) return null;
+  const data = (await r.json().catch(() => ({}))) as { ride?: RideRow };
+  return data.ride?.id ? data.ride : null;
 }
 
 export default function ViajePage() {
@@ -168,26 +158,31 @@ function ViajePageInner() {
     }
 
     if (display?.id) {
-      setRide(display);
+      if (display.status === "cancelled") clearPinnedRideId();
+      rideIdRef.current = display.id;
+      setRide((prev) => (prev?.id === display.id ? applyRideUpdate(prev, display) : display) ?? display);
       return;
     }
 
-    const urlId = rideIdFromUrl?.trim();
-    if (urlId) {
-      const dr = await fetch(`/api/rides/${urlId}`, {
-        credentials: "include",
-        cache: "no-store",
-      });
-      if (dr.ok) {
-        const row = ((await dr.json().catch(() => ({}))) as { ride?: RideRow }).ride;
-        if (row?.id) {
-          setRide(row);
-          return;
-        }
+    const pinnedId =
+      rideIdRef.current ??
+      rideIdFromUrl?.trim() ??
+      (typeof sessionStorage !== "undefined"
+        ? sessionStorage.getItem(VIAJE_PINNED_RIDE_KEY)
+        : null);
+    if (pinnedId) {
+      const row = await fetchBuyerRideRow(pinnedId);
+      if (row?.id) {
+        if (row.status === "cancelled") clearPinnedRideId();
+        else if (isBuyerActiveStatus(row.status)) pinRideId(row.id);
+        rideIdRef.current = row.id;
+        setRide((prev) => applyRideUpdate(prev, row) ?? row);
+        return;
       }
     }
 
     setRide(null);
+    clearPinnedRideId();
   }, [rideIdFromUrl]);
 
   const liveRideId =
@@ -508,12 +503,21 @@ function ViajePageInner() {
           )}
         </section>
 
-        {ride && ride.status !== "cancelled" && (
-          <section className="mt-6 rounded-2xl border-2 border-[#1B4332]/20 bg-white p-5 shadow-sm">
+        {ride && (
+          <section
+            className={`mt-6 rounded-2xl border-2 bg-white p-5 shadow-sm ${
+              ride.status === "cancelled"
+                ? "border-red-300"
+                : "border-[#1B4332]/20"
+            }`}
+          >
             <h2 className="font-semibold text-lg">{rideSectionTitle}</h2>
             <p className="mt-2 text-sm">
               {t.status} <strong>{rideStatusLabel(ride.status, lang)}</strong>
             </p>
+            {ride.status === "cancelled" && (
+              <p className="mt-2 text-sm text-red-800">{t.rideCancelledHint}</p>
+            )}
             <p className="text-sm text-[#1B4332]/80">
               {ride.pickup_address} → {ride.dropoff_address}
             </p>
