@@ -138,6 +138,7 @@ const VIAJE = {
     driverInTripHint:
       "Viaje iniciado — vas hacia el destino. El conductor ya validó tu ticket.",
     rideSyncHint: "Actualizando estado cada pocos segundos…",
+    refreshStatusNow: "Actualizar ahora",
     cancelRide: "Cancelar viaje",
     tipMxn: "Propina (MXN)",
     sendTip: "Enviar propina",
@@ -199,6 +200,7 @@ const VIAJE = {
     driverInTripHint:
       "Trip started — heading to your destination. The driver verified your ticket.",
     rideSyncHint: "Refreshing status every few seconds…",
+    refreshStatusNow: "Refresh now",
     cancelRide: "Cancel ride",
     tipMxn: "Tip (MXN)",
     sendTip: "Send tip",

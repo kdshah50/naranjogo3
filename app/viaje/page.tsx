@@ -61,19 +61,6 @@ function clearPinnedRideId() {
   sessionStorage.removeItem(VIAJE_PINNED_RIDE_KEY);
 }
 
-function applyRideUpdate(prev: RideRow | null, next: RideRow | null): RideRow | null {
-  if (!next) return prev;
-  if (!prev) return next;
-  if (prev.id !== next.id) {
-    const prevActive = isBuyerActiveStatus(prev.status);
-    const nextActive = isBuyerActiveStatus(next.status);
-    if (nextActive && !prevActive) return next;
-    if (prevActive && !nextActive) return next;
-    return next;
-  }
-  return mergeRideStatusRow(prev, next);
-}
-
 async function fetchBuyerRideRow(rideId: string): Promise<RideRow | null> {
   const r = await fetch(`/api/rides/${rideId}`, {
     credentials: "include",
@@ -132,9 +119,62 @@ function ViajePageInner() {
     rideIdRef.current = ride?.id ?? pinned;
   }, [ride?.id, rideIdFromUrl]);
 
+  const resolvePinnedRideId = useCallback(() => {
+    return (
+      rideIdRef.current ??
+      rideIdFromUrl?.trim() ??
+      (typeof sessionStorage !== "undefined"
+        ? sessionStorage.getItem(VIAJE_PINNED_RIDE_KEY)
+        : null)
+    );
+  }, [rideIdFromUrl]);
+
+  /** GET /api/rides/:id is source of truth; active list can lag behind cancel. */
+  const reconcileWithServer = useCallback(async (row: RideRow): Promise<RideRow> => {
+    const truth = await fetchBuyerRideRow(row.id);
+    return truth?.id ? mergeRideStatusRow(row, truth) : row;
+  }, []);
+
+  const applyResolvedRide = useCallback((row: RideRow) => {
+    rideIdRef.current = row.id;
+    if (row.status === "cancelled") {
+      clearPinnedRideId();
+      setRide(row);
+      return;
+    }
+    if (!isBuyerActiveStatus(row.status)) {
+      clearPinnedRideId();
+      setRide(row);
+      return;
+    }
+    pinRideId(row.id);
+    setRide(row);
+  }, []);
+
   const refreshActiveRide = useCallback(async () => {
+    const pinnedId = resolvePinnedRideId();
+
+    if (pinnedId) {
+      const pinnedTruth = await fetchBuyerRideRow(pinnedId);
+      if (pinnedTruth?.id) {
+        if (pinnedTruth.status === "cancelled" || pinnedTruth.status === "completed") {
+          applyResolvedRide(pinnedTruth);
+          return;
+        }
+      }
+    }
+
     const r = await fetch("/api/rides/active", { credentials: "include", cache: "no-store" });
-    if (!r.ok) return;
+    if (!r.ok) {
+      if (pinnedId) {
+        const row = await fetchBuyerRideRow(pinnedId);
+        if (row?.id) {
+          applyResolvedRide(row);
+          return;
+        }
+      }
+      return;
+    }
     const data = await r.json().catch(() => ({}));
 
     const activeList = (
@@ -142,48 +182,29 @@ function ViajePageInner() {
     ).filter((row) => row?.id && isBuyerActiveStatus(row.status));
 
     if (activeList.length > 0) {
-      const best = activeList[0];
-      pinRideId(best.id);
-      rideIdRef.current = best.id;
-      setRide((prev) => applyRideUpdate(prev, best) ?? best);
+      const reconciled = await reconcileWithServer(activeList[0]);
+      applyResolvedRide(reconciled);
       return;
     }
 
-    const display = data.as_buyer_display as RideRow | undefined;
-    if (display?.id && isBuyerActiveStatus(display.status)) {
-      pinRideId(display.id);
-      rideIdRef.current = display.id;
-      setRide((prev) => applyRideUpdate(prev, display) ?? display);
-      return;
-    }
-
+    let display = data.as_buyer_display as RideRow | undefined;
     if (display?.id) {
-      if (display.status === "cancelled") clearPinnedRideId();
-      rideIdRef.current = display.id;
-      setRide((prev) => (prev?.id === display.id ? applyRideUpdate(prev, display) : display) ?? display);
+      display = await reconcileWithServer(display);
+      applyResolvedRide(display);
       return;
     }
 
-    const pinnedId =
-      rideIdRef.current ??
-      rideIdFromUrl?.trim() ??
-      (typeof sessionStorage !== "undefined"
-        ? sessionStorage.getItem(VIAJE_PINNED_RIDE_KEY)
-        : null);
     if (pinnedId) {
       const row = await fetchBuyerRideRow(pinnedId);
       if (row?.id) {
-        if (row.status === "cancelled") clearPinnedRideId();
-        else if (isBuyerActiveStatus(row.status)) pinRideId(row.id);
-        rideIdRef.current = row.id;
-        setRide((prev) => applyRideUpdate(prev, row) ?? row);
+        applyResolvedRide(row);
         return;
       }
     }
 
     setRide(null);
     clearPinnedRideId();
-  }, [rideIdFromUrl]);
+  }, [applyResolvedRide, reconcileWithServer, resolvePinnedRideId]);
 
   const liveRideId =
     ride?.id && isBuyerActiveStatus(ride.status) ? ride.id : rideIdFromUrl?.trim() || null;
@@ -196,10 +217,8 @@ function ViajePageInner() {
     onEvent: (payload) => {
       const row = (payload as { ride?: RideRow }).ride;
       if (!row?.id) return;
-      setRide((prev) => {
-        const next = applyRideUpdate(prev, row);
-        if (next?.id && isBuyerActiveStatus(next.status)) pinRideId(next.id);
-        return next;
+      void reconcileWithServer(row).then((reconciled) => {
+        applyResolvedRide(reconciled);
       });
     },
     fallbackPollMs: 15_000,
@@ -559,7 +578,16 @@ function ViajePageInner() {
               </p>
             )}
             {["requested", "matched", "accepted", "arrived", "in_trip"].includes(ride.status) && (
-              <p className="mt-2 text-xs text-[#1B4332]/50">{t.rideSyncHint}</p>
+              <p className="mt-2 text-xs text-[#1B4332]/50">
+                {t.rideSyncHint}{" "}
+                <button
+                  type="button"
+                  className="underline"
+                  onClick={() => void refreshActiveRide()}
+                >
+                  {t.refreshStatusNow}
+                </button>
+              </p>
             )}
             {["requested", "matched", "accepted", "arrived"].includes(ride.status) && (
               <button
