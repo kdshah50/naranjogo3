@@ -196,13 +196,13 @@ function ConductorViajesInner() {
     );
     const canonicalId = data.canonical_user_id ?? data.driver?.user_id ?? null;
     if (nextTrips.length > 0) {
-      setTrips(sortDriverTrips(nextTrips));
+      setTrips((prev) => mergeDriverTripLists(prev, nextTrips));
     } else {
       const staleActive = tripsRef.current.filter(isDriverActiveTrip);
       if (staleActive.length === 0) {
         const recovered = await recoverTripsFromDebug(canonicalId);
         if (recovered.length > 0) {
-          setTrips(recovered);
+          setTrips((prev) => mergeDriverTripLists(prev, recovered));
           setTripDebugHint(t.tripRecoveredHint);
         } else {
           setTrips([]);
@@ -219,7 +219,7 @@ function ConductorViajesInner() {
             }),
           )
         ).filter((row): row is RideRow => row !== null);
-        setTrips(sortDriverTrips(verified));
+        setTrips((prev) => mergeDriverTripLists(prev, verified));
       }
     }
     const sessionId = data.session_user_id ?? null;
@@ -265,7 +265,8 @@ function ConductorViajesInner() {
       };
       if (data.driver) setOnline(mergeDriverOnline(data.driver));
       if (Array.isArray(data.trips)) {
-        setTrips(sortDriverTrips(data.trips.filter(isDriverActiveTrip)));
+        const incoming = sortDriverTrips(data.trips.filter(isDriverActiveTrip));
+        setTrips((prev) => mergeDriverTripLists(prev, incoming));
       }
       if (data.canonical_user_id) setCanonicalUserId(data.canonical_user_id);
     },
@@ -408,7 +409,9 @@ function ConductorViajesInner() {
         if (path === "accept") setActionSuccess(t.acceptSuccess);
         else if (path === "arrive") setActionSuccess(t.arriveSuccess);
         else if (path === "start") setActionSuccess(t.startSuccess);
-        void load();
+        void fetchDriverRideRow(rideId).then((fresh) => {
+          if (fresh) mergeTripFromApi(rideId, fresh);
+        });
       }
     } finally {
       setBusy(null);

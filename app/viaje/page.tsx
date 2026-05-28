@@ -30,6 +30,7 @@ type RideRow = {
   final_total_mxn_cents?: number | null;
   ticket_code: string | null;
   driver_id: string | null;
+  updated_at?: string | null;
 };
 
 const COLONIAS_LIST = COLONIA_KEYS.map((key) => ({
@@ -142,21 +143,23 @@ function ViajePageInner() {
   }, []);
 
   const applyResolvedRide = useCallback((row: RideRow) => {
-    rideIdRef.current = row.id;
-    if (row.status === "cancelled" || row.status === "completed") {
-      clearPinnedRideId();
-      stripRideIdFromBrowserUrl();
-      setRide(row);
-      return;
-    }
-    if (!isBuyerActiveStatus(row.status)) {
-      clearPinnedRideId();
-      stripRideIdFromBrowserUrl();
-      setRide(row);
-      return;
-    }
-    pinRideId(row.id);
-    setRide(row);
+    setRide((prev) => {
+      const merged = prev?.id === row.id ? mergeRideStatusRow(prev, row) : row;
+      rideIdRef.current = merged.id;
+
+      if (merged.status === "cancelled" || merged.status === "completed") {
+        clearPinnedRideId();
+        stripRideIdFromBrowserUrl();
+        return merged;
+      }
+      if (!isBuyerActiveStatus(merged.status)) {
+        clearPinnedRideId();
+        stripRideIdFromBrowserUrl();
+        return merged;
+      }
+      pinRideId(merged.id);
+      return merged;
+    });
   }, []);
 
   const clearStaleRideUi = useCallback(() => {
@@ -168,6 +171,21 @@ function ViajePageInner() {
 
   const refreshActiveRide = useCallback(async () => {
     const pinnedId = resolvePinnedRideId();
+
+    if (pinnedId) {
+      const pinnedRow = await fetchBuyerRideRow(pinnedId);
+      if (pinnedRow?.id) {
+        if (isBuyerActiveStatus(pinnedRow.status)) {
+          applyResolvedRide(pinnedRow);
+          return;
+        }
+        if (pinnedRow.status === "completed" || pinnedRow.status === "cancelled") {
+          applyResolvedRide(pinnedRow);
+          return;
+        }
+      }
+    }
+
     const activeUrl = pinnedId
       ? `/api/rides/active?reconcile_ride_id=${encodeURIComponent(pinnedId)}`
       : "/api/rides/active";
@@ -188,7 +206,8 @@ function ViajePageInner() {
 
     const reconciled = data.reconciled_ride as RideRow | undefined;
     if (reconciled?.id) {
-      applyResolvedRide(reconciled);
+      const row = await reconcileWithServer(reconciled);
+      applyResolvedRide(row);
       return;
     }
 
