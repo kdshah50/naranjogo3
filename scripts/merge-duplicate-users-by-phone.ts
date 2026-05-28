@@ -7,7 +7,7 @@
  *
  * After merge, apply migration 20260528120000_users_phone_unique_canonical.sql in Supabase.
  */
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { mergeUserAccountInto } from "../lib/merge-duplicate-users-server";
@@ -40,11 +40,14 @@ function loadDotenv() {
   }
 }
 
-async function normalizeAllPhones(supabase: ReturnType<typeof createClient>): Promise<number> {
-  const { data: rows, error } = await supabase.from("users").select("id,phone").not("phone", "is", null);
+type UserPhoneRow = { id: string; phone: string | null };
+
+async function normalizeAllPhones(supabase: SupabaseClient): Promise<number> {
+  const { data, error } = await supabase.from("users").select("id,phone").not("phone", "is", null);
   if (error) throw error;
+  const rows = (data ?? []) as UserPhoneRow[];
   let updated = 0;
-  for (const row of rows ?? []) {
+  for (const row of rows) {
     const raw = String(row.phone ?? "");
     const canonical = storageAuthPhone(raw);
     if (!canonical || canonical === raw) continue;
