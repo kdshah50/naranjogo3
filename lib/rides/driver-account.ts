@@ -172,6 +172,46 @@ export async function findActiveDriverProfileForAccount(
 }
 
 /** Any driver profile row for account pool (pending approval). */
+/** If any duplicate-account profile is online, reflect that on the canonical row (panel + GET /online). */
+export async function enrichDriverOnlineFromAccountPool(
+  supabase: SupabaseClient,
+  driver: DriverProfileOnlineRow,
+  options?: DriverAccountOptions,
+): Promise<DriverProfileOnlineRow> {
+  if (driver.is_online) return driver;
+
+  const idPool = await expandUserAccountIdPool(supabase, driver.user_id, options);
+  const phoneIds = options?.authPhone
+    ? await userIdsForAuthPhone(supabase, options.authPhone)
+    : [];
+  const searchPool = [
+    ...new Set([...idPool, ...phoneIds.flatMap((id) => idMatchVariantsForIn(id))]),
+  ];
+  const profiles = await queryActiveDriverProfiles(supabase, searchPool);
+  if (profiles.some((p) => p.is_online)) {
+    return { ...driver, is_online: true };
+  }
+  return driver;
+}
+
+/** All driver_profiles.user_id values to update when toggling online (canonical + duplicate rows). */
+export async function driverOnlineUpdateIdPool(
+  supabase: SupabaseClient,
+  profileUserId: string,
+  options?: DriverAccountOptions,
+): Promise<string[]> {
+  const idPool = await expandUserAccountIdPool(supabase, profileUserId, options);
+  const phoneIds = options?.authPhone
+    ? await userIdsForAuthPhone(supabase, options.authPhone)
+    : [];
+  const searchPool = [
+    ...new Set([...idPool, ...phoneIds.flatMap((id) => idMatchVariantsForIn(id))]),
+  ];
+  return [
+    ...new Set(searchPool.flatMap((id) => driverProfileUserIdVariants(id))),
+  ];
+}
+
 export async function findAnyDriverProfileForAccount(
   supabase: SupabaseClient,
   userId: string,

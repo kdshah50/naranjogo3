@@ -1,7 +1,10 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { DriverProfileOnlineRow } from "@/lib/rides/driver-account";
+import {
+  enrichDriverOnlineFromAccountPool,
+  type DriverProfileOnlineRow,
+} from "@/lib/rides/driver-account";
 import { resolveDriverProfileForSession } from "@/lib/rides/resolve-driver-session";
 import type { RideBookingRow } from "@/lib/rides/ride-bookings-server";
 import { listActiveTripsForDriverProfile } from "@/lib/rides/ride-trip-server";
@@ -20,7 +23,10 @@ export async function loadDriverPanel(
   args: { sessionUserId: string; authPhone: string | null },
 ): Promise<DriverPanelState> {
   const accountOpts = { authPhone: args.authPhone };
-  const driver = await resolveDriverProfileForSession(supabase, args);
+  const resolved = await resolveDriverProfileForSession(supabase, args);
+  const driver = resolved
+    ? await enrichDriverOnlineFromAccountPool(supabase, resolved, accountOpts)
+    : null;
 
   const trips =
     driver?.is_active_driver && driver.user_id

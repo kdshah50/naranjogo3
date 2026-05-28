@@ -119,10 +119,60 @@ function ConductorViajesInner() {
   const [canonicalUserId, setCanonicalUserId] = useState<string | null>(null);
   const [tripDebugHint, setTripDebugHint] = useState<string | null>(null);
   const tripsRef = useRef<RideRow[]>([]);
+  /** After Conectar succeeds, ignore stale panel polls that still say offline. */
+  const onlineLatchUntilRef = useRef(0);
 
   useEffect(() => {
     tripsRef.current = trips;
   }, [trips]);
+
+  const mergeDriverOnline = useCallback((incoming: DriverOnline | null | undefined): DriverOnline | null => {
+    if (!incoming) return null;
+    if (onlineLatchUntilRef.current > Date.now() && incoming.is_online === false) {
+      return { ...incoming, is_online: true };
+    }
+    return incoming;
+  }, []);
+
+  const recoverTripsFromDebug = useCallback(
+    async (profileUserId: string | null): Promise<RideRow[]> => {
+      if (!profileUserId) return [];
+      const r = await fetch("/api/rides-drivers-trips-debug", {
+        credentials: "include",
+        cache: "no-store",
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) return [];
+
+      const profileId = (data.profile_user_id as string | null)?.toLowerCase();
+      const dbRides = (data.db_active_rides ?? []) as Array<{
+        id: string;
+        status: string;
+        ticket_code: string | null;
+        driver_id: string;
+        pickup_address: string;
+        dropoff_address: string;
+      }>;
+
+      const mine = profileId
+        ? dbRides.filter((row) => row.driver_id?.toLowerCase() === profileId)
+        : dbRides.filter((row) => row.driver_id?.toLowerCase() === profileUserId.toLowerCase());
+      if (mine.length === 0) return [];
+
+      const checks = Array.isArray(data.checks) ? (data.checks as string[]).join(" ") : "";
+      const ticket = dbRides[0]?.ticket_code;
+      if (checks) {
+        setTripDebugHint(
+          ticket ? `${t.tripAssignedHint} ${ticket}). ${checks}` : checks,
+        );
+      }
+
+      return sortDriverTrips(
+        mine.filter((row) => DRIVER_ACTIVE_STATUSES.has(row.status)).map(debugRideToRow),
+      );
+    },
+    [t.tripAssignedHint],
+  );
 
   const load = useCallback(async () => {
     const r = await fetch("/api/rides/drivers/me/panel", {
@@ -140,16 +190,23 @@ function ConductorViajesInner() {
       return;
     }
 
-    if (data.driver) setOnline(data.driver as DriverOnline);
+    if (data.driver) setOnline(mergeDriverOnline(data.driver as DriverOnline));
     const nextTrips = sortDriverTrips(
       (Array.isArray(data.trips) ? (data.trips as RideRow[]) : []).filter(isDriverActiveTrip),
     );
+    const canonicalId = data.canonical_user_id ?? data.driver?.user_id ?? null;
     if (nextTrips.length > 0) {
       setTrips(sortDriverTrips(nextTrips));
     } else {
       const staleActive = tripsRef.current.filter(isDriverActiveTrip);
       if (staleActive.length === 0) {
-        setTrips([]);
+        const recovered = await recoverTripsFromDebug(canonicalId);
+        if (recovered.length > 0) {
+          setTrips(recovered);
+          setTripDebugHint(t.tripRecoveredHint);
+        } else {
+          setTrips([]);
+        }
       } else {
         const verified = (
           await Promise.all(
@@ -179,12 +236,15 @@ function ConductorViajesInner() {
       setPanelError(null);
     }
   }, [
+    mergeDriverOnline,
+    recoverTripsFromDebug,
     t.panelLoadFailed,
     t.inactiveDriverShort,
     t.noDriverProfile,
     t.ridesDisabled,
     t.sessionMissingPhone,
     t.sessionIdLabel,
+    t.tripRecoveredHint,
   ]);
 
   const displayError = actionError ?? panelError;
@@ -203,7 +263,7 @@ function ConductorViajesInner() {
         trips?: RideRow[];
         canonical_user_id?: string | null;
       };
-      if (data.driver) setOnline(data.driver);
+      if (data.driver) setOnline(mergeDriverOnline(data.driver));
       if (Array.isArray(data.trips)) {
         setTrips(sortDriverTrips(data.trips.filter(isDriverActiveTrip)));
       }
@@ -221,54 +281,10 @@ function ConductorViajesInner() {
   }, [load, isOnline, panelStreamEnabled]);
 
   useEffect(() => {
-    if (!isOnline || trips.length > 0) {
+    if (trips.length > 0) {
       setTripDebugHint(null);
-      return;
     }
-    let cancelled = false;
-    (async () => {
-      const r = await fetch("/api/rides-drivers-trips-debug", {
-        credentials: "include",
-        cache: "no-store",
-      });
-      const data = await r.json().catch(() => ({}));
-      if (cancelled || !r.ok) return;
-
-      const profileId = (data.profile_user_id as string | null)?.toLowerCase();
-      const dbRides = (data.db_active_rides ?? []) as Array<{
-        id: string;
-        status: string;
-        ticket_code: string | null;
-        driver_id: string;
-        pickup_address: string;
-        dropoff_address: string;
-      }>;
-
-      const mine = profileId
-        ? dbRides.filter((row) => row.driver_id?.toLowerCase() === profileId)
-        : [];
-      if (mine.length > 0) {
-        const recovered = sortDriverTrips(
-          mine.filter((r) => DRIVER_ACTIVE_STATUSES.has(r.status)).map(debugRideToRow),
-        );
-        if (recovered.length > 0) {
-          setTrips((prev) => mergeDriverTripLists(prev, recovered));
-          setTripDebugHint(t.tripRecoveredHint);
-        }
-      }
-
-      const checks = Array.isArray(data.checks) ? (data.checks as string[]).join(" ") : "";
-      const ticket = dbRides[0]?.ticket_code;
-      if (checks) {
-        setTripDebugHint(
-          ticket ? `${t.tripAssignedHint} ${ticket}). ${checks}` : checks,
-        );
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [isOnline, trips.length, t.tripAssignedHint, t.tripRecoveredHint]);
+  }, [trips.length]);
 
   const refreshOnlineStatus = useCallback(async () => {
     const r = await fetch("/api/rides/drivers/me/online", {
@@ -276,9 +292,9 @@ function ConductorViajesInner() {
       cache: "no-store",
     });
     const data = await r.json().catch(() => ({}));
-    if (data.driver) setOnline(data.driver as DriverOnline);
+    if (data.driver) setOnline(mergeDriverOnline(data.driver as DriverOnline));
     return data.driver as DriverOnline | undefined;
-  }, []);
+  }, [mergeDriverOnline]);
 
   const toggleOnline = async (next: boolean) => {
     setBusy("online");
@@ -298,7 +314,9 @@ function ConductorViajesInner() {
       }
       const driver = data.driver as DriverOnline | undefined;
       if (driver) {
-        setOnline({ ...driver, is_online: next });
+        if (next) onlineLatchUntilRef.current = Date.now() + 90_000;
+        else onlineLatchUntilRef.current = 0;
+        setOnline(mergeDriverOnline({ ...driver, is_online: next }));
       }
       await load();
 
@@ -328,7 +346,7 @@ function ConductorViajesInner() {
             await refreshOnlineStatus();
             return;
           }
-          if (gpsData.driver) setOnline(gpsData.driver as DriverOnline);
+          if (gpsData.driver) setOnline(mergeDriverOnline(gpsData.driver as DriverOnline));
           setGpsNotice(null);
           await load();
         },

@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ridesRouteGuard } from "@/lib/rides/ride-route-guard";
-import { driverProfileUserIdVariants } from "@/lib/user-id-variants";
-import { findAnyDriverProfileForAccount } from "@/lib/rides/driver-account";
+import {
+  driverOnlineUpdateIdPool,
+  enrichDriverOnlineFromAccountPool,
+  findAnyDriverProfileForAccount,
+} from "@/lib/rides/driver-account";
 import { resolveDriverProfileForSession } from "@/lib/rides/resolve-driver-session";
 
 export const dynamic = "force-dynamic";
@@ -60,15 +63,22 @@ export async function POST(req: NextRequest) {
     patch.last_location_at = new Date().toISOString();
   }
 
-  const profileIds = driverProfileUserIdVariants(String(profile.user_id));
+  const profileIds = await driverOnlineUpdateIdPool(
+    guard.supabase,
+    String(profile.user_id),
+    authOpts,
+  );
 
-  const { data: updated, error } = await guard.supabase
+  const { data: updatedRows, error } = await guard.supabase
     .from("driver_profiles")
     .update(patch)
     .in("user_id", profileIds)
-    .select("user_id,is_online,is_active_driver,last_lat,last_lng,last_location_at")
-    .limit(1)
-    .maybeSingle();
+    .select("user_id,is_online,is_active_driver,last_lat,last_lng,last_location_at");
+
+  const updated =
+    (updatedRows ?? []).find(
+      (row) => String(row.user_id).toLowerCase() === String(profile.user_id).toLowerCase(),
+    ) ?? updatedRows?.[0] ?? null;
 
   if (error || !updated) {
     console.error("[rides/drivers/me/online] POST", error);
@@ -102,7 +112,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  return NextResponse.json({ driver: updated });
+  return NextResponse.json({
+    driver: await enrichDriverOnlineFromAccountPool(
+      guard.supabase,
+      updated as NonNullable<typeof updated>,
+      authOpts,
+    ),
+  });
 }
 
 /** GET — current online status. */
@@ -110,9 +126,13 @@ export async function GET(req: NextRequest) {
   const guard = await ridesRouteGuard(req);
   if (!guard.ok) return guard.response;
 
-  const driver = await resolveDriverProfileForSession(guard.supabase, {
+  const authOpts = { authPhone: guard.authPhone };
+  const resolved = await resolveDriverProfileForSession(guard.supabase, {
     sessionUserId: guard.userId,
     authPhone: guard.authPhone,
   });
+  const driver = resolved
+    ? await enrichDriverOnlineFromAccountPool(guard.supabase, resolved, authOpts)
+    : null;
   return NextResponse.json({ driver });
 }
