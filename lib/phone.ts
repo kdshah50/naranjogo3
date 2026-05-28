@@ -35,6 +35,18 @@ export function canonicalizeAuthPhone(phone: string): string {
   return phone;
 }
 
+/** Canonical E.164 digits (no +) — the only format stored in `users.phone`. */
+export function storageAuthPhone(input: string): string {
+  return canonicalizeAuthPhone(normalizeAuthPhone(input));
+}
+
+/** Group key for duplicate detection (+1…, 1…, spaces → one canonical phone). */
+export function phoneIdentityKey(input: string | null | undefined): string {
+  const raw = String(input ?? "").trim();
+  if (!raw) return "";
+  return storageAuthPhone(raw);
+}
+
 export function formatMxLocalInput(val: string): string {
   const digits = val.replace(/\D/g, "").slice(0, 10);
   if (digits.length <= 2) return digits;

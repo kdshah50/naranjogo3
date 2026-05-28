@@ -3,6 +3,7 @@ import { SignJWT } from "jose";
 import { canonicalizeAuthPhone, isValidAuthPhone, normalizeAuthPhone } from "@/lib/phone";
 import { getJwtSecretBytes } from "@/lib/jwt-secret";
 import { TIANGUIS_TOKEN_COOKIE, createAdminSupabase } from "@/lib/auth-server";
+import { ensureAuthUserForPhone } from "@/lib/ensure-auth-user";
 
 const IS_PROD = process.env.NODE_ENV === "production";
 
@@ -77,54 +78,21 @@ export async function POST(req: NextRequest) {
       return clientError(500, "No se pudo actualizar el OTP");
     }
 
-    const plusVariant = `+${phone}`;
-    const { data: dupUser } = await supabase
-      .from("users")
-      .select("id,phone")
-      .eq("phone", plusVariant)
-      .maybeSingle();
-    if (dupUser) {
-      await supabase.from("users").update({ phone }).eq("id", dupUser.id);
+    let referredBy: string | null = null;
+    if (referralCodeRaw.length >= 4) {
+      const { data: rc } = await supabase
+        .from("referral_codes")
+        .select("user_id")
+        .eq("code", referralCodeRaw)
+        .maybeSingle();
+      if (rc?.user_id) referredBy = rc.user_id;
     }
 
-    const { data: existingUser } = await supabase
-      .from("users")
-      .select("id, display_name, trust_badge")
-      .eq("phone", phone)
-      .maybeSingle();
-
-    let user: { id: string; display_name: string | null; trust_badge: string } | null = null;
-
-    if (existingUser) {
-      const { error: upErr } = await supabase
-        .from("users")
-        .update({ phone_verified: true })
-        .eq("id", existingUser.id);
-      if (upErr) return clientError(500, "No se pudo actualizar usuario");
-      user = existingUser;
-    } else {
-      let referredBy: string | null = null;
-      if (referralCodeRaw.length >= 4) {
-        const { data: rc } = await supabase
-          .from("referral_codes")
-          .select("user_id")
-          .eq("code", referralCodeRaw)
-          .maybeSingle();
-        if (rc?.user_id) referredBy = rc.user_id;
-      }
-      const { data: inserted, error: insErr } = await supabase
-        .from("users")
-        .insert({ phone, phone_verified: true, trust_badge: "bronze", referred_by: referredBy })
-        .select("id, display_name, trust_badge")
-        .single();
-      if (insErr || !inserted) {
-        return clientError(500, "No se pudo crear/actualizar usuario");
-      }
-      user = inserted;
+    const ensured = await ensureAuthUserForPhone(supabase, phone, { referredBy });
+    if (!ensured.ok) {
+      return clientError(500, ensured.error);
     }
-    if (!user) {
-      return clientError(500, "No se pudo crear/actualizar usuario");
-    }
+    const user = ensured.user;
 
     const token = await new SignJWT({ sub: user.id, phone, badge: user.trust_badge })
       .setProtectedHeader({ alg: "HS256" })

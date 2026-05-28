@@ -17,6 +17,9 @@ import {
 } from "@/lib/provider-services";
 import { hasServiceMenu, parseServiceMenu } from "@/lib/listing-service-menu";
 import { rateLimitListingCreateByUser } from "@/lib/rate-limit";
+import { createAdminSupabase } from "@/lib/auth-server";
+import { storageAuthPhone } from "@/lib/phone";
+import { pickLoginUserForPhone } from "@/lib/resolve-login-user";
 
 const ADMIN_WHATSAPP = process.env.ADMIN_WHATSAPP_NUMBER ?? "";
 const TWILIO_SID     = process.env.TWILIO_ACCOUNT_SID ?? "";
@@ -144,55 +147,50 @@ export async function POST(req: NextRequest) {
       parseFloat((price ?? "0").toString().replace(/[^0-9.]/g, "")) * 100
     );
 
-    const phone = (whatsapp ?? "").replace(/\s/g, "");
+    const phone = storageAuthPhone(String(whatsapp ?? ""));
 
-    // 1. Find existing user by phone or create new one
-    const userRes = await fetch(
-      `${SUPA_URL}/rest/v1/users?phone=eq.${encodeURIComponent(phone)}&select=id`,
-      { headers: h }
-    );
-    const existingUsers = userRes.ok ? await userRes.json() : [];
+    // 1. Find existing user by canonical phone (never create a duplicate UUID)
+    const supabase = createAdminSupabase();
+    const existingUser = await pickLoginUserForPhone(supabase, phone);
     let sellerId: string;
 
     const cleanCurp = normalizeCurpForStorage(String(curp ?? ""));
     const cleanRfc = normalizeRfcForStorage(String(rfc ?? ""));
 
-    if (existingUsers.length > 0) {
-      sellerId = existingUsers[0].id;
-      const patch: Record<string, string> = {};
+    if (existingUser) {
+      sellerId = existingUser.id;
+      const patch: Record<string, string | boolean> = { phone, phone_verified: true };
       if (cleanCurp) patch.curp = cleanCurp;
       if (cleanRfc) patch.rfc = cleanRfc;
-      if (Object.keys(patch).length > 0) {
-        await fetch(`${SUPA_URL}/rest/v1/users?id=eq.${sellerId}`, {
-          method: "PATCH",
-          headers: h,
-          body: JSON.stringify(patch),
-        }).catch(() => {});
-      }
+      if (!String(existingUser.display_name ?? "").trim()) patch.display_name = String(name);
+      await supabase.from("users").update(patch).eq("id", sellerId);
     } else {
       const userPayload: Record<string, unknown> = {
         phone,
+        phone_verified: true,
         display_name: name,
         trust_badge: "none",
       };
       if (cleanCurp) userPayload.curp = cleanCurp;
       if (cleanRfc) userPayload.rfc = cleanRfc;
 
-      const newUserRes = await fetch(`${SUPA_URL}/rest/v1/users`, {
-        method: "POST",
-        headers: {
-          ...h,
-          Prefer: "return=representation",
-        },
-        body: JSON.stringify(userPayload),
-      });
-      if (!newUserRes.ok) {
-        const err = await newUserRes.json();
-        return NextResponse.json({ error: err }, { status: 500 });
+      const { data: inserted, error: insErr } = await supabase
+        .from("users")
+        .insert(userPayload)
+        .select("id")
+        .single();
+
+      if (insErr?.code === "23505") {
+        const again = await pickLoginUserForPhone(supabase, phone);
+        if (!again) {
+          return NextResponse.json({ error: "Failed to create user" }, { status: 500 });
+        }
+        sellerId = again.id;
+      } else if (insErr || !inserted?.id) {
+        return NextResponse.json({ error: insErr ?? "Failed to create user" }, { status: 500 });
+      } else {
+        sellerId = String(inserted.id);
       }
-      const newUser = await newUserRes.json();
-      sellerId = newUser[0]?.id;
-      if (!sellerId) return NextResponse.json({ error: "Failed to create user" }, { status: 500 });
     }
 
     const rl = await rateLimitListingCreateByUser(sellerId);
