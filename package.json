@@ -12,7 +12,8 @@
     "check:booking-notify": "npx --yes tsx scripts/check-booking-buyer-notify.ts",
     "test:full-connect": "tsx scripts/test-service-booking-full-connect.ts",
     "test:user-phone-uniqueness": "tsx scripts/test-user-phone-uniqueness.ts",
-    "merge:duplicate-users": "tsx scripts/merge-duplicate-users-by-phone.ts"
+    "merge:duplicate-users": "tsx scripts/merge-duplicate-users-by-phone.ts",
+    "backfill:listing-embeddings": "tsx scripts/backfill-listing-embeddings.ts"
   },
   "dependencies": {
     "@sentry/nextjs": "^8.55.1",

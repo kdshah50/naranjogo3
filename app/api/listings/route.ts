@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceRoleRestHeaders, getSupabaseUrl } from "@/lib/service-rest";
-import { getUserIdFromRequest } from "@/lib/auth-server";
+import { createAdminSupabase, getUserIdFromRequest } from "@/lib/auth-server";
+import { embedListingInBackground } from "@/lib/listing-embedding";
 import { rateLimitListingCreateByUser } from "@/lib/rate-limit";
 
 const PRICE_FLOORS: Record<string, number> = {
@@ -112,25 +113,28 @@ export async function POST(req: NextRequest) {
     const data = await res.json();
     if (!res.ok) return NextResponse.json({ error: data }, { status: res.status });
 
-    const fastapiUrl = process.env.FASTAPI_INTERNAL_URL;
-    if (fastapiUrl && data[0]?.id) {
-      fetch(`${fastapiUrl}/fraud/score/${data[0].id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-internal-secret": process.env.INTERNAL_API_SECRET ?? "tianguis_secret_2026" },
-        body: JSON.stringify({ price_mxn, category_id: category, seller_id: listing.seller_id }),
-      }).catch(() => {});
+    const created = data[0];
+    if (created?.id) {
+      const supabase = createAdminSupabase();
+      embedListingInBackground(supabase, created.id, {
+        title_es: listing.title_es,
+        description_es: listing.description_es,
+      });
 
-      fetch(`${fastapiUrl}/ml/embed`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-internal-secret": process.env.INTERNAL_API_SECRET ?? "tianguis_secret_2026" },
-        body: JSON.stringify({
-          listing_id: data[0].id,
-          text: `${listing.title_es} ${listing.description_es}`.trim(),
-        }),
-      }).catch(() => {});
+      const fastapiUrl = process.env.FASTAPI_INTERNAL_URL;
+      if (fastapiUrl) {
+        fetch(`${fastapiUrl}/fraud/score/${created.id}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-internal-secret": process.env.INTERNAL_API_SECRET ?? "tianguis_secret_2026",
+          },
+          body: JSON.stringify({ price_mxn, category_id: category, seller_id: listing.seller_id }),
+        }).catch(() => {});
+      }
     }
 
-    return NextResponse.json(data[0]);
+    return NextResponse.json(created);
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }

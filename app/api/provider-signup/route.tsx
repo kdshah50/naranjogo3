@@ -18,6 +18,7 @@ import {
 import { hasServiceMenu, parseServiceMenu } from "@/lib/listing-service-menu";
 import { rateLimitListingCreateByUser } from "@/lib/rate-limit";
 import { createAdminSupabase } from "@/lib/auth-server";
+import { embedListingInBackground } from "@/lib/listing-embedding";
 import { storageAuthPhone } from "@/lib/phone";
 import { pickLoginUserForPhone } from "@/lib/resolve-login-user";
 
@@ -283,6 +284,16 @@ export async function POST(req: NextRequest) {
       const status =
         listingRes.status >= 400 && listingRes.status < 600 ? listingRes.status : 500;
       return NextResponse.json({ error: msg, details }, { status });
+    }
+
+    const listingRows = await listingRes.json();
+    const createdListing = Array.isArray(listingRows) ? listingRows[0] : listingRows;
+    if (createdListing?.id) {
+      embedListingInBackground(supabase, String(createdListing.id), {
+        title_es: listing.title_es,
+        description_es: listing.description_es,
+        description_en: listing.description_en,
+      });
     }
 
     // 3. Notify admin via WhatsApp (non-blocking)

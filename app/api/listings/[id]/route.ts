@@ -3,6 +3,7 @@ import { createAdminSupabase, getUserIdFromRequest, isSameUserId } from "@/lib/a
 import { getAdminPin, isAdminPinConfigured } from "@/lib/admin-pin";
 import { getServiceRoleRestHeaders, getSupabaseUrl } from "@/lib/service-rest";
 import { hasServiceMenu, parseServiceMenu } from "@/lib/listing-service-menu";
+import { embedListingInBackground } from "@/lib/listing-embedding";
 
 const hJson = () => ({ ...getServiceRoleRestHeaders(), "Content-Type": "application/json" as const });
 
@@ -148,7 +149,21 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     );
     const data = await res.json();
     if (!res.ok) return NextResponse.json({ error: data }, { status: res.status });
-    return NextResponse.json(data[0]);
+
+    const updated = data[0];
+    if (
+      updated?.id &&
+      (payload.title_es != null || payload.description_es != null || payload.description_en != null)
+    ) {
+      const supabase = createAdminSupabase();
+      embedListingInBackground(supabase, listingId, {
+        title_es: updated.title_es ?? payload.title_es,
+        description_es: updated.description_es ?? payload.description_es,
+        description_en: updated.description_en ?? payload.description_en,
+      });
+    }
+
+    return NextResponse.json(updated);
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }

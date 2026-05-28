@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminPin, isAdminPinConfigured } from "@/lib/admin-pin";
 import { createAdminSupabase } from "@/lib/auth-server";
+import { embedListingInBackground } from "@/lib/listing-embedding";
 
 export const dynamic = "force-dynamic";
 
@@ -92,6 +93,16 @@ export async function POST(req: NextRequest) {
           { status: 404 }
         );
       }
+
+      const { data: listingRow } = await supabase
+        .from("listings")
+        .select("title_es,description_es,description_en")
+        .eq("id", id.trim())
+        .maybeSingle();
+      if (listingRow) {
+        embedListingInBackground(supabase, id.trim(), listingRow);
+      }
+
       return NextResponse.json({ ok: true });
     }
 
