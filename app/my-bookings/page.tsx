@@ -7,6 +7,7 @@ import GuaranteeBadge from "@/components/GuaranteeBadge";
 import RoutineHabitsCard from "@/components/RoutineHabitsCard";
 import BuyerRetentionPanel from "@/components/BuyerRetentionPanel";
 import { useAppLang, useAppLangActions } from "@/hooks/use-app-lang";
+import { mergeBookingsListWithDetailTruth } from "@/lib/booking-client-detail-truth";
 import { mergeBookingListAvoidStatusRegression } from "@/lib/booking-list-merge";
 import { normalizeNgTicketQuery } from "@/lib/ng-ticket-normalize";
 
@@ -233,9 +234,9 @@ function MyBookingsPageInner() {
         r.ok ? r.json() : { reminders: [] },
       ),
     ])
-      .then(([bData, rData]) => {
+      .then(async ([bData, rData]) => {
         setBookingsLoadError(bData._loadError ?? null);
-        const list = bData.bookings;
+        const list = await mergeBookingsListWithDetailTruth([], bData.bookings);
         setBookings((prev) => mergeBookingListAvoidStatusRegression(prev, list));
         const initCancel: Record<string, string> = {};
         for (const x of list as Booking[]) {

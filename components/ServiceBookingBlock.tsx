@@ -132,8 +132,25 @@ export default function ServiceBookingBlock({
       credentials: "same-origin",
       cache: "no-store",
     });
-    const data = res.ok ? await res.json() : null;
-    setBooking(data as BookingState | null);
+    let data = res.ok ? ((await res.json()) as BookingState) : null;
+    const paidId = data?.paidBookingId;
+    const paidSt = String(data?.paidBookingStatus ?? "").toLowerCase();
+    if (paidId && paidSt !== "completed" && paidSt !== "cancelled") {
+      try {
+        const detail = await fetch(`/api/bookings/${encodeURIComponent(paidId)}`, {
+          credentials: "same-origin",
+          cache: "no-store",
+        });
+        if (detail.ok) {
+          const row = (await detail.json()) as { status?: string };
+          const st = String(row.status ?? "").trim();
+          if (st && data) data = { ...data, paidBookingStatus: st };
+        }
+      } catch {
+        /* non-fatal */
+      }
+    }
+    setBooking(data);
     setLoading(false);
 
     // Fetch loyalty info (non-blocking)

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAppLang } from "@/hooks/use-app-lang";
 import { formatCurrencyMXN } from "@/lib/locale-format";
 import { canonicalBookingRowIdKey, mergeBookingListAvoidStatusRegression } from "@/lib/booking-list-merge";
+import { mergeBookingsListWithDetailTruth } from "@/lib/booking-client-detail-truth";
 import { normalizeNgTicketQuery } from "@/lib/ng-ticket-normalize";
 import type { Lang } from "@/lib/i18n-lang";
 
@@ -215,7 +216,8 @@ function SellerBookingsInner() {
         sellerActivePaidBookings: number;
       };
     };
-    const list = Array.isArray(data.bookings) ? data.bookings : [];
+    const listRaw = Array.isArray(data.bookings) ? data.bookings : [];
+    const list = await mergeBookingsListWithDetailTruth([], listRaw);
     /** Merge with screen state so a stale poll cannot downgrade optimistic PATCH (e.g. completed → scheduling pending). */
     setBookings((prev) => mergeBookingListAvoidStatusRegression(prev, list));
     if (
