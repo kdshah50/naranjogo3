@@ -13,7 +13,8 @@
     "test:full-connect": "tsx scripts/test-service-booking-full-connect.ts",
     "test:user-phone-uniqueness": "tsx scripts/test-user-phone-uniqueness.ts",
     "merge:duplicate-users": "tsx scripts/merge-duplicate-users-by-phone.ts",
-    "backfill:listing-embeddings": "tsx scripts/backfill-listing-embeddings.ts"
+    "backfill:listing-embeddings": "tsx scripts/backfill-listing-embeddings.ts",
+    "test:search-smoke": "tsx scripts/test-search-smoke.ts"
   },
   "dependencies": {
     "@sentry/nextjs": "^8.55.1",
