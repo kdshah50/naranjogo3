@@ -40,6 +40,8 @@ const ABS_THRESHOLD = 0.26;
 const REL_FACTOR = 0.83;
 /** Must stay within this cosine gap of the best match. */
 const BEST_SIM_MARGIN = 0.13;
+/** Sparse found no title/trade hit — do not show weak dense-only neighbors (wrong trade). */
+const MIN_DENSE_WHEN_NO_SPARSE = 0.44;
 
 async function embedQuery(text: string): Promise<number[] | null> {
   return embedText(text);
@@ -173,7 +175,12 @@ export async function GET(req: NextRequest) {
 
   let sparseRows: any[] = [];
   let denseRows:  any[] = [];
-  let denseFilterDebug: { bestSimilarity: number; thresholdUsed: number } | null = null;
+  let denseFilterDebug: {
+    bestSimilarity: number;
+    thresholdUsed: number;
+    rejectedNoSparseMatch?: boolean;
+    minDenseWhenNoSparse?: number;
+  } | null = null;
 
   let parsed: ParsedQueryFilters = {
     keywordForSparse: query,
@@ -268,6 +275,20 @@ export async function GET(req: NextRequest) {
         }
       }
     } catch {}
+
+    if (sparseRows.length === 0 && denseRows.length > 0) {
+      const best =
+        denseFilterDebug?.bestSimilarity ??
+        Math.max(...denseRows.map((l: { similarity?: number }) => l.similarity ?? 0));
+      if (best < MIN_DENSE_WHEN_NO_SPARSE) {
+        denseRows = [];
+        denseFilterDebug = {
+          ...(denseFilterDebug ?? { bestSimilarity: best, thresholdUsed: MIN_DENSE_WHEN_NO_SPARSE }),
+          rejectedNoSparseMatch: true,
+          minDenseWhenNoSparse: MIN_DENSE_WHEN_NO_SPARSE,
+        };
+      }
+    }
 
   } else {
     // No query — return all active services
