@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAppLang } from "@/hooks/use-app-lang";
 import { formatCurrencyMXN } from "@/lib/locale-format";
 import { canonicalBookingRowIdKey, mergeBookingListAvoidStatusRegression } from "@/lib/booking-list-merge";
-import { mergeBookingsListWithDetailTruth } from "@/lib/booking-client-detail-truth";
+import { mergeBookingsListWithDetailTruth, sellerStatsFromTruthList } from "@/lib/booking-client-detail-truth";
 import { normalizeNgTicketQuery } from "@/lib/ng-ticket-normalize";
 import type { Lang } from "@/lib/i18n-lang";
 
@@ -225,14 +225,17 @@ function SellerBookingsInner() {
       typeof data.sellerStats.sellerCompletedPaid === "number" &&
       typeof data.sellerStats.sellerPaidBookings === "number"
     ) {
-      setSellerStats({
-        sellerCompletedPaid: data.sellerStats.sellerCompletedPaid,
-        sellerPaidBookings: data.sellerStats.sellerPaidBookings,
-        sellerActivePaidBookings:
-          typeof data.sellerStats.sellerActivePaidBookings === "number"
-            ? data.sellerStats.sellerActivePaidBookings
-            : 0,
-      });
+      const reconciled = sellerStatsFromTruthList(list, data.sellerStats);
+      setSellerStats(
+        reconciled ?? {
+          sellerCompletedPaid: data.sellerStats.sellerCompletedPaid,
+          sellerPaidBookings: data.sellerStats.sellerPaidBookings,
+          sellerActivePaidBookings:
+            typeof data.sellerStats.sellerActivePaidBookings === "number"
+              ? data.sellerStats.sellerActivePaidBookings
+              : 0,
+        },
+      );
     } else {
       setSellerStats(null);
     }

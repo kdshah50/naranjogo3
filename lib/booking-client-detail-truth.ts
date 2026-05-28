@@ -47,3 +47,32 @@ export async function mergeBookingsListWithDetailTruth<T extends RowWithId>(
   const merged = mergeBookingListAvoidStatusRegression(prev, server);
   return refreshOpenBookingsFromDetailApi(merged);
 }
+
+/** When the paid list is complete on screen, recompute banner stats from truth-corrected rows. */
+export function sellerStatsFromTruthList(
+  list: { status?: string | null }[],
+  serverStats:
+    | {
+        sellerPaidBookings: number;
+        sellerCompletedPaid: number;
+        sellerActivePaidBookings: number;
+      }
+    | undefined,
+):
+  | {
+      sellerPaidBookings: number;
+      sellerCompletedPaid: number;
+      sellerActivePaidBookings: number;
+    }
+  | null {
+  if (!serverStats || serverStats.sellerPaidBookings <= 0) return serverStats ?? null;
+  if (list.length !== serverStats.sellerPaidBookings) return serverStats;
+
+  const completed = list.filter((b) => String(b.status ?? "").toLowerCase() === "completed").length;
+  const cancelled = list.filter((b) => String(b.status ?? "").toLowerCase() === "cancelled").length;
+  return {
+    sellerPaidBookings: serverStats.sellerPaidBookings,
+    sellerCompletedPaid: completed,
+    sellerActivePaidBookings: Math.max(0, serverStats.sellerPaidBookings - completed - cancelled),
+  };
+}
