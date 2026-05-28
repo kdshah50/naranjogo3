@@ -315,11 +315,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         console.error("[bookings/:id] PATCH re-notify review prompt failed (non-fatal)", e);
         buyerPhaseWhatsApp = { delivered: false, reason: "send_failed" };
       }
-      return NextResponse.json({ ok: true, alreadyCompleted: true, buyerPhaseWhatsApp });
+      return NextResponse.json({ ok: true, alreadyCompleted: true, status: "completed", buyerPhaseWhatsApp });
     }
 
     if (booking.status === nextStatus) {
-      return NextResponse.json({ ok: true, unchanged: true });
+      return NextResponse.json({ ok: true, unchanged: true, status: String(booking.status) });
     }
 
     if (!canTransitionLifecycle(booking.status, nextStatus)) {

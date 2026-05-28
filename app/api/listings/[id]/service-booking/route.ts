@@ -21,6 +21,7 @@ import {
 import {
   resolveServicePricingBaseMxnCents,
 } from "@/lib/service-booking-pricing";
+import { applyServiceBookingStatusTruthPass } from "@/lib/booking-status-truth";
 
 export const dynamic = "force-dynamic";
 
@@ -189,7 +190,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       package_total_price_mxn: listingPricing?.package_total_price_mxn,
     });
 
-    const paidRows = await mergePaidBookingsForListingBuyer(supabase, listingId, myPool);
+    const paidRowsRaw = await mergePaidBookingsForListingBuyer(supabase, listingId, myPool);
+    const paidRows = await applyServiceBookingStatusTruthPass(supabase, paidRowsRaw);
     const latestPaid = paidRows[0] ?? null;
     const checkoutBlocked = checkoutBlockedByExistingPaidRows(
       paidRows.map((r) => ({ status: r.status ?? null })),

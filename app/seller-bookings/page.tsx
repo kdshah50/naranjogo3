@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAppLang } from "@/hooks/use-app-lang";
 import { formatCurrencyMXN } from "@/lib/locale-format";
-import { canonicalBookingRowIdKey } from "@/lib/booking-list-merge";
+import { canonicalBookingRowIdKey, mergeBookingListAvoidStatusRegression } from "@/lib/booking-list-merge";
 import { normalizeNgTicketQuery } from "@/lib/ng-ticket-normalize";
 import type { Lang } from "@/lib/i18n-lang";
 
@@ -216,8 +216,8 @@ function SellerBookingsInner() {
       };
     };
     const list = Array.isArray(data.bookings) ? data.bookings : [];
-    /** Trust server + API truth pass; client regression merge kept stale "scheduling pending". */
-    setBookings(list);
+    /** Merge with screen state so a stale poll cannot downgrade optimistic PATCH (e.g. completed → scheduling pending). */
+    setBookings((prev) => mergeBookingListAvoidStatusRegression(prev, list));
     if (
       data.sellerStats &&
       typeof data.sellerStats.sellerCompletedPaid === "number" &&
