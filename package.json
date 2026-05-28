@@ -15,6 +15,7 @@
     "test:ride-pricing": "tsx scripts/test-ride-pricing.ts",
     "test:ride-lifecycle": "tsx scripts/test-ride-lifecycle.ts",
     "test:rides-staging": "tsx scripts/test-rides-staging-health.ts",
+    "release:rider-holds": "tsx scripts/release-rider-wallet-holds.ts",
     "test:rides-full": "tsx scripts/test-rides-full-e2e.ts"
   },
   "dependencies": {
