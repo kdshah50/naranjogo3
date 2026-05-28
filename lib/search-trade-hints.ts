@@ -21,6 +21,10 @@ const TRADE_HINTS: { re: RegExp; terms: string[] }[] = [
     terms: ["pintor", "pintura", "yeso"],
   },
   {
+    re: /\b(cook(ing)?|chef|chefs|kitchen|meal\s*prep|cater(ing)?|culinar|food\s+prep|cocin(a|er[oa]?|ando)?|comida|recetas?|banquetes?)\b/i,
+    terms: ["chef", "cocinero", "cocinera", "cocina", "comida", "servicio de cocina"],
+  },
+  {
     re: /\b(clean(ing)?|housekeep|maid|limpieza|limpiar|aseo)\b/i,
     terms: ["limpieza", "aseo", "servicio doméstico"],
   },
@@ -158,11 +162,7 @@ export function sparseSearchTokens(userQuery: string, keywordPhrase: string): st
   for (const part of splitPhrase(keywordPhrase)) {
     if (part.length >= 2) add(part);
   }
-  for (const part of splitPhrase(userQuery)) {
-    if (part.length >= 3 && !QUERY_NOISE_WORDS.test(part)) {
-      add(part);
-    }
-  }
+  // Tokenize keyword phrase only — full user query may still contain stripped price text ("under $600").
 
   return out.slice(0, 10);
 }
