@@ -88,21 +88,18 @@ export async function listActiveTripsForDriverProfile(
     }
   }
 
-  // Fallback: scan recent actives when eq filter returns nothing (UUID format edge cases).
-  if (byId.size === 0) {
-    const { data: recent, error } = await supabase
-      .from("ride_bookings")
-      .select("*")
-      .in("status", [...statuses])
-      .not("driver_id", "is", null)
-      .order("created_at", { ascending: false })
-      .limit(60);
+  // Always merge fallback scan — eq-only pass can miss new trips when stale rows exist for pool ids.
+  const { data: recent, error: recentErr } = await supabase
+    .from("ride_bookings")
+    .select("*")
+    .in("status", [...statuses])
+    .not("driver_id", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(60);
 
-    if (error) {
-      console.error("[ride-trip] listActiveTripsForDriverProfile", error);
-      return [];
-    }
-
+  if (recentErr) {
+    console.error("[ride-trip] listActiveTripsForDriverProfile scan", recentErr);
+  } else {
     for (const row of (recent ?? []) as RideBookingRow[]) {
       if (rideMatchesDriverPool(row, driverPool)) byId.set(row.id, row);
     }

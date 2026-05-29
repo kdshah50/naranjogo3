@@ -8,6 +8,7 @@ import { formatCurrencyMXN } from "@/lib/locale-format";
 import { RidesStagingBanner } from "@/components/RidesStagingBanner";
 import { useRideLiveStream } from "@/hooks/use-ride-live-stream";
 import {
+  mergeRideListsByStatus,
   mergeRideStatusRow,
   rideStatusRank,
 } from "@/lib/rides/ride-status-merge";
@@ -22,9 +23,15 @@ import {
 const DRIVER_ACTIVE_STATUSES = new Set(["matched", "accepted", "arrived", "in_trip"]);
 const DRIVER_FINISHED_RIDES_KEY = "ng_driver_finished_ride_ids";
 const DRIVER_FINISHED_TICKETS_KEY = "ng_driver_finished_tickets";
+/** After a driver action, ignore empty panel polls briefly so UI does not flash back to Phase 1. */
+const ACTION_SETTLE_MS = 5_000;
 
 function isDriverActiveTrip(row: RideRow): boolean {
   return DRIVER_ACTIVE_STATUSES.has(row.status);
+}
+
+function normalizeTicketCode(ticket: string | null | undefined): string {
+  return (ticket ?? "").trim().toUpperCase();
 }
 
 function readFinishedRideIds(): Set<string> {
@@ -65,74 +72,37 @@ function sortDriverTrips(rows: RideRow[]): RideRow[] {
   });
 }
 
-type FinishedRideFilter = {
-  rideIds: ReadonlySet<string>;
-  tickets: ReadonlySet<string>;
-};
-
-function normalizeTicketCode(ticket: string | null | undefined): string {
-  return (ticket ?? "").trim().toUpperCase();
-}
-
-function isFinishedDriverTrip(
+function isFinishedTrip(
   row: Pick<RideRow, "id" | "ticket_code">,
-  finished: FinishedRideFilter,
-  hideTickets?: ReadonlySet<string>,
+  finishedIds: ReadonlySet<string>,
+  finishedTickets: ReadonlySet<string>,
 ): boolean {
-  if (finished.rideIds.has(row.id)) return true;
+  if (finishedIds.has(row.id)) return true;
   const ticket = normalizeTicketCode(row.ticket_code);
-  if (!ticket) return false;
-  if (finished.tickets.has(ticket)) return true;
-  return Boolean(hideTickets?.has(ticket));
+  return Boolean(ticket && finishedTickets.has(ticket));
 }
 
-function filterOpenDriverTrips(
+function filterVisibleTrips(
   rows: RideRow[],
-  finished: FinishedRideFilter,
-  hideTickets?: ReadonlySet<string>,
+  finishedIds: ReadonlySet<string>,
+  finishedTickets: ReadonlySet<string>,
 ): RideRow[] {
   return rows.filter(
-    (row) =>
-      isDriverActiveTrip(row) &&
-      !isFinishedDriverTrip(row, finished, hideTickets),
+    (row) => isDriverActiveTrip(row) && !isFinishedTrip(row, finishedIds, finishedTickets),
   );
 }
 
-/** GET /api/rides/[id] is source of truth — drop completed/cancelled rows the panel may cache. */
-async function reconcileDriverTripsWithServer(
-  candidates: RideRow[],
-  finished: FinishedRideFilter,
-  onTerminal: (rideId: string, ticketCode?: string | null) => void,
-  hideTickets?: ReadonlySet<string>,
-): Promise<RideRow[]> {
-  const deduped = sortDriverTrips(filterOpenDriverTrips(candidates, finished, hideTickets));
-  if (deduped.length === 0) return [];
-
-  const results = await Promise.all(
-    deduped.map(async (trip) => {
-      const row = await fetchDriverRideRow(trip.id);
-      if (!row || !isDriverActiveTrip(row)) {
-        if (row) onTerminal(row.id, row.ticket_code);
-        return null;
-      }
-      if (isFinishedDriverTrip(row, finished, hideTickets)) {
-        onTerminal(row.id, row.ticket_code);
-        return null;
-      }
-      return mergeRideStatusRow(trip, row);
-    }),
-  );
-  return sortDriverTrips(results.filter((row): row is RideRow => row !== null));
-}
-
-async function fetchDriverRideRow(rideId: string): Promise<RideRow | null> {
-  const r = await fetch(`/api/rides/${rideId}`, {
-    credentials: "include",
-    cache: "no-store",
-  });
-  if (!r.ok) return null;
-  const data = (await r.json().catch(() => ({}))) as { ride?: RideRow };
-  return data.ride?.id ? data.ride : null;
+/** Merge panel payload into UI — never downgrade status for the same ride id. */
+function mergePanelTrips(
+  prev: RideRow[],
+  incoming: RideRow[],
+  finishedIds: ReadonlySet<string>,
+  finishedTickets: ReadonlySet<string>,
+): RideRow[] {
+  const openPrev = filterVisibleTrips(prev, finishedIds, finishedTickets);
+  const openIncoming = filterVisibleTrips(incoming, finishedIds, finishedTickets);
+  if (openIncoming.length === 0) return [];
+  return sortDriverTrips(mergeRideListsByStatus(openPrev, openIncoming));
 }
 
 type RideRow = {
@@ -179,39 +149,74 @@ function ConductorViajesInner() {
   const [busy, setBusy] = useState<string | null>(null);
   const [ticketByRide, setTicketByRide] = useState<Record<string, string>>({});
   const [canonicalUserId, setCanonicalUserId] = useState<string | null>(null);
-  const [tripDebugHint, setTripDebugHint] = useState<string | null>(null);
-  const tripsRef = useRef<RideRow[]>([]);
-  /** After Conectar succeeds, ignore stale panel polls that still say offline. */
-  const onlineLatchUntilRef = useRef(0);
+
   const finishedRideIdsRef = useRef<Set<string>>(readFinishedRideIds());
   const finishedTicketsRef = useRef<Set<string>>(readFinishedTickets());
-  const hideTicketsRef = useRef<Set<string>>(new Set());
+  /** After Conectar succeeds, ignore stale panel polls that still say offline. */
+  const onlineLatchUntilRef = useRef(0);
+  /** After accept/arrive/start/complete, hold local trip state through empty panel polls. */
+  const actionLatchUntilRef = useRef(0);
 
-  const finishedFilter = useCallback(
-    (): FinishedRideFilter => ({
-      rideIds: finishedRideIdsRef.current,
-      tickets: finishedTicketsRef.current,
-    }),
-    [],
-  );
-
-  const syncHideTickets = useCallback((codes: string[] | undefined) => {
-    hideTicketsRef.current = new Set((codes ?? []).map(normalizeTicketCode).filter(Boolean));
-  }, []);
-
-  const markDriverTripFinished = useCallback((rideId: string, ticketCode?: string | null) => {
+  const markTripFinished = useCallback((rideId: string, ticketCode?: string | null) => {
     finishedRideIdsRef.current.add(rideId);
     const ticket = normalizeTicketCode(ticketCode);
-    if (ticket) {
-      finishedTicketsRef.current.add(ticket);
-      hideTicketsRef.current.add(ticket);
-    }
+    if (ticket) finishedTicketsRef.current.add(ticket);
     persistFinishedSets(finishedRideIdsRef.current, finishedTicketsRef.current);
   }, []);
 
-  useEffect(() => {
-    tripsRef.current = trips;
-  }, [trips]);
+  const applyTripFromAction = useCallback((rideId: string, row: RideRow | undefined) => {
+    if (!row?.id) return;
+    if (!isDriverActiveTrip(row)) {
+      markTripFinished(rideId, row.ticket_code);
+      setTrips((prev) =>
+        filterVisibleTrips(
+          prev.filter((trip) => trip.id !== rideId),
+          finishedRideIdsRef.current,
+          finishedTicketsRef.current,
+        ),
+      );
+      return;
+    }
+    if (isFinishedTrip(row, finishedRideIdsRef.current, finishedTicketsRef.current)) return;
+
+    setTrips((prev) => {
+      const visible = filterVisibleTrips(prev, finishedRideIdsRef.current, finishedTicketsRef.current);
+      const idx = visible.findIndex((trip) => trip.id === rideId);
+      let next: RideRow[];
+      if (idx >= 0) {
+        next = [...visible];
+        next[idx] = mergeRideStatusRow(next[idx], row);
+      } else {
+        next = [row, ...visible];
+      }
+      return sortDriverTrips(next);
+    });
+  }, [markTripFinished]);
+
+  const applyPanelPayload = useCallback((panelTrips: RideRow[]) => {
+    const incoming = Array.isArray(panelTrips) ? panelTrips : [];
+    setTrips((prev) => {
+      const openPrev = filterVisibleTrips(
+        prev,
+        finishedRideIdsRef.current,
+        finishedTicketsRef.current,
+      );
+      const merged = mergePanelTrips(
+        prev,
+        incoming,
+        finishedRideIdsRef.current,
+        finishedTicketsRef.current,
+      );
+
+      if (merged.length > 0) return merged;
+
+      if (openPrev.length > 0 && Date.now() < actionLatchUntilRef.current) {
+        return openPrev;
+      }
+
+      return [];
+    });
+  }, []);
 
   const mergeDriverOnline = useCallback((incoming: DriverOnline | null | undefined): DriverOnline | null => {
     if (!incoming) return null;
@@ -220,41 +225,6 @@ function ConductorViajesInner() {
     }
     return incoming;
   }, []);
-
-  /** Panel API is source of truth; never merge stale client rows when server lists zero trips. */
-  const applyPanelTrips = useCallback(
-    async (panelTrips: RideRow[], hideTicketsFromServer?: string[]) => {
-      if (hideTicketsFromServer) syncHideTickets(hideTicketsFromServer);
-      const finished = finishedFilter();
-      const hideTickets = hideTicketsRef.current;
-      const openPanel = filterOpenDriverTrips(panelTrips, finished, hideTickets);
-
-      if (openPanel.length > 0) {
-        const reconciled = await reconcileDriverTripsWithServer(
-          openPanel,
-          finished,
-          markDriverTripFinished,
-          hideTickets,
-        );
-        setTrips(reconciled);
-        if (reconciled.length > 0) setTripDebugHint(null);
-        return;
-      }
-
-      setTrips([]);
-      const staleActive = filterOpenDriverTrips(tripsRef.current, finished, hideTickets);
-      if (staleActive.length === 0) return;
-
-      const reconciled = await reconcileDriverTripsWithServer(
-        staleActive,
-        finished,
-        markDriverTripFinished,
-        hideTickets,
-      );
-      setTrips(reconciled);
-    },
-    [finishedFilter, markDriverTripFinished, syncHideTickets],
-  );
 
   const load = useCallback(async () => {
     const r = await fetch("/api/rides/drivers/me/panel", {
@@ -273,11 +243,8 @@ function ConductorViajesInner() {
     }
 
     if (data.driver) setOnline(mergeDriverOnline(data.driver as DriverOnline));
-    const panelTrips = Array.isArray(data.trips) ? (data.trips as RideRow[]) : [];
-    const hideTickets = Array.isArray(data.hide_tickets)
-      ? (data.hide_tickets as string[])
-      : undefined;
-    await applyPanelTrips(panelTrips, hideTickets);
+    applyPanelPayload(Array.isArray(data.trips) ? (data.trips as RideRow[]) : []);
+
     const sessionId = data.session_user_id ?? null;
     setCanonicalUserId(data.canonical_user_id ?? data.driver?.user_id ?? null);
     if (!data.driver?.is_active_driver && data.driver !== null) {
@@ -292,7 +259,7 @@ function ConductorViajesInner() {
       setPanelError(null);
     }
   }, [
-    applyPanelTrips,
+    applyPanelPayload,
     mergeDriverOnline,
     t.panelLoadFailed,
     t.inactiveDriverShort,
@@ -303,10 +270,8 @@ function ConductorViajesInner() {
   ]);
 
   const displayError = actionError ?? panelError;
-
   const isOnline = Boolean(online?.is_online);
   const canGoOnline = Boolean(online?.is_active_driver);
-
   const panelStreamEnabled = !panelError && Boolean(canonicalUserId ?? online?.user_id);
 
   useRideLiveStream({
@@ -317,24 +282,18 @@ function ConductorViajesInner() {
         driver?: DriverOnline | null;
         trips?: RideRow[];
         canonical_user_id?: string | null;
-        hide_tickets?: string[];
       };
       if (data.driver) setOnline(mergeDriverOnline(data.driver));
-      if (Array.isArray(data.trips)) {
-        void applyPanelTrips(
-          data.trips as RideRow[],
-          Array.isArray(data.hide_tickets) ? (data.hide_tickets as string[]) : undefined,
-        );
-      }
+      if (Array.isArray(data.trips)) applyPanelPayload(data.trips as RideRow[]);
       if (data.canonical_user_id) setCanonicalUserId(data.canonical_user_id);
     },
-    fallbackPollMs: 30_000,
+    fallbackPollMs: 20_000,
     onFallbackPoll: load,
   });
 
   useEffect(() => {
     load();
-    const ms = panelStreamEnabled ? (isOnline ? 15_000 : 20_000) : isOnline ? 3000 : 8000;
+    const ms = panelStreamEnabled ? (isOnline ? 10_000 : 15_000) : isOnline ? 3000 : 8000;
     const timer = setInterval(load, ms);
     return () => clearInterval(timer);
   }, [load, isOnline, panelStreamEnabled]);
@@ -346,12 +305,6 @@ function ConductorViajesInner() {
     window.addEventListener("pageshow", onPageShow);
     return () => window.removeEventListener("pageshow", onPageShow);
   }, [load]);
-
-  useEffect(() => {
-    if (trips.length > 0) {
-      setTripDebugHint(null);
-    }
-  }, [trips.length]);
 
   const refreshOnlineStatus = useCallback(async () => {
     const r = await fetch("/api/rides/drivers/me/online", {
@@ -428,31 +381,6 @@ function ConductorViajesInner() {
     }
   };
 
-  const mergeTripFromApi = (rideId: string, row: RideRow | undefined) => {
-    if (!row?.id) return;
-    if (!isDriverActiveTrip(row)) {
-      markDriverTripFinished(rideId, row.ticket_code);
-    }
-    const finished = finishedFilter();
-    const hideTickets = hideTicketsRef.current;
-    setTrips((prev) => {
-      if (!isDriverActiveTrip(row) || isFinishedDriverTrip(row, finished, hideTickets)) {
-        return filterOpenDriverTrips(
-          prev.filter((t) => t.id !== rideId),
-          finished,
-          hideTickets,
-        );
-      }
-      const idx = prev.findIndex((t) => t.id === rideId);
-      if (idx >= 0) {
-        const next = [...prev];
-        next[idx] = mergeRideStatusRow(next[idx], row);
-        return sortDriverTrips(filterOpenDriverTrips(next, finished, hideTickets));
-      }
-      return sortDriverTrips(filterOpenDriverTrips([row, ...prev], finished, hideTickets));
-    });
-  };
-
   const action = async (rideId: string, path: string, body?: Record<string, unknown>) => {
     setBusy(rideId + path);
     setActionError(null);
@@ -469,31 +397,23 @@ function ConductorViajesInner() {
         setActionError(data?.error ?? t.actionFailed);
         return;
       }
+
       const row = data.ride as RideRow | undefined;
-      mergeTripFromApi(rideId, row);
+      actionLatchUntilRef.current = Date.now() + ACTION_SETTLE_MS;
+
       if (path === "complete") {
-        markDriverTripFinished(rideId, row?.ticket_code);
+        markTripFinished(rideId, row?.ticket_code);
+        setTrips([]);
         setActionSuccess(t.completeSuccess);
-        setTrips((prev) =>
-          filterOpenDriverTrips(
-            prev.filter(
-              (t) =>
-                t.id !== rideId &&
-                (!row?.ticket_code ||
-                  normalizeTicketCode(t.ticket_code) !== normalizeTicketCode(row.ticket_code)),
-            ),
-            finishedFilter(),
-            hideTicketsRef.current,
-          ),
-        );
-      } else {
-        if (path === "accept") setActionSuccess(t.acceptSuccess);
-        else if (path === "arrive") setActionSuccess(t.arriveSuccess);
-        else if (path === "start") setActionSuccess(t.startSuccess);
-        void fetchDriverRideRow(rideId).then((fresh) => {
-          if (fresh) mergeTripFromApi(rideId, fresh);
-        });
+        actionLatchUntilRef.current = Date.now() + 60_000;
+        return;
       }
+
+      applyTripFromAction(rideId, row);
+
+      if (path === "accept") setActionSuccess(t.acceptSuccess);
+      else if (path === "arrive") setActionSuccess(t.arriveSuccess);
+      else if (path === "start") setActionSuccess(t.startSuccess);
     } finally {
       setBusy(null);
     }
@@ -610,24 +530,12 @@ function ConductorViajesInner() {
         {trips.length === 0 ? (
           <div className="space-y-2">
             <p className="text-sm text-[#1B4332]/70">{t.noActiveTrips}</p>
-            {isOnline && (
-              <div className="space-y-2">
-                <p className="text-xs text-[#1B4332]/50 leading-relaxed">
-                  {t.staleTripHint}
-                  {canonicalUserId && (
-                    <>
-                      {" "}
-                      {t.driverIdLabel}{" "}
-                      <span className="font-mono">{canonicalUserId.slice(0, 8)}…</span>
-                    </>
-                  )}
-                </p>
-                {tripDebugHint && (
-                  <p className="text-xs text-amber-800 leading-relaxed rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-                    {tripDebugHint}
-                  </p>
-                )}
-              </div>
+            {isOnline && canonicalUserId && (
+              <p className="text-xs text-[#1B4332]/50 leading-relaxed">
+                {t.staleTripHint}{" "}
+                {t.driverIdLabel}{" "}
+                <span className="font-mono">{canonicalUserId.slice(0, 8)}…</span>
+              </p>
             )}
           </div>
         ) : (
@@ -637,87 +545,87 @@ function ConductorViajesInner() {
               const currentStep =
                 stepIdx >= 0 ? driverFlowSteps(lang)[stepIdx] : null;
               return (
-              <li key={trip.id} className="rounded-2xl bg-white p-5 shadow-sm space-y-3">
-                {currentStep && (
-                  <p className="text-xs font-semibold text-emerald-800">
-                    Paso {stepIdx + 1}: {currentStep.buttonLabel}
+                <li key={trip.id} className="rounded-2xl bg-white p-5 shadow-sm space-y-3">
+                  {currentStep && (
+                    <p className="text-xs font-semibold text-emerald-800">
+                      Paso {stepIdx + 1}: {currentStep.buttonLabel}
+                    </p>
+                  )}
+                  <p className="text-xs uppercase tracking-wide text-[#1B4332]/60">
+                    {rideStatusLabel(trip.status, lang)}
                   </p>
-                )}
-                <p className="text-xs uppercase tracking-wide text-[#1B4332]/60">
-                  {rideStatusLabel(trip.status, lang)}
-                </p>
-                <p className="font-medium">
-                  {trip.pickup_address} → {trip.dropoff_address}
-                </p>
-                <p className="text-sm text-[#1B4332]/70">
-                  {t.estFare} {formatCurrencyMXN(trip.estimated_total_mxn_cents, lang)}
-                </p>
-                {trip.ticket_code && (
-                  <p className="text-sm">
-                    {t.passengerCode}{" "}
-                    <span className="font-mono font-bold">{trip.ticket_code}</span>
+                  <p className="font-medium">
+                    {trip.pickup_address} → {trip.dropoff_address}
                   </p>
-                )}
-                <p className="text-xs text-[#1B4332]/50">
-                  {driverTripActionHint(trip.status, lang)}
-                </p>
+                  <p className="text-sm text-[#1B4332]/70">
+                    {t.estFare} {formatCurrencyMXN(trip.estimated_total_mxn_cents, lang)}
+                  </p>
+                  {trip.ticket_code && (
+                    <p className="text-sm">
+                      {t.passengerCode}{" "}
+                      <span className="font-mono font-bold">{trip.ticket_code}</span>
+                    </p>
+                  )}
+                  <p className="text-xs text-[#1B4332]/50">
+                    {driverTripActionHint(trip.status, lang)}
+                  </p>
 
-                {trip.status === "matched" && (
-                  <button
-                    type="button"
-                    disabled={!!busy}
-                    onClick={() => action(trip.id, "accept")}
-                    className="rounded-full bg-[#1B4332] px-4 py-2 text-sm text-white disabled:opacity-50"
-                  >
-                    {t.acceptRide}
-                  </button>
-                )}
-                {trip.status === "accepted" && (
-                  <button
-                    type="button"
-                    disabled={!!busy}
-                    onClick={() => action(trip.id, "arrive")}
-                    className="rounded-full bg-[#1B4332] px-4 py-2 text-sm text-white disabled:opacity-50"
-                  >
-                    {t.arrivedAtPickup}
-                  </button>
-                )}
-                {trip.status === "arrived" && (
-                  <div className="flex flex-wrap gap-2 items-end">
-                    <input
-                      className="rounded-lg border border-[#1B4332]/20 px-3 py-2 text-sm font-mono"
-                      placeholder={t.ticketPlaceholder}
-                      value={ticketByRide[trip.id] ?? trip.ticket_code ?? ""}
-                      onChange={(e) =>
-                        setTicketByRide((m) => ({ ...m, [trip.id]: e.target.value }))
-                      }
-                    />
+                  {trip.status === "matched" && (
                     <button
                       type="button"
                       disabled={!!busy}
-                      onClick={() =>
-                        action(trip.id, "start", {
-                          ticket_code: (ticketByRide[trip.id] ?? trip.ticket_code ?? "").trim(),
-                        })
-                      }
+                      onClick={() => action(trip.id, "accept")}
                       className="rounded-full bg-[#1B4332] px-4 py-2 text-sm text-white disabled:opacity-50"
                     >
-                      {t.startRide}
+                      {t.acceptRide}
                     </button>
-                  </div>
-                )}
-                {trip.status === "in_trip" && (
-                  <button
-                    type="button"
-                    disabled={!!busy}
-                    onClick={() => action(trip.id, "complete")}
-                    className="rounded-full bg-[#1B4332] px-4 py-2 text-sm text-white disabled:opacity-50"
-                  >
-                    {t.completeRide}
-                  </button>
-                )}
-              </li>
-            );
+                  )}
+                  {trip.status === "accepted" && (
+                    <button
+                      type="button"
+                      disabled={!!busy}
+                      onClick={() => action(trip.id, "arrive")}
+                      className="rounded-full bg-[#1B4332] px-4 py-2 text-sm text-white disabled:opacity-50"
+                    >
+                      {t.arrivedAtPickup}
+                    </button>
+                  )}
+                  {trip.status === "arrived" && (
+                    <div className="flex flex-wrap gap-2 items-end">
+                      <input
+                        className="rounded-lg border border-[#1B4332]/20 px-3 py-2 text-sm font-mono"
+                        placeholder={t.ticketPlaceholder}
+                        value={ticketByRide[trip.id] ?? trip.ticket_code ?? ""}
+                        onChange={(e) =>
+                          setTicketByRide((m) => ({ ...m, [trip.id]: e.target.value }))
+                        }
+                      />
+                      <button
+                        type="button"
+                        disabled={!!busy}
+                        onClick={() =>
+                          action(trip.id, "start", {
+                            ticket_code: (ticketByRide[trip.id] ?? trip.ticket_code ?? "").trim(),
+                          })
+                        }
+                        className="rounded-full bg-[#1B4332] px-4 py-2 text-sm text-white disabled:opacity-50"
+                      >
+                        {t.startRide}
+                      </button>
+                    </div>
+                  )}
+                  {trip.status === "in_trip" && (
+                    <button
+                      type="button"
+                      disabled={!!busy}
+                      onClick={() => action(trip.id, "complete")}
+                      className="rounded-full bg-[#1B4332] px-4 py-2 text-sm text-white disabled:opacity-50"
+                    >
+                      {t.completeRide}
+                    </button>
+                  )}
+                </li>
+              );
             })}
           </ul>
         )}
