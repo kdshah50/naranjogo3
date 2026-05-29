@@ -3,6 +3,7 @@ import { isSameUserId } from "@/lib/auth-server";
 import { ridesRouteGuard } from "@/lib/rides/ride-route-guard";
 import { getRideById } from "@/lib/rides/ride-bookings-server";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
+import { dropActiveRowsWithCompletedTicket } from "@/lib/rides/ride-ghost-filter";
 import {
   latestBuyerRideForDisplay,
   listActiveTripsForBuyer,
@@ -10,6 +11,8 @@ import {
 } from "@/lib/rides/ride-trip-server";
 
 export const dynamic = "force-dynamic";
+
+const BUYER_OPEN_STATUSES = new Set(["requested", "matched", "accepted", "arrived", "in_trip"]);
 
 /** GET /api/rides/active — current user's in-progress rides (buyer or driver). */
 export async function GET(req: NextRequest) {
@@ -28,13 +31,28 @@ export async function GET(req: NextRequest) {
     .maybeSingle();
 
   const asDriver = Boolean(profile?.user_id);
-  const [buyerTrips, buyerDisplay, driverTrips] = await Promise.all([
+  const [buyerTripsRaw, buyerDisplayRaw, driverTrips] = await Promise.all([
     listActiveTripsForBuyer(guard.supabase, guard.userId, accountOpts),
     latestBuyerRideForDisplay(guard.supabase, guard.userId, accountOpts),
     asDriver ? listActiveTripsForDriver(guard.supabase, guard.userId, accountOpts) : Promise.resolve([]),
   ]);
 
-  const primaryBuyerActive = buyerTrips[0] ?? null;
+  const { trips: buyerActiveTrips } = await dropActiveRowsWithCompletedTicket(
+    guard.supabase,
+    buyerTripsRaw,
+  );
+  const primaryBuyerActive = buyerActiveTrips[0] ?? null;
+
+  let buyerDisplay = buyerDisplayRaw;
+  if (
+    buyerDisplayRaw &&
+    BUYER_OPEN_STATUSES.has(buyerDisplayRaw.status)
+  ) {
+    const { trips: filtered } = await dropActiveRowsWithCompletedTicket(guard.supabase, [
+      buyerDisplayRaw,
+    ]);
+    if (filtered.length === 0) buyerDisplay = null;
+  }
 
   let reconciledRide = null;
   const reconcileRideId = req.nextUrl.searchParams.get("reconcile_ride_id")?.trim();
@@ -46,10 +64,10 @@ export async function GET(req: NextRequest) {
   }
 
   return NextResponse.json({
-    as_buyer: buyerTrips,
+    as_buyer: buyerActiveTrips,
     as_buyer_active: primaryBuyerActive,
     as_buyer_display: buyerDisplay,
-    as_buyer_has_open: buyerTrips.length > 0,
+    as_buyer_has_open: buyerActiveTrips.length > 0,
     as_driver: driverTrips,
     reconciled_ride: reconciledRide,
   });

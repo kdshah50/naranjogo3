@@ -39,6 +39,8 @@ const COLONIAS_LIST = COLONIA_KEYS.map((key) => ({
 }));
 
 const VIAJE_PINNED_RIDE_KEY = "ng_viaje_pinned_ride_id";
+const VIAJE_FINISHED_RIDES_KEY = "ng_viaje_finished_ride_ids";
+const VIAJE_FINISHED_TICKETS_KEY = "ng_viaje_finished_tickets";
 
 const BUYER_ACTIVE_STATUSES = new Set([
   "requested",
@@ -50,6 +52,48 @@ const BUYER_ACTIVE_STATUSES = new Set([
 
 function isBuyerActiveStatus(status: string): boolean {
   return BUYER_ACTIVE_STATUSES.has(status);
+}
+
+function normalizeTicketCode(ticket: string | null | undefined): string {
+  return (ticket ?? "").trim().toUpperCase();
+}
+
+function readFinishedRideIds(): Set<string> {
+  if (typeof sessionStorage === "undefined") return new Set();
+  try {
+    const raw = sessionStorage.getItem(VIAJE_FINISHED_RIDES_KEY);
+    const ids = raw ? (JSON.parse(raw) as string[]) : [];
+    return new Set(ids.filter(Boolean));
+  } catch {
+    return new Set();
+  }
+}
+
+function readFinishedTickets(): Set<string> {
+  if (typeof sessionStorage === "undefined") return new Set();
+  try {
+    const raw = sessionStorage.getItem(VIAJE_FINISHED_TICKETS_KEY);
+    const ids = raw ? (JSON.parse(raw) as string[]) : [];
+    return new Set(ids.filter(Boolean).map((t) => t.trim().toUpperCase()));
+  } catch {
+    return new Set();
+  }
+}
+
+function persistFinishedSets(rideIds: Set<string>, tickets: Set<string>) {
+  if (typeof sessionStorage === "undefined") return;
+  sessionStorage.setItem(VIAJE_FINISHED_RIDES_KEY, JSON.stringify([...rideIds]));
+  sessionStorage.setItem(VIAJE_FINISHED_TICKETS_KEY, JSON.stringify([...tickets]));
+}
+
+function isFinishedRide(
+  row: Pick<RideRow, "id" | "ticket_code">,
+  finishedIds: ReadonlySet<string>,
+  finishedTickets: ReadonlySet<string>,
+): boolean {
+  if (finishedIds.has(row.id)) return true;
+  const ticket = normalizeTicketCode(row.ticket_code);
+  return Boolean(ticket && finishedTickets.has(ticket));
 }
 
 function pinRideId(rideId: string) {
@@ -119,6 +163,9 @@ function ViajePageInner() {
 
   const [authError, setAuthError] = useState<string | null>(null);
 
+  const finishedRideIdsRef = useRef<Set<string>>(readFinishedRideIds());
+  const finishedTicketsRef = useRef<Set<string>>(readFinishedTickets());
+
   useEffect(() => {
     const pinned =
       rideIdFromUrl ??
@@ -128,6 +175,13 @@ function ViajePageInner() {
     rideIdRef.current = ride?.id ?? pinned;
   }, [ride?.id, rideIdFromUrl]);
 
+  const markRideFinished = useCallback((rideId: string, ticketCode?: string | null) => {
+    finishedRideIdsRef.current.add(rideId);
+    const ticket = normalizeTicketCode(ticketCode);
+    if (ticket) finishedTicketsRef.current.add(ticket);
+    persistFinishedSets(finishedRideIdsRef.current, finishedTicketsRef.current);
+  }, []);
+
   const resolvePinnedRideId = useCallback(() => {
     const fromStorage =
       typeof sessionStorage !== "undefined"
@@ -136,18 +190,26 @@ function ViajePageInner() {
     return rideIdRef.current ?? fromStorage ?? rideIdFromUrl?.trim() ?? null;
   }, [rideIdFromUrl]);
 
-  /** GET /api/rides/:id is source of truth; active list can lag behind cancel. */
+  /** GET /api/rides/:id confirms poll payloads; SSE already carries DB truth. */
   const reconcileWithServer = useCallback(async (row: RideRow): Promise<RideRow> => {
     const truth = await fetchBuyerRideRow(row.id);
     return truth?.id ? mergeRideStatusRow(row, truth) : row;
   }, []);
 
   const applyResolvedRide = useCallback((row: RideRow) => {
+    if (
+      isBuyerActiveStatus(row.status) &&
+      isFinishedRide(row, finishedRideIdsRef.current, finishedTicketsRef.current)
+    ) {
+      return;
+    }
+
     setRide((prev) => {
       const merged = prev?.id === row.id ? mergeRideStatusRow(prev, row) : row;
       rideIdRef.current = merged.id;
 
       if (merged.status === "cancelled" || merged.status === "completed") {
+        markRideFinished(merged.id, merged.ticket_code);
         clearPinnedRideId();
         stripRideIdFromBrowserUrl();
         return merged;
@@ -160,7 +222,7 @@ function ViajePageInner() {
       pinRideId(merged.id);
       return merged;
     });
-  }, []);
+  }, [markRideFinished]);
 
   const clearStaleRideUi = useCallback(() => {
     clearPinnedRideId();
@@ -213,7 +275,12 @@ function ViajePageInner() {
 
     const activeList = (
       Array.isArray(data.as_buyer) ? (data.as_buyer as RideRow[]) : []
-    ).filter((row) => row?.id && isBuyerActiveStatus(row.status));
+    ).filter(
+      (row) =>
+        row?.id &&
+        isBuyerActiveStatus(row.status) &&
+        !isFinishedRide(row, finishedRideIdsRef.current, finishedTicketsRef.current),
+    );
 
     if (activeList.length > 0) {
       const row = await reconcileWithServer(activeList[0]);
@@ -251,9 +318,8 @@ function ViajePageInner() {
     onEvent: (payload) => {
       const row = (payload as { ride?: RideRow }).ride;
       if (!row?.id) return;
-      void reconcileWithServer(row).then((reconciled) => {
-        applyResolvedRide(reconciled);
-      });
+      // Same DB row that triggers WhatsApp — merge locally without an extra round trip.
+      applyResolvedRide(row);
     },
     fallbackPollMs: 15_000,
     onFallbackPoll: refreshActiveRide,

@@ -594,23 +594,28 @@ export async function listActiveTripsForBuyer(
     console.error("[ride-trip] listActiveTripsForBuyer", error);
   }
 
-  let rows = ((data ?? []) as RideBookingRow[]).filter((r) => tripMatchesBuyerPool(r, pool));
+  const byId = new Map<string, RideBookingRow>();
+  for (const row of ((data ?? []) as RideBookingRow[]).filter((r) => tripMatchesBuyerPool(r, pool))) {
+    byId.set(row.id, row);
+  }
 
-  if (rows.length === 0) {
-    const { data: recent, error: recentErr } = await supabase
-      .from("ride_bookings")
-      .select("*")
-      .in("status", [...statuses])
-      .order("created_at", { ascending: false })
-      .limit(40);
+  // Always merge fallback scan — eq-only pass can miss new trips when stale rows exist for pool ids.
+  const { data: recent, error: recentErr } = await supabase
+    .from("ride_bookings")
+    .select("*")
+    .in("status", [...statuses])
+    .order("created_at", { ascending: false })
+    .limit(40);
 
-    if (recentErr) {
-      console.error("[ride-trip] listActiveTripsForBuyer fallback", recentErr);
-    } else {
-      rows = (recent ?? []).filter((r) => tripMatchesBuyerPool(r as RideBookingRow, pool));
+  if (recentErr) {
+    console.error("[ride-trip] listActiveTripsForBuyer scan", recentErr);
+  } else {
+    for (const row of (recent ?? []) as RideBookingRow[]) {
+      if (tripMatchesBuyerPool(row, pool)) byId.set(row.id, row);
     }
   }
 
+  const rows = [...byId.values()];
   rows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   return rows.slice(0, 5);
 }
