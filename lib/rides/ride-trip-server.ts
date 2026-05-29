@@ -70,24 +70,45 @@ export async function listActiveTripsForDriverProfile(
   const driverPool = [...new Set(driverIds.flatMap((id) => idMatchVariantsForIn(id)))];
   const statuses = [...ACTIVE_DRIVER_TRIP_STATUSES];
 
-  // Scan recent actives + filter in JS (same approach as rides-drivers-trips-debug).
-  // PostgREST .in("driver_id", text[]) is unreliable against UUID columns on preview.
-  const { data: recent, error } = await supabase
-    .from("ride_bookings")
-    .select("*")
-    .in("status", [...statuses])
-    .not("driver_id", "is", null)
-    .order("created_at", { ascending: false })
-    .limit(60);
-
-  if (error) {
-    console.error("[ride-trip] listActiveTripsForDriverProfile", error);
-    return [];
+  const byId = new Map<string, RideBookingRow>();
+  for (const driverId of driverPool.slice(0, 12)) {
+    const { data, error } = await supabase
+      .from("ride_bookings")
+      .select("*")
+      .eq("driver_id", driverId)
+      .in("status", [...statuses])
+      .order("created_at", { ascending: false })
+      .limit(8);
+    if (error) {
+      console.error("[ride-trip] listActiveTripsForDriverProfile eq", error);
+      continue;
+    }
+    for (const row of (data ?? []) as RideBookingRow[]) {
+      if (rideMatchesDriverPool(row, driverPool)) byId.set(row.id, row);
+    }
   }
 
-  const rows = ((recent ?? []) as RideBookingRow[]).filter((r) =>
-    rideMatchesDriverPool(r, driverPool),
-  );
+  // Fallback: scan recent actives when eq filter returns nothing (UUID format edge cases).
+  if (byId.size === 0) {
+    const { data: recent, error } = await supabase
+      .from("ride_bookings")
+      .select("*")
+      .in("status", [...statuses])
+      .not("driver_id", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(60);
+
+    if (error) {
+      console.error("[ride-trip] listActiveTripsForDriverProfile", error);
+      return [];
+    }
+
+    for (const row of (recent ?? []) as RideBookingRow[]) {
+      if (rideMatchesDriverPool(row, driverPool)) byId.set(row.id, row);
+    }
+  }
+
+  const rows = [...byId.values()];
 
   rows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   return rows.slice(0, 20);

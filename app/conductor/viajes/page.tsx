@@ -43,7 +43,7 @@ function readFinishedTickets(): Set<string> {
   try {
     const raw = sessionStorage.getItem(DRIVER_FINISHED_TICKETS_KEY);
     const ids = raw ? (JSON.parse(raw) as string[]) : [];
-    return new Set(ids.filter(Boolean));
+    return new Set(ids.filter(Boolean).map((t) => t.trim().toUpperCase()));
   } catch {
     return new Set();
   }
@@ -70,18 +70,31 @@ type FinishedRideFilter = {
   tickets: ReadonlySet<string>;
 };
 
+function normalizeTicketCode(ticket: string | null | undefined): string {
+  return (ticket ?? "").trim().toUpperCase();
+}
+
 function isFinishedDriverTrip(
   row: Pick<RideRow, "id" | "ticket_code">,
   finished: FinishedRideFilter,
+  hideTickets?: ReadonlySet<string>,
 ): boolean {
   if (finished.rideIds.has(row.id)) return true;
-  const ticket = row.ticket_code?.trim();
-  return Boolean(ticket && finished.tickets.has(ticket));
+  const ticket = normalizeTicketCode(row.ticket_code);
+  if (!ticket) return false;
+  if (finished.tickets.has(ticket)) return true;
+  return Boolean(hideTickets?.has(ticket));
 }
 
-function filterOpenDriverTrips(rows: RideRow[], finished: FinishedRideFilter): RideRow[] {
+function filterOpenDriverTrips(
+  rows: RideRow[],
+  finished: FinishedRideFilter,
+  hideTickets?: ReadonlySet<string>,
+): RideRow[] {
   return rows.filter(
-    (row) => isDriverActiveTrip(row) && !isFinishedDriverTrip(row, finished),
+    (row) =>
+      isDriverActiveTrip(row) &&
+      !isFinishedDriverTrip(row, finished, hideTickets),
   );
 }
 
@@ -90,8 +103,9 @@ async function reconcileDriverTripsWithServer(
   candidates: RideRow[],
   finished: FinishedRideFilter,
   onTerminal: (rideId: string, ticketCode?: string | null) => void,
+  hideTickets?: ReadonlySet<string>,
 ): Promise<RideRow[]> {
-  const deduped = sortDriverTrips(filterOpenDriverTrips(candidates, finished));
+  const deduped = sortDriverTrips(filterOpenDriverTrips(candidates, finished, hideTickets));
   if (deduped.length === 0) return [];
 
   const results = await Promise.all(
@@ -101,7 +115,10 @@ async function reconcileDriverTripsWithServer(
         if (row) onTerminal(row.id, row.ticket_code);
         return null;
       }
-      if (isFinishedDriverTrip(row, finished)) return null;
+      if (isFinishedDriverTrip(row, finished, hideTickets)) {
+        onTerminal(row.id, row.ticket_code);
+        return null;
+      }
       return mergeRideStatusRow(trip, row);
     }),
   );
@@ -168,6 +185,7 @@ function ConductorViajesInner() {
   const onlineLatchUntilRef = useRef(0);
   const finishedRideIdsRef = useRef<Set<string>>(readFinishedRideIds());
   const finishedTicketsRef = useRef<Set<string>>(readFinishedTickets());
+  const hideTicketsRef = useRef<Set<string>>(new Set());
 
   const finishedFilter = useCallback(
     (): FinishedRideFilter => ({
@@ -177,10 +195,17 @@ function ConductorViajesInner() {
     [],
   );
 
+  const syncHideTickets = useCallback((codes: string[] | undefined) => {
+    hideTicketsRef.current = new Set((codes ?? []).map(normalizeTicketCode).filter(Boolean));
+  }, []);
+
   const markDriverTripFinished = useCallback((rideId: string, ticketCode?: string | null) => {
     finishedRideIdsRef.current.add(rideId);
-    const ticket = ticketCode?.trim();
-    if (ticket) finishedTicketsRef.current.add(ticket);
+    const ticket = normalizeTicketCode(ticketCode);
+    if (ticket) {
+      finishedTicketsRef.current.add(ticket);
+      hideTicketsRef.current.add(ticket);
+    }
     persistFinishedSets(finishedRideIdsRef.current, finishedTicketsRef.current);
   }, []);
 
@@ -198,35 +223,37 @@ function ConductorViajesInner() {
 
   /** Panel API is source of truth; never merge stale client rows when server lists zero trips. */
   const applyPanelTrips = useCallback(
-    async (panelTrips: RideRow[]) => {
+    async (panelTrips: RideRow[], hideTicketsFromServer?: string[]) => {
+      if (hideTicketsFromServer) syncHideTickets(hideTicketsFromServer);
       const finished = finishedFilter();
-      const openPanel = filterOpenDriverTrips(panelTrips, finished);
+      const hideTickets = hideTicketsRef.current;
+      const openPanel = filterOpenDriverTrips(panelTrips, finished, hideTickets);
 
       if (openPanel.length > 0) {
         const reconciled = await reconcileDriverTripsWithServer(
           openPanel,
           finished,
           markDriverTripFinished,
+          hideTickets,
         );
         setTrips(reconciled);
         if (reconciled.length > 0) setTripDebugHint(null);
         return;
       }
 
-      const staleActive = filterOpenDriverTrips(tripsRef.current, finished);
-      if (staleActive.length === 0) {
-        setTrips([]);
-        return;
-      }
+      setTrips([]);
+      const staleActive = filterOpenDriverTrips(tripsRef.current, finished, hideTickets);
+      if (staleActive.length === 0) return;
 
       const reconciled = await reconcileDriverTripsWithServer(
         staleActive,
         finished,
         markDriverTripFinished,
+        hideTickets,
       );
       setTrips(reconciled);
     },
-    [finishedFilter, markDriverTripFinished],
+    [finishedFilter, markDriverTripFinished, syncHideTickets],
   );
 
   const load = useCallback(async () => {
@@ -247,7 +274,10 @@ function ConductorViajesInner() {
 
     if (data.driver) setOnline(mergeDriverOnline(data.driver as DriverOnline));
     const panelTrips = Array.isArray(data.trips) ? (data.trips as RideRow[]) : [];
-    await applyPanelTrips(panelTrips);
+    const hideTickets = Array.isArray(data.hide_tickets)
+      ? (data.hide_tickets as string[])
+      : undefined;
+    await applyPanelTrips(panelTrips, hideTickets);
     const sessionId = data.session_user_id ?? null;
     setCanonicalUserId(data.canonical_user_id ?? data.driver?.user_id ?? null);
     if (!data.driver?.is_active_driver && data.driver !== null) {
@@ -290,7 +320,10 @@ function ConductorViajesInner() {
       };
       if (data.driver) setOnline(mergeDriverOnline(data.driver));
       if (Array.isArray(data.trips)) {
-        void applyPanelTrips(data.trips as RideRow[]);
+        void applyPanelTrips(
+          data.trips as RideRow[],
+          Array.isArray(data.hide_tickets) ? (data.hide_tickets as string[]) : undefined,
+        );
       }
       if (data.canonical_user_id) setCanonicalUserId(data.canonical_user_id);
     },
@@ -304,6 +337,14 @@ function ConductorViajesInner() {
     const timer = setInterval(load, ms);
     return () => clearInterval(timer);
   }, [load, isOnline, panelStreamEnabled]);
+
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) void load();
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
+  }, [load]);
 
   useEffect(() => {
     if (trips.length > 0) {
@@ -392,20 +433,22 @@ function ConductorViajesInner() {
       markDriverTripFinished(rideId, row.ticket_code);
     }
     const finished = finishedFilter();
+    const hideTickets = hideTicketsRef.current;
     setTrips((prev) => {
-      if (!isDriverActiveTrip(row) || isFinishedDriverTrip(row, finished)) {
+      if (!isDriverActiveTrip(row) || isFinishedDriverTrip(row, finished, hideTickets)) {
         return filterOpenDriverTrips(
           prev.filter((t) => t.id !== rideId),
           finished,
+          hideTickets,
         );
       }
       const idx = prev.findIndex((t) => t.id === rideId);
       if (idx >= 0) {
         const next = [...prev];
         next[idx] = mergeRideStatusRow(next[idx], row);
-        return sortDriverTrips(filterOpenDriverTrips(next, finished));
+        return sortDriverTrips(filterOpenDriverTrips(next, finished, hideTickets));
       }
-      return sortDriverTrips(filterOpenDriverTrips([row, ...prev], finished));
+      return sortDriverTrips(filterOpenDriverTrips([row, ...prev], finished, hideTickets));
     });
   };
 
@@ -435,9 +478,11 @@ function ConductorViajesInner() {
             prev.filter(
               (t) =>
                 t.id !== rideId &&
-                (!row?.ticket_code || t.ticket_code !== row.ticket_code),
+                (!row?.ticket_code ||
+                  normalizeTicketCode(t.ticket_code) !== normalizeTicketCode(row.ticket_code)),
             ),
             finishedFilter(),
+            hideTicketsRef.current,
           ),
         );
       } else {

@@ -25,6 +25,7 @@ function panelPayload(panel: Awaited<ReturnType<typeof loadDriverPanel>>) {
     canonical_user_id: panel.canonical_user_id,
     session_user_id: panel.session_user_id,
     auth_phone_set: panel.auth_phone_set,
+    hide_tickets: panel.hide_tickets,
   };
 }
 
