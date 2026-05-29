@@ -8,7 +8,6 @@ import { formatCurrencyMXN } from "@/lib/locale-format";
 import { RidesStagingBanner } from "@/components/RidesStagingBanner";
 import { useRideLiveStream } from "@/hooks/use-ride-live-stream";
 import {
-  mergeRideListsByStatus,
   mergeRideStatusRow,
   rideStatusRank,
 } from "@/lib/rides/ride-status-merge";
@@ -21,9 +20,39 @@ import {
 } from "@/lib/rides/ui-copy";
 
 const DRIVER_ACTIVE_STATUSES = new Set(["matched", "accepted", "arrived", "in_trip"]);
+const DRIVER_FINISHED_RIDES_KEY = "ng_driver_finished_ride_ids";
+const DRIVER_FINISHED_TICKETS_KEY = "ng_driver_finished_tickets";
 
 function isDriverActiveTrip(row: RideRow): boolean {
   return DRIVER_ACTIVE_STATUSES.has(row.status);
+}
+
+function readFinishedRideIds(): Set<string> {
+  if (typeof sessionStorage === "undefined") return new Set();
+  try {
+    const raw = sessionStorage.getItem(DRIVER_FINISHED_RIDES_KEY);
+    const ids = raw ? (JSON.parse(raw) as string[]) : [];
+    return new Set(ids.filter(Boolean));
+  } catch {
+    return new Set();
+  }
+}
+
+function readFinishedTickets(): Set<string> {
+  if (typeof sessionStorage === "undefined") return new Set();
+  try {
+    const raw = sessionStorage.getItem(DRIVER_FINISHED_TICKETS_KEY);
+    const ids = raw ? (JSON.parse(raw) as string[]) : [];
+    return new Set(ids.filter(Boolean));
+  } catch {
+    return new Set();
+  }
+}
+
+function persistFinishedSets(rideIds: Set<string>, tickets: Set<string>) {
+  if (typeof sessionStorage === "undefined") return;
+  sessionStorage.setItem(DRIVER_FINISHED_RIDES_KEY, JSON.stringify([...rideIds]));
+  sessionStorage.setItem(DRIVER_FINISHED_TICKETS_KEY, JSON.stringify([...tickets]));
 }
 
 function sortDriverTrips(rows: RideRow[]): RideRow[] {
@@ -36,12 +65,47 @@ function sortDriverTrips(rows: RideRow[]): RideRow[] {
   });
 }
 
-/** Never downgrade in-trip status when panel poll/SSE returns stale rows (same rule as /viaje). */
-function mergeDriverTripLists(prev: RideRow[], next: RideRow[]): RideRow[] {
-  const activePrev = prev.filter(isDriverActiveTrip);
-  const activeNext = next.filter(isDriverActiveTrip);
-  if (activeNext.length === 0) return activePrev;
-  return sortDriverTrips(mergeRideListsByStatus(activePrev, activeNext));
+type FinishedRideFilter = {
+  rideIds: ReadonlySet<string>;
+  tickets: ReadonlySet<string>;
+};
+
+function isFinishedDriverTrip(
+  row: Pick<RideRow, "id" | "ticket_code">,
+  finished: FinishedRideFilter,
+): boolean {
+  if (finished.rideIds.has(row.id)) return true;
+  const ticket = row.ticket_code?.trim();
+  return Boolean(ticket && finished.tickets.has(ticket));
+}
+
+function filterOpenDriverTrips(rows: RideRow[], finished: FinishedRideFilter): RideRow[] {
+  return rows.filter(
+    (row) => isDriverActiveTrip(row) && !isFinishedDriverTrip(row, finished),
+  );
+}
+
+/** GET /api/rides/[id] is source of truth — drop completed/cancelled rows the panel may cache. */
+async function reconcileDriverTripsWithServer(
+  candidates: RideRow[],
+  finished: FinishedRideFilter,
+  onTerminal: (rideId: string, ticketCode?: string | null) => void,
+): Promise<RideRow[]> {
+  const deduped = sortDriverTrips(filterOpenDriverTrips(candidates, finished));
+  if (deduped.length === 0) return [];
+
+  const results = await Promise.all(
+    deduped.map(async (trip) => {
+      const row = await fetchDriverRideRow(trip.id);
+      if (!row || !isDriverActiveTrip(row)) {
+        if (row) onTerminal(row.id, row.ticket_code);
+        return null;
+      }
+      if (isFinishedDriverTrip(row, finished)) return null;
+      return mergeRideStatusRow(trip, row);
+    }),
+  );
+  return sortDriverTrips(results.filter((row): row is RideRow => row !== null));
 }
 
 async function fetchDriverRideRow(rideId: string): Promise<RideRow | null> {
@@ -52,25 +116,6 @@ async function fetchDriverRideRow(rideId: string): Promise<RideRow | null> {
   if (!r.ok) return null;
   const data = (await r.json().catch(() => ({}))) as { ride?: RideRow };
   return data.ride?.id ? data.ride : null;
-}
-
-function debugRideToRow(
-  r: {
-    id: string;
-    status: string;
-    ticket_code: string | null;
-    pickup_address: string;
-    dropoff_address: string;
-  },
-): RideRow {
-  return {
-    id: r.id,
-    status: r.status,
-    pickup_address: r.pickup_address,
-    dropoff_address: r.dropoff_address,
-    ticket_code: r.ticket_code,
-    estimated_total_mxn_cents: 0,
-  };
 }
 
 type RideRow = {
@@ -121,6 +166,23 @@ function ConductorViajesInner() {
   const tripsRef = useRef<RideRow[]>([]);
   /** After Conectar succeeds, ignore stale panel polls that still say offline. */
   const onlineLatchUntilRef = useRef(0);
+  const finishedRideIdsRef = useRef<Set<string>>(readFinishedRideIds());
+  const finishedTicketsRef = useRef<Set<string>>(readFinishedTickets());
+
+  const finishedFilter = useCallback(
+    (): FinishedRideFilter => ({
+      rideIds: finishedRideIdsRef.current,
+      tickets: finishedTicketsRef.current,
+    }),
+    [],
+  );
+
+  const markDriverTripFinished = useCallback((rideId: string, ticketCode?: string | null) => {
+    finishedRideIdsRef.current.add(rideId);
+    const ticket = ticketCode?.trim();
+    if (ticket) finishedTicketsRef.current.add(ticket);
+    persistFinishedSets(finishedRideIdsRef.current, finishedTicketsRef.current);
+  }, []);
 
   useEffect(() => {
     tripsRef.current = trips;
@@ -134,44 +196,37 @@ function ConductorViajesInner() {
     return incoming;
   }, []);
 
-  const recoverTripsFromDebug = useCallback(
-    async (profileUserId: string | null): Promise<RideRow[]> => {
-      if (!profileUserId) return [];
-      const r = await fetch("/api/rides-drivers-trips-debug", {
-        credentials: "include",
-        cache: "no-store",
-      });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) return [];
+  /** Panel API is source of truth; never merge stale client rows when server lists zero trips. */
+  const applyPanelTrips = useCallback(
+    async (panelTrips: RideRow[]) => {
+      const finished = finishedFilter();
+      const openPanel = filterOpenDriverTrips(panelTrips, finished);
 
-      const profileId = (data.profile_user_id as string | null)?.toLowerCase();
-      const dbRides = (data.db_active_rides ?? []) as Array<{
-        id: string;
-        status: string;
-        ticket_code: string | null;
-        driver_id: string;
-        pickup_address: string;
-        dropoff_address: string;
-      }>;
-
-      const mine = profileId
-        ? dbRides.filter((row) => row.driver_id?.toLowerCase() === profileId)
-        : dbRides.filter((row) => row.driver_id?.toLowerCase() === profileUserId.toLowerCase());
-      if (mine.length === 0) return [];
-
-      const checks = Array.isArray(data.checks) ? (data.checks as string[]).join(" ") : "";
-      const ticket = dbRides[0]?.ticket_code;
-      if (checks) {
-        setTripDebugHint(
-          ticket ? `${t.tripAssignedHint} ${ticket}). ${checks}` : checks,
+      if (openPanel.length > 0) {
+        const reconciled = await reconcileDriverTripsWithServer(
+          openPanel,
+          finished,
+          markDriverTripFinished,
         );
+        setTrips(reconciled);
+        if (reconciled.length > 0) setTripDebugHint(null);
+        return;
       }
 
-      return sortDriverTrips(
-        mine.filter((row) => DRIVER_ACTIVE_STATUSES.has(row.status)).map(debugRideToRow),
+      const staleActive = filterOpenDriverTrips(tripsRef.current, finished);
+      if (staleActive.length === 0) {
+        setTrips([]);
+        return;
+      }
+
+      const reconciled = await reconcileDriverTripsWithServer(
+        staleActive,
+        finished,
+        markDriverTripFinished,
       );
+      setTrips(reconciled);
     },
-    [t.tripAssignedHint],
+    [finishedFilter, markDriverTripFinished],
   );
 
   const load = useCallback(async () => {
@@ -191,37 +246,8 @@ function ConductorViajesInner() {
     }
 
     if (data.driver) setOnline(mergeDriverOnline(data.driver as DriverOnline));
-    const nextTrips = sortDriverTrips(
-      (Array.isArray(data.trips) ? (data.trips as RideRow[]) : []).filter(isDriverActiveTrip),
-    );
-    const canonicalId = data.canonical_user_id ?? data.driver?.user_id ?? null;
-    if (nextTrips.length > 0) {
-      setTrips((prev) => mergeDriverTripLists(prev, nextTrips));
-    } else {
-      const staleActive = tripsRef.current.filter(isDriverActiveTrip);
-      if (staleActive.length === 0) {
-        const recovered = await recoverTripsFromDebug(canonicalId);
-        if (recovered.length > 0) {
-          setTrips((prev) => mergeDriverTripLists(prev, recovered));
-          setTripDebugHint(t.tripRecoveredHint);
-        } else {
-          setTrips([]);
-        }
-      } else {
-        const verified = (
-          await Promise.all(
-            staleActive.map(async (trip) => {
-              const row = await fetchDriverRideRow(trip.id);
-              if (row && isDriverActiveTrip(row)) {
-                return mergeRideStatusRow(trip, row);
-              }
-              return null;
-            }),
-          )
-        ).filter((row): row is RideRow => row !== null);
-        setTrips((prev) => mergeDriverTripLists(prev, verified));
-      }
-    }
+    const panelTrips = Array.isArray(data.trips) ? (data.trips as RideRow[]) : [];
+    await applyPanelTrips(panelTrips);
     const sessionId = data.session_user_id ?? null;
     setCanonicalUserId(data.canonical_user_id ?? data.driver?.user_id ?? null);
     if (!data.driver?.is_active_driver && data.driver !== null) {
@@ -236,15 +262,14 @@ function ConductorViajesInner() {
       setPanelError(null);
     }
   }, [
+    applyPanelTrips,
     mergeDriverOnline,
-    recoverTripsFromDebug,
     t.panelLoadFailed,
     t.inactiveDriverShort,
     t.noDriverProfile,
     t.ridesDisabled,
     t.sessionMissingPhone,
     t.sessionIdLabel,
-    t.tripRecoveredHint,
   ]);
 
   const displayError = actionError ?? panelError;
@@ -265,8 +290,7 @@ function ConductorViajesInner() {
       };
       if (data.driver) setOnline(mergeDriverOnline(data.driver));
       if (Array.isArray(data.trips)) {
-        const incoming = sortDriverTrips(data.trips.filter(isDriverActiveTrip));
-        setTrips((prev) => mergeDriverTripLists(prev, incoming));
+        void applyPanelTrips(data.trips as RideRow[]);
       }
       if (data.canonical_user_id) setCanonicalUserId(data.canonical_user_id);
     },
@@ -364,17 +388,24 @@ function ConductorViajesInner() {
 
   const mergeTripFromApi = (rideId: string, row: RideRow | undefined) => {
     if (!row?.id) return;
+    if (!isDriverActiveTrip(row)) {
+      markDriverTripFinished(rideId, row.ticket_code);
+    }
+    const finished = finishedFilter();
     setTrips((prev) => {
-      if (!isDriverActiveTrip(row)) {
-        return prev.filter((t) => t.id !== rideId);
+      if (!isDriverActiveTrip(row) || isFinishedDriverTrip(row, finished)) {
+        return filterOpenDriverTrips(
+          prev.filter((t) => t.id !== rideId),
+          finished,
+        );
       }
       const idx = prev.findIndex((t) => t.id === rideId);
       if (idx >= 0) {
         const next = [...prev];
         next[idx] = mergeRideStatusRow(next[idx], row);
-        return sortDriverTrips(next);
+        return sortDriverTrips(filterOpenDriverTrips(next, finished));
       }
-      return sortDriverTrips([row, ...prev]);
+      return sortDriverTrips(filterOpenDriverTrips([row, ...prev], finished));
     });
   };
 
@@ -397,12 +428,16 @@ function ConductorViajesInner() {
       const row = data.ride as RideRow | undefined;
       mergeTripFromApi(rideId, row);
       if (path === "complete") {
+        markDriverTripFinished(rideId, row?.ticket_code);
         setActionSuccess(t.completeSuccess);
         setTrips((prev) =>
-          prev.filter(
-            (t) =>
-              t.id !== rideId &&
-              (!row?.ticket_code || t.ticket_code !== row.ticket_code),
+          filterOpenDriverTrips(
+            prev.filter(
+              (t) =>
+                t.id !== rideId &&
+                (!row?.ticket_code || t.ticket_code !== row.ticket_code),
+            ),
+            finishedFilter(),
           ),
         );
       } else {

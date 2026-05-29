@@ -6,8 +6,26 @@ import {
   type DriverProfileOnlineRow,
 } from "@/lib/rides/driver-account";
 import { resolveDriverProfileForSession } from "@/lib/rides/resolve-driver-session";
-import type { RideBookingRow } from "@/lib/rides/ride-bookings-server";
+import { getRideById, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
 import { listActiveTripsForDriverProfile } from "@/lib/rides/ride-trip-server";
+
+const DRIVER_ACTIVE_STATUSES = new Set(["matched", "accepted", "arrived", "in_trip"]);
+
+/** Re-read each row by id so completed/cancelled trips never leak from stale list scans. */
+async function verifyDriverPanelTrips(
+  supabase: SupabaseClient,
+  rows: RideBookingRow[],
+): Promise<RideBookingRow[]> {
+  if (rows.length === 0) return [];
+  const verified = await Promise.all(
+    rows.map(async (row) => {
+      const fresh = await getRideById(supabase, row.id);
+      if (!fresh || !DRIVER_ACTIVE_STATUSES.has(fresh.status)) return null;
+      return fresh;
+    }),
+  );
+  return verified.filter((row): row is RideBookingRow => row !== null);
+}
 
 export type DriverPanelState = {
   driver: DriverProfileOnlineRow | null;
@@ -28,10 +46,11 @@ export async function loadDriverPanel(
     ? await enrichDriverOnlineFromAccountPool(supabase, resolved, accountOpts)
     : null;
 
-  const trips =
+  const rawTrips =
     driver?.is_active_driver && driver.user_id
       ? await listActiveTripsForDriverProfile(supabase, driver.user_id, accountOpts)
       : [];
+  const trips = await verifyDriverPanelTrips(supabase, rawTrips);
 
   return {
     driver,
