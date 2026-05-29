@@ -317,6 +317,7 @@ function ConductorViajesInner() {
         driver?: DriverOnline | null;
         trips?: RideRow[];
         canonical_user_id?: string | null;
+        hide_tickets?: string[];
       };
       if (data.driver) setOnline(mergeDriverOnline(data.driver));
       if (Array.isArray(data.trips)) {
