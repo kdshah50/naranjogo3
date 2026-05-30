@@ -93,6 +93,20 @@ function formatRiderSyncDebug(d: SyncDebug): string {
   return `Active API: ${d.apiSummary} · UI: ${d.uiStatus}${d.uiTicket ? ` · ${d.uiTicket}` : ""}${flag} · ${d.source} ${d.at}`;
 }
 
+function syncDebugForRow(row: RideRow | null, source: string, note?: string): SyncDebug {
+  const apiSummary = row
+    ? `1 open · ${row.status}${row.ticket_code ? ` · ${row.ticket_code}` : ""}`
+    : note ?? "0 open";
+  return {
+    source,
+    at: new Date().toLocaleTimeString(),
+    apiSummary,
+    uiStatus: row?.status ?? "none",
+    uiTicket: row?.ticket_code ?? "",
+    mismatch: false,
+  };
+}
+
 export default function ViajePage() {
   return (
     <Suspense
@@ -131,7 +145,7 @@ function ViajePageInner() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [syncDebug, setSyncDebug] = useState<SyncDebug | null>(null);
 
-  const applyServerRide = useCallback((row: RideRow | null, source: string) => {
+  const applyServerRide = useCallback((row: RideRow | null, source: string, note?: string) => {
     setRide(row);
     if (row?.id && isBuyerActiveStatus(row.status)) {
       pinRideId(row.id);
@@ -142,18 +156,7 @@ function ViajePageInner() {
       rideIdRef.current = row?.id ?? null;
     }
 
-    const apiSummary = row
-      ? `1 trip · ${row.status}${row.ticket_code ? ` · ${row.ticket_code}` : ""}`
-      : "0 trips";
-    const uiStatus = row?.status ?? "none";
-    setSyncDebug({
-      source,
-      at: new Date().toLocaleTimeString(),
-      apiSummary,
-      uiStatus,
-      uiTicket: row?.ticket_code ?? "",
-      mismatch: false,
-    });
+    setSyncDebug(syncDebugForRow(row, source, note));
   }, []);
 
   const clearStaleRideUi = useCallback(() => {
@@ -163,7 +166,7 @@ function ViajePageInner() {
     applyServerRide(null, "clear");
   }, [applyServerRide]);
 
-  /** Server wins: /api/rides/active then optional GET by id. */
+  /** Server wins: open trips only on poll — ignore stale as_buyer_display completed rows. */
   const refreshActiveRide = useCallback(async (source = "poll") => {
     const r = await fetch(`/api/rides/active?_=${Date.now()}`, {
       credentials: "include",
@@ -192,13 +195,12 @@ function ViajePageInner() {
     }
 
     const display = data.as_buyer_display as RideRow | undefined;
-    if (display?.id) {
-      const truth = await fetchBuyerRideRow(display.id);
-      applyServerRide(truth ?? display, source);
-      return;
-    }
+    const ignoredNote =
+      display?.id && !isBuyerActiveStatus(display.status)
+        ? `0 open (skipped last ${display.status}${display.ticket_code ? ` · ${display.ticket_code}` : ""})`
+        : "0 open";
 
-    applyServerRide(null, source);
+    applyServerRide(null, source, ignoredNote);
   }, [applyServerRide, clearStaleRideUi]);
 
   // Do not use ?ride= in the URL for SSE — it re-attaches ghost trips after refresh.
