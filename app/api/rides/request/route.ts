@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminSupabase, getUserIdFromRequest, isSameUserId } from "@/lib/auth-server";
+import { createAdminSupabase } from "@/lib/auth-server";
 import { COLONIAS } from "@/lib/colonias";
 import { isRidesEnabled } from "@/lib/rides/flags";
 import { verifyInternalSecret } from "@/lib/rides/internal-auth";
+import { ridesRouteGuard } from "@/lib/rides/ride-route-guard";
 import { buildDispatchDebugReport } from "@/lib/rides/dispatch-debug";
 import {
   createRideRequest,
@@ -59,13 +60,21 @@ export async function POST(req: NextRequest) {
   }
 
   const internal = verifyInternalSecret(req);
-  let buyerId = internal ? null : await getUserIdFromRequest(req);
+  let buyerId: string | null = null;
+  let supabase = createAdminSupabase();
 
   try {
     const body = (await req.json().catch(() => ({}))) as RequestBody;
 
-    if (internal && body.buyer_id) {
-      buyerId = String(body.buyer_id).trim().toLowerCase();
+    if (internal) {
+      if (body.buyer_id) {
+        buyerId = String(body.buyer_id).trim().toLowerCase();
+      }
+    } else {
+      const guard = await ridesRouteGuard(req);
+      if (!guard.ok) return guard.response;
+      buyerId = guard.userId.trim().toLowerCase();
+      supabase = guard.supabase;
     }
 
     if (!buyerId) {
@@ -105,7 +114,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const supabase = createAdminSupabase();
     const result = await createRideRequest(supabase, {
       buyerId,
       pickup,

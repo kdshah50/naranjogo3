@@ -132,6 +132,17 @@ async function resolveOpenBuyerRide(candidate: RideRow | undefined): Promise<Rid
   return isBuyerActiveStatus(row.status) ? row : null;
 }
 
+async function fetchOpenPinnedRide(rideId: string): Promise<RideRow | null> {
+  const truth = await fetchBuyerRideRow(rideId);
+  return truth && isBuyerActiveStatus(truth.status) ? truth : null;
+}
+
+function readPinnedRideId(): string | null {
+  if (typeof sessionStorage === "undefined") return null;
+  const id = sessionStorage.getItem(VIAJE_PINNED_RIDE_KEY)?.trim();
+  return id || null;
+}
+
 export default function ViajePage() {
   return (
     <Suspense
@@ -150,6 +161,8 @@ function ViajePageInner() {
   const lang = useAppLang();
   const t = viajeCopy(lang);
   const rideIdRef = useRef<string | null>(null);
+  const requestLatchUntilRef = useRef(0);
+  const refreshSeqRef = useRef(0);
 
   const [pickupColonia, setPickupColonia] = useState("centro");
   const [dropoffColonia, setDropoffColonia] = useState("guadalupe");
@@ -222,20 +235,46 @@ function ViajePageInner() {
 
   /** Server wins: open trips only on poll — ignore stale as_buyer_display completed rows. */
   const refreshActiveRide = useCallback(async (source = "poll") => {
-    const r = await fetch(`/api/rides/active?_=${Date.now()}`, {
+    const seq = ++refreshSeqRef.current;
+    const isStale = () => seq !== refreshSeqRef.current;
+
+    const pinnedId = rideIdRef.current ?? readPinnedRideId();
+    const reconcileQs = pinnedId
+      ? `&reconcile_ride_id=${encodeURIComponent(pinnedId)}`
+      : "";
+
+    const r = await fetch(`/api/rides/active?_=${Date.now()}${reconcileQs}`, {
       credentials: "include",
       cache: "no-store",
       headers: { Accept: "application/json", "Cache-Control": "no-cache" },
     });
+    if (isStale()) return;
+
     if (!r.ok) {
-      clearStaleRideUi();
+      const trackedId = rideIdRef.current ?? pinnedId;
+      if (trackedId) {
+        const pinnedOpen = await fetchOpenPinnedRide(trackedId);
+        if (pinnedOpen && !isStale()) {
+          applyServerRide(pinnedOpen, source, "pinned (active API error)");
+          return;
+        }
+      }
+      if (!isStale()) clearStaleRideUi();
       return;
     }
     const data = await r.json().catch(() => ({}));
+    if (isStale()) return;
+
+    const debugMeta = data.debug as
+      | { user_id?: string; pool_size?: number; raw_buyer_count?: number }
+      | undefined;
+    const debugSuffix = debugMeta
+      ? ` · uid ${debugMeta.user_id ?? "?"} · pool ${debugMeta.pool_size ?? "?"} · raw ${debugMeta.raw_buyer_count ?? "?"}`
+      : "";
 
     const active = data.as_buyer_active as RideRow | null | undefined;
     const openFromActive = await resolveOpenBuyerRide(active ?? undefined);
-    if (openFromActive) {
+    if (openFromActive && !isStale()) {
       applyServerRide(openFromActive, source);
       return;
     }
@@ -243,19 +282,39 @@ function ViajePageInner() {
     const activeList = Array.isArray(data.as_buyer) ? (data.as_buyer as RideRow[]) : [];
     for (const candidate of activeList) {
       const open = await resolveOpenBuyerRide(candidate);
-      if (open) {
+      if (open && !isStale()) {
         applyServerRide(open, source);
         return;
       }
     }
 
+    const reconciled = data.reconciled_ride as RideRow | undefined;
+    const openFromReconcile = await resolveOpenBuyerRide(reconciled);
+    if (openFromReconcile && !isStale()) {
+      applyServerRide(openFromReconcile, source, "reconciled");
+      return;
+    }
+
+    const trackedId = rideIdRef.current ?? readPinnedRideId();
+    if (trackedId) {
+      const pinnedOpen = await fetchOpenPinnedRide(trackedId);
+      if (pinnedOpen && !isStale()) {
+        applyServerRide(pinnedOpen, source, "pinned GET");
+        return;
+      }
+    }
+
+    if (!isStale() && Date.now() < requestLatchUntilRef.current && trackedId) {
+      return;
+    }
+
     const display = data.as_buyer_display as RideRow | undefined;
     const ignoredNote =
       display?.id && !isBuyerActiveStatus(display.status)
-        ? `0 open (skipped last ${display.status}${display.ticket_code ? ` · ${display.ticket_code}` : ""})`
-        : "0 open";
+        ? `0 open (skipped last ${display.status}${display.ticket_code ? ` · ${display.ticket_code}` : ""})${debugSuffix}`
+        : `0 open${debugSuffix}`;
 
-    applyServerRide(null, source, ignoredNote);
+    if (!isStale()) applyServerRide(null, source, ignoredNote);
   }, [applyServerRide, clearStaleRideUi]);
 
   // Do not use ?ride= in the URL for SSE — it re-attaches ghost trips after refresh.
@@ -278,7 +337,6 @@ function ViajePageInner() {
 
   useEffect(() => {
     stripRideIdFromBrowserUrl();
-    clearPinnedRideId();
   }, []);
 
   useEffect(() => {
@@ -409,6 +467,8 @@ function ViajePageInner() {
       }
       clearPinnedRideId();
       if (rideRow?.id) {
+        requestLatchUntilRef.current = Date.now() + 20_000;
+        refreshSeqRef.current += 1;
         pinRideId(rideRow.id);
         rideIdRef.current = rideRow.id;
         if (typeof window !== "undefined") {

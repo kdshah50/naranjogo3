@@ -47,17 +47,34 @@ export async function GET(req: NextRequest) {
     .maybeSingle();
 
   const asDriver = Boolean(profile?.user_id);
+  const reconcileRideId = req.nextUrl.searchParams.get("reconcile_ride_id")?.trim();
+
   const [buyerTripsRaw, buyerDisplayRaw, driverTrips] = await Promise.all([
     listActiveTripsForBuyer(guard.supabase, guard.userId, accountOpts),
     latestBuyerRideForDisplay(guard.supabase, guard.userId, accountOpts),
     asDriver ? listActiveTripsForDriver(guard.supabase, guard.userId, accountOpts) : Promise.resolve([]),
   ]);
 
-  const { trips: buyerActiveTripsRaw } = await dropActiveRowsWithCompletedTicket(
+  const { trips: buyerActiveTripsRaw, hideTickets } = await dropActiveRowsWithCompletedTicket(
     guard.supabase,
     buyerTripsRaw,
   );
-  const buyerActiveTrips = await verifyBuyerActiveTrips(guard.supabase, buyerActiveTripsRaw);
+  let buyerActiveTrips = await verifyBuyerActiveTrips(guard.supabase, buyerActiveTripsRaw);
+
+  let reconciledRide: RideBookingRow | null = null;
+  if (reconcileRideId) {
+    const ride = await getRideById(guard.supabase, reconcileRideId);
+    if (ride && pool.some((uid) => isSameUserId(uid, ride.buyer_id))) {
+      reconciledRide = ride;
+      if (BUYER_OPEN_STATUSES.has(ride.status)) {
+        const [verified] = await verifyBuyerActiveTrips(guard.supabase, [ride]);
+        if (verified && !buyerActiveTrips.some((t) => t.id === verified.id)) {
+          buyerActiveTrips = [verified, ...buyerActiveTrips];
+        }
+      }
+    }
+  }
+
   const primaryBuyerActive = buyerActiveTrips[0] ?? null;
 
   let buyerDisplay = buyerDisplayRaw;
@@ -71,15 +88,6 @@ export async function GET(req: NextRequest) {
     if (filtered.length === 0) buyerDisplay = null;
   }
 
-  let reconciledRide = null;
-  const reconcileRideId = req.nextUrl.searchParams.get("reconcile_ride_id")?.trim();
-  if (reconcileRideId) {
-    const ride = await getRideById(guard.supabase, reconcileRideId);
-    if (ride && pool.some((uid) => isSameUserId(uid, ride.buyer_id))) {
-      reconciledRide = ride;
-    }
-  }
-
   return NextResponse.json(
     {
       as_buyer: buyerActiveTrips,
@@ -88,6 +96,13 @@ export async function GET(req: NextRequest) {
       as_buyer_has_open: buyerActiveTrips.length > 0,
       as_driver: driverTrips,
       reconciled_ride: reconciledRide,
+      debug: {
+        user_id: guard.userId.slice(0, 8),
+        pool_size: pool.length,
+        raw_buyer_count: buyerTripsRaw.length,
+        ghost_hidden_tickets: hideTickets,
+        reconcile_id: reconcileRideId ? reconcileRideId.slice(0, 8) : null,
+      },
     },
     { headers: { "Cache-Control": "no-store, max-age=0" } },
   );
