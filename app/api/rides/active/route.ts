@@ -30,6 +30,24 @@ async function verifyBuyerActiveTrips(
   return verified.filter((row): row is RideBookingRow => row !== null);
 }
 
+async function explainBuyerTripDrop(
+  supabase: SupabaseClient,
+  rawRows: RideBookingRow[],
+  postGhostRows: RideBookingRow[],
+  hideTickets: string[],
+): Promise<string | null> {
+  if (rawRows.length === 0) return null;
+  if (postGhostRows.length === 0 && hideTickets.length > 0) {
+    return `ghost:${hideTickets[0]}`;
+  }
+  const row = postGhostRows[0] ?? rawRows[0];
+  const fresh = await getRideById(supabase, row.id);
+  if (!fresh || !BUYER_OPEN_STATUSES.has(fresh.status)) {
+    return `verify:${fresh?.status ?? "missing"}`;
+  }
+  return null;
+}
+
 /** GET /api/rides/active — current user's in-progress rides (buyer or driver). */
 export async function GET(req: NextRequest) {
   const guard = await ridesRouteGuard(req);
@@ -77,6 +95,16 @@ export async function GET(req: NextRequest) {
 
   const primaryBuyerActive = buyerActiveTrips[0] ?? null;
 
+  const dropReason =
+    buyerTripsRaw.length > 0 && buyerActiveTrips.length === 0
+      ? await explainBuyerTripDrop(
+          guard.supabase,
+          buyerTripsRaw,
+          buyerActiveTripsRaw,
+          hideTickets,
+        )
+      : null;
+
   let buyerDisplay = buyerDisplayRaw;
   if (
     buyerDisplayRaw &&
@@ -100,7 +128,10 @@ export async function GET(req: NextRequest) {
         user_id: guard.userId.slice(0, 8),
         pool_size: pool.length,
         raw_buyer_count: buyerTripsRaw.length,
+        post_ghost_count: buyerActiveTripsRaw.length,
+        verified_count: buyerActiveTrips.length,
         ghost_hidden_tickets: hideTickets,
+        drop_reason: dropReason,
         reconcile_id: reconcileRideId ? reconcileRideId.slice(0, 8) : null,
       },
     },

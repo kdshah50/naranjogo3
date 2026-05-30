@@ -7,36 +7,46 @@ export function normalizeRideTicketCode(ticket: string | null | undefined): stri
   return (ticket ?? "").trim().toUpperCase();
 }
 
-/** If any row with this ticket is completed, drop active ghost duplicates (same ticket). */
+/** If a completed row shares this ticket, drop older active duplicates (ghost rows). */
 export async function dropActiveRowsWithCompletedTicket(
   supabase: SupabaseClient,
   rows: RideBookingRow[],
 ): Promise<{ trips: RideBookingRow[]; hideTickets: string[] }> {
   if (rows.length === 0) return { trips: [], hideTickets: [] };
 
-  const tickets = [
-    ...new Set(rows.map((r) => normalizeRideTicketCode(r.ticket_code)).filter(Boolean)),
-  ];
-  if (tickets.length === 0) return { trips: rows, hideTickets: [] };
-
   const hideTickets: string[] = [];
-  for (const ticket of tickets) {
-    const { data } = await supabase
+  const kept: RideBookingRow[] = [];
+
+  for (const row of rows) {
+    const ticket = normalizeRideTicketCode(row.ticket_code);
+    if (!ticket) {
+      kept.push(row);
+      continue;
+    }
+
+    const { data: completedRows } = await supabase
       .from("ride_bookings")
-      .select("ticket_code")
+      .select("id, trip_ended_at, updated_at, created_at")
       .ilike("ticket_code", ticket)
       .eq("status", "completed")
-      .limit(1);
-    if (data?.length) hideTickets.push(ticket);
-  }
-  if (hideTickets.length === 0) return { trips: rows, hideTickets: [] };
+      .order("trip_ended_at", { ascending: false })
+      .limit(5);
 
-  const hideSet = new Set(hideTickets);
-  return {
-    trips: rows.filter((row) => {
-      const ticket = normalizeRideTicketCode(row.ticket_code);
-      return !ticket || !hideSet.has(ticket);
-    }),
-    hideTickets,
-  };
+    const rowCreatedMs = new Date(row.created_at).getTime();
+    const isGhost = (completedRows ?? []).some((completed) => {
+      if (String(completed.id) === String(row.id)) return false;
+      const endedRaw = completed.trip_ended_at ?? completed.updated_at ?? completed.created_at;
+      const endedMs = endedRaw ? new Date(endedRaw).getTime() : 0;
+      // Hide stale duplicate rows for this ticket; keep rides created after the completion.
+      return endedMs > 0 && rowCreatedMs <= endedMs;
+    });
+
+    if (isGhost) {
+      if (!hideTickets.includes(ticket)) hideTickets.push(ticket);
+      continue;
+    }
+    kept.push(row);
+  }
+
+  return { trips: kept, hideTickets };
 }

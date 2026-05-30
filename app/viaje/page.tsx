@@ -124,7 +124,13 @@ function syncDebugForRow(row: RideRow | null, source: string, note?: string): Sy
   };
 }
 
-/** List payload can lag — only treat ride as open when GET /api/rides/:id confirms active status. */
+/** Server already verified open status — trust list payload (skip extra GET round-trip). */
+function trustServerVerifiedTrip(candidate: RideRow | null | undefined): RideRow | null {
+  if (!candidate?.id || !isBuyerActiveStatus(candidate.status)) return null;
+  return candidate;
+}
+
+/** Pinned / display rows may be stale — confirm with GET /api/rides/:id. */
 async function resolveOpenBuyerRide(candidate: RideRow | undefined): Promise<RideRow | null> {
   if (!candidate?.id || !isBuyerActiveStatus(candidate.status)) return null;
   const truth = await fetchBuyerRideRow(candidate.id);
@@ -266,14 +272,21 @@ function ViajePageInner() {
     if (isStale()) return;
 
     const debugMeta = data.debug as
-      | { user_id?: string; pool_size?: number; raw_buyer_count?: number }
+      | {
+          user_id?: string;
+          pool_size?: number;
+          raw_buyer_count?: number;
+          verified_count?: number;
+          drop_reason?: string | null;
+          ghost_hidden_tickets?: string[];
+        }
       | undefined;
     const debugSuffix = debugMeta
-      ? ` · uid ${debugMeta.user_id ?? "?"} · pool ${debugMeta.pool_size ?? "?"} · raw ${debugMeta.raw_buyer_count ?? "?"}`
+      ? ` · uid ${debugMeta.user_id ?? "?"} · pool ${debugMeta.pool_size ?? "?"} · raw ${debugMeta.raw_buyer_count ?? "?"} · verified ${debugMeta.verified_count ?? "?"}${debugMeta.drop_reason ? ` · ${debugMeta.drop_reason}` : ""}`
       : "";
 
     const active = data.as_buyer_active as RideRow | null | undefined;
-    const openFromActive = await resolveOpenBuyerRide(active ?? undefined);
+    const openFromActive = trustServerVerifiedTrip(active);
     if (openFromActive && !isStale()) {
       applyServerRide(openFromActive, source);
       return;
@@ -281,7 +294,7 @@ function ViajePageInner() {
 
     const activeList = Array.isArray(data.as_buyer) ? (data.as_buyer as RideRow[]) : [];
     for (const candidate of activeList) {
-      const open = await resolveOpenBuyerRide(candidate);
+      const open = trustServerVerifiedTrip(candidate);
       if (open && !isStale()) {
         applyServerRide(open, source);
         return;
