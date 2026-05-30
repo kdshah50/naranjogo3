@@ -7,7 +7,7 @@ import { useAppLang } from "@/hooks/use-app-lang";
 import { formatCurrencyMXN } from "@/lib/locale-format";
 import { RidesStagingBanner } from "@/components/RidesStagingBanner";
 import { useRideLiveStream } from "@/hooks/use-ride-live-stream";
-import { rideStatusRank } from "@/lib/rides/ride-status-merge";
+import { mergeRideListsByStatus, rideStatusRank } from "@/lib/rides/ride-status-merge";
 import {
   driverFlowStepIndex,
   driverFlowSteps,
@@ -101,18 +101,22 @@ function ConductorViajesInner() {
 
   const applyServerTrips = useCallback((raw: RideRow[], source: string) => {
     const next = activeTripsFromPanel(raw);
-    setTrips(next);
+    let merged = next;
+    setTrips((prev) => {
+      merged = activeTripsFromPanel(mergeRideListsByStatus(prev, next));
+      return merged;
+    });
     const apiSummary =
-      next.length === 0
+      merged.length === 0
         ? "0 trips"
-        : `${next.length} trip · ${next[0].status}${next[0].ticket_code ? ` · ${next[0].ticket_code}` : ""}`;
+        : `${merged.length} trip · ${merged[0].status}${merged[0].ticket_code ? ` · ${merged[0].ticket_code}` : ""}`;
     setSyncDebug({
       source,
       at: new Date().toLocaleTimeString(),
       apiCount: next.length,
       apiSummary,
-      uiCount: next.length,
-      mismatch: false,
+      uiCount: merged.length,
+      mismatch: merged.length !== next.length,
     });
     return next;
   }, []);

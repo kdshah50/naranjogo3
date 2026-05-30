@@ -8,6 +8,7 @@ import { useAppLang } from "@/hooks/use-app-lang";
 import { COLONIA_KEYS, COLONIAS, coloniaLabel } from "@/lib/colonias";
 import { formatCurrencyMXN } from "@/lib/locale-format";
 import { useRideLiveStream } from "@/hooks/use-ride-live-stream";
+import { mergeRideStatusRow } from "@/lib/rides/ride-status-merge";
 import { rideStatusLabel, viajeCopy } from "@/lib/rides/ui-copy";
 
 type FareEstimate = {
@@ -204,7 +205,10 @@ function ViajePageInner() {
     }
 
     if (row && isBuyerActiveStatus(row.status)) {
-      setRide(row);
+      setRide((current) => {
+        if (!current || current.id !== row.id) return row;
+        return mergeRideStatusRow(current, row);
+      });
       setTerminalBanner(null);
       pinRideId(row.id);
       rideIdRef.current = row.id;
