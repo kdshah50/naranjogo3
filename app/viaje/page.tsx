@@ -100,6 +100,7 @@ type SyncDebug = {
   uiStatus: string;
   uiTicket: string;
   mismatch: boolean;
+  dropReason?: string | null;
 };
 
 function formatRiderSyncDebug(d: SyncDebug): string {
@@ -107,7 +108,12 @@ function formatRiderSyncDebug(d: SyncDebug): string {
   return `Active API: ${d.apiSummary} · UI: ${d.uiStatus}${d.uiTicket ? ` · ${d.uiTicket}` : ""}${flag} · ${d.source} ${d.at}`;
 }
 
-function syncDebugForRow(row: RideRow | null, source: string, note?: string): SyncDebug {
+function syncDebugForRow(
+  row: RideRow | null,
+  source: string,
+  note?: string,
+  dropReason?: string | null,
+): SyncDebug {
   let apiSummary = note ?? "0 open";
   if (row) {
     apiSummary = isBuyerActiveStatus(row.status)
@@ -121,6 +127,7 @@ function syncDebugForRow(row: RideRow | null, source: string, note?: string): Sy
     uiStatus: row?.status ?? "none",
     uiTicket: row?.ticket_code ?? "",
     mismatch: false,
+    dropReason: dropReason ?? null,
   };
 }
 
@@ -190,7 +197,8 @@ function ViajePageInner() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [syncDebug, setSyncDebug] = useState<SyncDebug | null>(null);
 
-  const applyServerRide = useCallback((row: RideRow | null, source: string, note?: string) => {
+  const applyServerRide = useCallback(
+    (row: RideRow | null, source: string, note?: string, dropReason?: string | null) => {
     if (row && isTerminalRideStatus(row.status) && POLL_SOURCES.has(source)) {
       row = null;
     }
@@ -200,7 +208,7 @@ function ViajePageInner() {
       setTerminalBanner(null);
       pinRideId(row.id);
       rideIdRef.current = row.id;
-      setSyncDebug(syncDebugForRow(row, source, note));
+      setSyncDebug(syncDebugForRow(row, source, note, dropReason));
       return;
     }
 
@@ -217,6 +225,7 @@ function ViajePageInner() {
           POLL_SOURCES.has(source)
             ? `0 open (GET verified ${row.status}${row.ticket_code ? ` · ${row.ticket_code}` : ""})`
             : undefined,
+          dropReason,
         ),
       );
       return;
@@ -227,8 +236,10 @@ function ViajePageInner() {
     clearPinnedRideId();
     stripRideIdFromBrowserUrl();
     rideIdRef.current = null;
-    setSyncDebug(syncDebugForRow(null, source, note));
-  }, []);
+    setSyncDebug(syncDebugForRow(null, source, note, dropReason));
+  },
+  [],
+);
 
   const clearStaleRideUi = useCallback(() => {
     clearPinnedRideId();
@@ -327,7 +338,7 @@ function ViajePageInner() {
         ? `0 open (skipped last ${display.status}${display.ticket_code ? ` · ${display.ticket_code}` : ""})${debugSuffix}`
         : `0 open${debugSuffix}`;
 
-    if (!isStale()) applyServerRide(null, source, ignoredNote);
+    if (!isStale()) applyServerRide(null, source, ignoredNote, debugMeta?.drop_reason ?? null);
   }, [applyServerRide, clearStaleRideUi]);
 
   // Do not use ?ride= in the URL for SSE — it re-attaches ghost trips after refresh.
@@ -564,6 +575,14 @@ function ViajePageInner() {
             <Link href={withLang("/auth/login", lang)} className="font-medium underline">
               {t.login}
             </Link>
+          </div>
+        )}
+
+        {syncDebug?.dropReason?.startsWith("verify:completed") && !ride && (
+          <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+            {lang === "en"
+              ? "Your last trip is already completed. Request a new ride below."
+              : "Tu último viaje ya terminó. Pide un viaje nuevo abajo."}
           </div>
         )}
 

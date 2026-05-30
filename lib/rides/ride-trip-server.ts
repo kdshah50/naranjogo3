@@ -571,6 +571,22 @@ function tripMatchesBuyerPool(ride: RideBookingRow, pool: string[]): boolean {
   return pool.some((id) => isSameUserId(id, ride.buyer_id));
 }
 
+const ACTIVE_BUYER_TRIP_STATUSES = ["requested", "matched", "accepted", "arrived", "in_trip"] as const;
+
+async function refreshOpenBuyerRows(
+  supabase: SupabaseClient,
+  rows: RideBookingRow[],
+): Promise<RideBookingRow[]> {
+  const openSet = new Set<string>(ACTIVE_BUYER_TRIP_STATUSES);
+  const freshRows: RideBookingRow[] = [];
+  for (const row of rows) {
+    const fresh = await getRideById(supabase, row.id);
+    if (fresh && openSet.has(fresh.status)) freshRows.push(fresh);
+  }
+  freshRows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  return freshRows;
+}
+
 export async function listActiveTripsForBuyer(
   supabase: SupabaseClient,
   buyerUserId: string,
@@ -580,7 +596,7 @@ export async function listActiveTripsForBuyer(
   if (pool.length === 0) return [];
 
   const buyerPool = [...new Set(pool.flatMap((id) => idMatchVariantsForIn(id)))];
-  const statuses = ["requested", "matched", "accepted", "arrived", "in_trip"] as const;
+  const statuses = [...ACTIVE_BUYER_TRIP_STATUSES];
 
   const { data, error } = await supabase
     .from("ride_bookings")
@@ -617,7 +633,8 @@ export async function listActiveTripsForBuyer(
 
   const rows = [...byId.values()];
   rows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  return rows.slice(0, 5);
+  const freshRows = await refreshOpenBuyerRows(supabase, rows);
+  return freshRows.slice(0, 5);
 }
 
 const BUYER_DISPLAY_LOOKBACK_MS = 48 * 60 * 60 * 1000;
