@@ -38,6 +38,16 @@ const COLONIAS_LIST = COLONIA_KEYS.map((key) => ({
 
 const VIAJE_PINNED_RIDE_KEY = "ng_viaje_pinned_ride_id";
 
+const POLL_SOURCES = new Set([
+  "poll",
+  "mount",
+  "focus",
+  "pageshow",
+  "manual",
+  "poll-backup",
+  "clear",
+]);
+
 const BUYER_ACTIVE_STATUSES = new Set([
   "requested",
   "matched",
@@ -45,6 +55,10 @@ const BUYER_ACTIVE_STATUSES = new Set([
   "arrived",
   "in_trip",
 ]);
+
+function isTerminalRideStatus(status: string): boolean {
+  return status === "completed" || status === "cancelled";
+}
 
 function isBuyerActiveStatus(status: string): boolean {
   return BUYER_ACTIVE_STATUSES.has(status);
@@ -94,9 +108,12 @@ function formatRiderSyncDebug(d: SyncDebug): string {
 }
 
 function syncDebugForRow(row: RideRow | null, source: string, note?: string): SyncDebug {
-  const apiSummary = row
-    ? `1 open · ${row.status}${row.ticket_code ? ` · ${row.ticket_code}` : ""}`
-    : note ?? "0 open";
+  let apiSummary = note ?? "0 open";
+  if (row) {
+    apiSummary = isBuyerActiveStatus(row.status)
+      ? `1 open · ${row.status}${row.ticket_code ? ` · ${row.ticket_code}` : ""}`
+      : `not open · ${row.status}${row.ticket_code ? ` · ${row.ticket_code}` : ""}`;
+  }
   return {
     source,
     at: new Date().toLocaleTimeString(),
@@ -105,6 +122,14 @@ function syncDebugForRow(row: RideRow | null, source: string, note?: string): Sy
     uiTicket: row?.ticket_code ?? "",
     mismatch: false,
   };
+}
+
+/** List payload can lag — only treat ride as open when GET /api/rides/:id confirms active status. */
+async function resolveOpenBuyerRide(candidate: RideRow | undefined): Promise<RideRow | null> {
+  if (!candidate?.id || !isBuyerActiveStatus(candidate.status)) return null;
+  const truth = await fetchBuyerRideRow(candidate.id);
+  const row = truth ?? candidate;
+  return isBuyerActiveStatus(row.status) ? row : null;
 }
 
 export default function ViajePage() {
@@ -137,6 +162,7 @@ function ViajePageInner() {
   const [estimating, setEstimating] = useState(false);
 
   const [ride, setRide] = useState<RideRow | null>(null);
+  const [terminalBanner, setTerminalBanner] = useState<RideRow | null>(null);
   const [requestError, setRequestError] = useState<string | null>(null);
   const [requesting, setRequesting] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
@@ -146,25 +172,53 @@ function ViajePageInner() {
   const [syncDebug, setSyncDebug] = useState<SyncDebug | null>(null);
 
   const applyServerRide = useCallback((row: RideRow | null, source: string, note?: string) => {
-    setRide(row);
-    if (row?.id && isBuyerActiveStatus(row.status)) {
-      pinRideId(row.id);
-      rideIdRef.current = row.id;
-    } else if (!row || row.status === "completed" || row.status === "cancelled") {
-      clearPinnedRideId();
-      stripRideIdFromBrowserUrl();
-      rideIdRef.current = row?.id ?? null;
+    if (row && isTerminalRideStatus(row.status) && POLL_SOURCES.has(source)) {
+      row = null;
     }
 
-    setSyncDebug(syncDebugForRow(row, source, note));
+    if (row && isBuyerActiveStatus(row.status)) {
+      setRide(row);
+      setTerminalBanner(null);
+      pinRideId(row.id);
+      rideIdRef.current = row.id;
+      setSyncDebug(syncDebugForRow(row, source, note));
+      return;
+    }
+
+    if (row && isTerminalRideStatus(row.status)) {
+      setRide(null);
+      if (!POLL_SOURCES.has(source)) setTerminalBanner(row);
+      clearPinnedRideId();
+      stripRideIdFromBrowserUrl();
+      rideIdRef.current = null;
+      setSyncDebug(
+        syncDebugForRow(
+          null,
+          source,
+          POLL_SOURCES.has(source)
+            ? `0 open (GET verified ${row.status}${row.ticket_code ? ` · ${row.ticket_code}` : ""})`
+            : undefined,
+        ),
+      );
+      return;
+    }
+
+    setRide(null);
+    if (POLL_SOURCES.has(source)) setTerminalBanner(null);
+    clearPinnedRideId();
+    stripRideIdFromBrowserUrl();
+    rideIdRef.current = null;
+    setSyncDebug(syncDebugForRow(null, source, note));
   }, []);
 
   const clearStaleRideUi = useCallback(() => {
     clearPinnedRideId();
     stripRideIdFromBrowserUrl();
     rideIdRef.current = null;
-    applyServerRide(null, "clear");
-  }, [applyServerRide]);
+    setRide(null);
+    setTerminalBanner(null);
+    setSyncDebug(syncDebugForRow(null, "clear"));
+  }, []);
 
   /** Server wins: open trips only on poll — ignore stale as_buyer_display completed rows. */
   const refreshActiveRide = useCallback(async (source = "poll") => {
@@ -180,18 +234,19 @@ function ViajePageInner() {
     const data = await r.json().catch(() => ({}));
 
     const active = data.as_buyer_active as RideRow | null | undefined;
-    if (active?.id && isBuyerActiveStatus(active.status)) {
-      const truth = await fetchBuyerRideRow(active.id);
-      applyServerRide(truth ?? active, source);
+    const openFromActive = await resolveOpenBuyerRide(active ?? undefined);
+    if (openFromActive) {
+      applyServerRide(openFromActive, source);
       return;
     }
 
     const activeList = Array.isArray(data.as_buyer) ? (data.as_buyer as RideRow[]) : [];
-    const firstActive = activeList.find((row) => row?.id && isBuyerActiveStatus(row.status));
-    if (firstActive?.id) {
-      const truth = await fetchBuyerRideRow(firstActive.id);
-      applyServerRide(truth ?? firstActive, source);
-      return;
+    for (const candidate of activeList) {
+      const open = await resolveOpenBuyerRide(candidate);
+      if (open) {
+        applyServerRide(open, source);
+        return;
+      }
     }
 
     const display = data.as_buyer_display as RideRow | undefined;
@@ -220,6 +275,11 @@ function ViajePageInner() {
     fallbackPollMs: 12_000,
     onFallbackPoll: () => void refreshActiveRide("poll-backup"),
   });
+
+  useEffect(() => {
+    stripRideIdFromBrowserUrl();
+    clearPinnedRideId();
+  }, []);
 
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
@@ -546,7 +606,7 @@ function ViajePageInner() {
           )}
         </section>
 
-        {ride && (
+        {ride && isBuyerActiveStatus(ride.status) && (
           <section
             className={`mt-6 rounded-2xl border-2 bg-white p-5 shadow-sm ${
               ride.status === "cancelled"
@@ -654,6 +714,25 @@ function ViajePageInner() {
               </div>
             )}
             <p className="mt-3 text-xs text-[#1B4332]/60">ID: {ride.id}</p>
+          </section>
+        )}
+
+        {terminalBanner && (
+          <section className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 text-sm">
+            <p className="font-medium">{t.rideCompleted}</p>
+            <p className="mt-1 text-[#1B4332]/80">
+              {terminalBanner.ticket_code && (
+                <span className="font-mono font-bold">{terminalBanner.ticket_code}</span>
+              )}{" "}
+              {terminalBanner.pickup_address} → {terminalBanner.dropoff_address}
+            </p>
+            <button
+              type="button"
+              className="mt-2 underline text-[#1B4332]"
+              onClick={clearStaleRideUi}
+            >
+              {t.clearRideScreen}
+            </button>
           </section>
         )}
 
