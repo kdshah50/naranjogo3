@@ -115,9 +115,10 @@ function stripRideIdFromBrowserUrl() {
 }
 
 async function fetchBuyerRideRow(rideId: string): Promise<RideRow | null> {
-  const r = await fetch(`/api/rides/${rideId}`, {
+  const r = await fetch(`/api/rides/${rideId}?_=${Date.now()}`, {
     credentials: "include",
     cache: "no-store",
+    headers: { Accept: "application/json", "Cache-Control": "no-cache" },
   });
   if (!r.ok) return null;
   const data = (await r.json().catch(() => ({}))) as { ride?: RideRow };
@@ -232,27 +233,40 @@ function ViajePageInner() {
   }, []);
 
   const refreshActiveRide = useCallback(async () => {
-    const pinnedId = resolvePinnedRideId();
+    let pinnedId = resolvePinnedRideId();
 
     if (pinnedId) {
       const pinnedRow = await fetchBuyerRideRow(pinnedId);
       if (pinnedRow?.id) {
-        if (isBuyerActiveStatus(pinnedRow.status)) {
-          applyResolvedRide(pinnedRow);
-          return;
-        }
         if (pinnedRow.status === "completed" || pinnedRow.status === "cancelled") {
           applyResolvedRide(pinnedRow);
+          pinnedId = null;
+        } else if (
+          isFinishedRide(pinnedRow, finishedRideIdsRef.current, finishedTicketsRef.current)
+        ) {
+          markRideFinished(pinnedRow.id, pinnedRow.ticket_code);
+          clearPinnedRideId();
+          stripRideIdFromBrowserUrl();
+          pinnedId = null;
+        } else if (isBuyerActiveStatus(pinnedRow.status)) {
+          applyResolvedRide(pinnedRow);
           return;
         }
+      } else {
+        clearPinnedRideId();
+        pinnedId = null;
       }
     }
 
     const activeUrl = pinnedId
-      ? `/api/rides/active?reconcile_ride_id=${encodeURIComponent(pinnedId)}`
-      : "/api/rides/active";
+      ? `/api/rides/active?reconcile_ride_id=${encodeURIComponent(pinnedId)}&_=${Date.now()}`
+      : `/api/rides/active?_=${Date.now()}`;
 
-    const r = await fetch(activeUrl, { credentials: "include", cache: "no-store" });
+    const r = await fetch(activeUrl, {
+      credentials: "include",
+      cache: "no-store",
+      headers: { Accept: "application/json", "Cache-Control": "no-cache" },
+    });
     if (!r.ok) {
       if (pinnedId) {
         const row = await fetchBuyerRideRow(pinnedId);
@@ -304,7 +318,13 @@ function ViajePageInner() {
     }
 
     clearStaleRideUi();
-  }, [applyResolvedRide, clearStaleRideUi, reconcileWithServer, resolvePinnedRideId]);
+  }, [
+    applyResolvedRide,
+    clearStaleRideUi,
+    markRideFinished,
+    reconcileWithServer,
+    resolvePinnedRideId,
+  ]);
 
   // Do not use ?ride= in the URL for SSE — it re-attaches ghost trips after refresh.
   const liveRideId =
