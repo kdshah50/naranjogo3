@@ -73,6 +73,14 @@ function formatSyncDebug(d: SyncDebug): string {
   return `Panel API: ${d.apiSummary} · UI: ${d.uiCount} trip(s)${flag} · ${d.source} ${d.at}`;
 }
 
+function stripRideFromBrowserUrl() {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has("ride")) return;
+  url.searchParams.delete("ride");
+  window.history.replaceState(null, "", url.toString());
+}
+
 export default function ConductorViajesPage() {
   return (
     <Suspense
@@ -125,7 +133,11 @@ function ConductorViajesInner() {
 
   /** Apply trip row from POST /accept|arrive|start|complete — panel poll can lag behind DB. */
   const upsertTripFromAction = useCallback((incoming: RideRow) => {
-    if (!incoming?.id || !isDriverActiveTrip(incoming)) return;
+    if (!incoming?.id) return;
+    if (!isDriverActiveTrip(incoming)) {
+      setTrips((prev) => prev.filter((t) => t.id !== incoming.id));
+      return;
+    }
     setTrips((prev) => {
       const existing = prev.find((t) => t.id === incoming.id);
       const row = existing ? mergeRideStatusRow(existing, incoming) : incoming;
@@ -148,8 +160,9 @@ function ConductorViajesInner() {
   const applyServerTrips = useCallback((raw: RideRow[], source: string) => {
     const serverRows = activeTripsFromPanel(raw);
     setTrips((prev) => {
-      const next =
+      const merged =
         serverRows.length > 0 ? mergeDriverPanelTripList(prev, serverRows) : serverRows;
+      const next = activeTripsFromPanel(merged);
       const apiSummary =
         next.length === 0
           ? "0 trips"
@@ -201,6 +214,8 @@ function ConductorViajesInner() {
       const pinned = await fetchRideRowById<RideRow>(pinnedRideId);
       if (pinned?.id && isDriverActiveTrip(pinned)) {
         nextTrips = [pinned, ...nextTrips.filter((row) => row.id !== pinned.id)];
+      } else if (pinned?.id && !isDriverActiveTrip(pinned)) {
+        stripRideFromBrowserUrl();
       }
     }
 
@@ -428,12 +443,16 @@ function ConductorViajesInner() {
 
       const rideFromAction = data.ride as RideRow | undefined;
       if (rideFromAction?.id) upsertTripFromAction(rideFromAction);
+      else setTrips((prev) => prev.filter((t) => t.id !== rideId));
 
       await refreshTripById(rideId);
+      stripRideFromBrowserUrl();
       void load("action");
 
-      if (path === "complete") setActionSuccess(t.completeSuccess);
-      else if (path === "accept") setActionSuccess(t.acceptSuccess);
+      if (path === "complete") {
+        setTrips((prev) => prev.filter((t) => t.id !== rideId));
+        setActionSuccess(t.completeSuccess);
+      } else if (path === "accept") setActionSuccess(t.acceptSuccess);
       else if (path === "arrive") setActionSuccess(t.arriveSuccess);
       else if (path === "start") setActionSuccess(t.startSuccess);
     } finally {

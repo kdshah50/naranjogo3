@@ -45,6 +45,7 @@ const COLONIAS_LIST = COLONIA_KEYS.map((key) => ({
 }));
 
 const VIAJE_PINNED_RIDE_KEY = "ng_viaje_pinned_ride_id";
+const VIAJE_TERMINAL_RIDE_KEY = "ng_viaje_terminal_ride_id";
 
 const POLL_SOURCES = new Set([
   "poll",
@@ -80,6 +81,23 @@ function pinRideId(rideId: string) {
 function clearPinnedRideId() {
   if (typeof sessionStorage === "undefined") return;
   sessionStorage.removeItem(VIAJE_PINNED_RIDE_KEY);
+}
+
+function pinTerminalRideId(rideId: string) {
+  if (typeof sessionStorage === "undefined") return;
+  sessionStorage.setItem(VIAJE_TERMINAL_RIDE_KEY, rideId);
+  sessionStorage.removeItem(VIAJE_PINNED_RIDE_KEY);
+}
+
+function readTerminalRideId(): string | null {
+  if (typeof sessionStorage === "undefined") return null;
+  const id = sessionStorage.getItem(VIAJE_TERMINAL_RIDE_KEY)?.trim();
+  return id || null;
+}
+
+function clearTerminalRideId() {
+  if (typeof sessionStorage === "undefined") return;
+  sessionStorage.removeItem(VIAJE_TERMINAL_RIDE_KEY);
 }
 
 function stripRideIdFromBrowserUrl() {
@@ -186,10 +204,11 @@ function ViajePageInner() {
     (row: RideRow | null, source: string, note?: string, dropReason?: string | null) => {
     if (row && isTerminalRideStatus(row.status)) {
       setRide(row);
-      setTerminalBanner(null);
-      clearPinnedRideId();
+      setTerminalBanner(row);
+      pinTerminalRideId(row.id);
       stripRideIdFromBrowserUrl();
       rideIdRef.current = null;
+      setDriverPublic(null);
       setSyncDebug(
         syncDebugForRow(
           row,
@@ -203,7 +222,9 @@ function ViajePageInner() {
     }
 
     if (row && isBuyerActiveStatus(row.status)) {
+      clearTerminalRideId();
       setRide((prev) => {
+        if (prev && isTerminalRideStatus(prev.status)) return prev;
         const next =
           prev && prev.id === row.id ? mergeRideStatusRow(prev, row) : row;
         pinRideId(next.id);
@@ -216,10 +237,12 @@ function ViajePageInner() {
     }
 
     setRide(null);
-    if (POLL_SOURCES.has(source)) setTerminalBanner(null);
+    setTerminalBanner(null);
     clearPinnedRideId();
+    clearTerminalRideId();
     stripRideIdFromBrowserUrl();
     rideIdRef.current = null;
+    setDriverPublic(null);
     setSyncDebug(syncDebugForRow(null, source, note, dropReason));
   },
   [],
@@ -227,6 +250,7 @@ function ViajePageInner() {
 
   const clearStaleRideUi = useCallback(() => {
     clearPinnedRideId();
+    clearTerminalRideId();
     stripRideIdFromBrowserUrl();
     rideIdRef.current = null;
     setRide(null);
@@ -290,6 +314,30 @@ function ViajePageInner() {
       return;
     }
 
+    const terminalId = readTerminalRideId() ?? pinnedId;
+    if (terminalId) {
+      const terminalRow = await fetchRideRowById<RideRow>(terminalId);
+      if (isStale()) return;
+      if (terminalRow?.id && isTerminalRideStatus(terminalRow.status)) {
+        applyServerRide(
+          terminalRow,
+          `${source}+terminal`,
+          `${terminalRow.status}${terminalRow.ticket_code ? ` · ${terminalRow.ticket_code}` : ""}${debugSuffix}`,
+          debugMeta?.drop_reason ?? null,
+        );
+        return;
+      }
+      if (terminalRow?.id && isBuyerActiveStatus(terminalRow.status)) {
+        applyServerRide(
+          terminalRow,
+          `${source}+pinned`,
+          `${terminalRow.status}${terminalRow.ticket_code ? ` · ${terminalRow.ticket_code}` : ""}${debugSuffix}`,
+          debugMeta?.drop_reason ?? null,
+        );
+        return;
+      }
+    }
+
     if (!isStale() && Date.now() < requestLatchUntilRef.current && pinnedId) {
       return;
     }
@@ -309,7 +357,12 @@ function ViajePageInner() {
     onEvent: (payload) => {
       const row = (payload as { ride?: RideRow }).ride;
       if (!row?.id) return;
+      if (isTerminalRideStatus(row.status)) {
+        applyServerRide(row, "SSE");
+        return;
+      }
       setRide((prev) => {
+        if (prev && isTerminalRideStatus(prev.status)) return prev;
         const next = applyMonotonicRideRow(prev, row);
         if (isBuyerActiveStatus(next.status)) {
           pinRideId(next.id);
