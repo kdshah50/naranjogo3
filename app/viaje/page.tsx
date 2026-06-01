@@ -192,8 +192,22 @@ function ViajePageInner() {
 
   const applyServerRide = useCallback(
     (row: RideRow | null, source: string, note?: string, dropReason?: string | null) => {
-    if (row && isTerminalRideStatus(row.status) && POLL_SOURCES.has(source)) {
-      row = null;
+    if (row && isTerminalRideStatus(row.status)) {
+      setRide(row);
+      setTerminalBanner(null);
+      clearPinnedRideId();
+      stripRideIdFromBrowserUrl();
+      rideIdRef.current = null;
+      setSyncDebug(
+        syncDebugForRow(
+          row,
+          source,
+          note ??
+            `${row.status}${row.ticket_code ? ` · ${row.ticket_code}` : ""}`,
+          dropReason,
+        ),
+      );
+      return;
     }
 
     if (row && isBuyerActiveStatus(row.status)) {
@@ -202,25 +216,6 @@ function ViajePageInner() {
       pinRideId(row.id);
       rideIdRef.current = row.id;
       setSyncDebug(syncDebugForRow(row, source, note, dropReason));
-      return;
-    }
-
-    if (row && isTerminalRideStatus(row.status)) {
-      setRide(null);
-      if (!POLL_SOURCES.has(source)) setTerminalBanner(row);
-      clearPinnedRideId();
-      stripRideIdFromBrowserUrl();
-      rideIdRef.current = null;
-      setSyncDebug(
-        syncDebugForRow(
-          null,
-          source,
-          POLL_SOURCES.has(source)
-            ? `0 open (GET verified ${row.status}${row.ticket_code ? ` · ${row.ticket_code}` : ""})`
-            : undefined,
-          dropReason,
-        ),
-      );
       return;
     }
 
@@ -258,14 +253,8 @@ function ViajePageInner() {
       const fresh = await fetchRideRowById<RideRow>(trackedIdEarly);
       if (isStale()) return;
       if (fresh) {
-        if (isBuyerActiveStatus(fresh.status)) {
-          applyServerRide(fresh, source, "GET by id");
-          return;
-        }
-        if (isTerminalRideStatus(fresh.status)) {
-          applyServerRide(fresh, source, "GET terminal");
-          return;
-        }
+        applyServerRide(fresh, "verified", "GET by id");
+        return;
       }
     }
 
@@ -308,17 +297,20 @@ function ViajePageInner() {
     const active = data.as_buyer_active as RideRow | null | undefined;
     const openFromActive = trustServerVerifiedTrip(active);
     if (openFromActive && !isStale()) {
-      applyServerRide(openFromActive, source);
+      const truth = await fetchRideRowById<RideRow>(openFromActive.id);
+      if (isStale()) return;
+      applyServerRide(truth ?? openFromActive, truth ? "verified" : source);
       return;
     }
 
     const activeList = Array.isArray(data.as_buyer) ? (data.as_buyer as RideRow[]) : [];
     for (const candidate of activeList) {
       const open = trustServerVerifiedTrip(candidate);
-      if (open && !isStale()) {
-        applyServerRide(open, source);
-        return;
-      }
+      if (!open) continue;
+      const truth = await fetchRideRowById<RideRow>(open.id);
+      if (isStale()) return;
+      applyServerRide(truth ?? open, truth ? "verified" : source);
+      return;
     }
 
     const reconciled = data.reconciled_ride as RideRow | undefined;
@@ -330,9 +322,10 @@ function ViajePageInner() {
 
     const trackedId = rideIdRef.current ?? readPinnedRideId();
     if (trackedId) {
-      const pinnedOpen = await fetchOpenPinnedRide(trackedId);
-      if (pinnedOpen && !isStale()) {
-        applyServerRide(pinnedOpen, source, "pinned GET");
+      const pinnedTruth = await fetchRideRowById<RideRow>(trackedId);
+      if (isStale()) return;
+      if (pinnedTruth) {
+        applyServerRide(pinnedTruth, "verified", "pinned GET");
         return;
       }
     }
@@ -716,12 +709,14 @@ function ViajePageInner() {
           )}
         </section>
 
-        {ride && isBuyerActiveStatus(ride.status) && (
+        {ride && (isBuyerActiveStatus(ride.status) || isTerminalRideStatus(ride.status)) && (
           <section
             className={`mt-6 rounded-2xl border-2 bg-white p-5 shadow-sm ${
               ride.status === "cancelled"
-                ? "border-red-300"
-                : "border-[#1B4332]/20"
+                ? "border-red-300 bg-red-50/30"
+                : ride.status === "completed"
+                  ? "border-emerald-300"
+                  : "border-[#1B4332]/20"
             }`}
           >
             <h2 className="font-semibold text-lg">{rideSectionTitle}</h2>
@@ -729,7 +724,9 @@ function ViajePageInner() {
               {t.status} <strong>{rideStatusLabel(ride.status, lang)}</strong>
             </p>
             {ride.status === "cancelled" && (
-              <p className="mt-2 text-sm text-red-800">{t.rideCancelledHint}</p>
+              <p className="mt-2 text-sm text-red-800">
+                {t.rideCancelledHint} {t.rideCancelledStaleMatched}
+              </p>
             )}
             <p className="text-sm text-[#1B4332]/80">
               {ride.pickup_address} → {ride.dropoff_address}

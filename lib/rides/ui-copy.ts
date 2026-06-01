@@ -132,7 +132,9 @@ const VIAJE = {
     rideDriverEnRoute: "Conductor en camino",
     driverAcceptedHint: "El conductor aceptó y va hacia el origen. Ten listo tu código de ticket.",
     driverMatchedHint:
-      "Conductor asignado — espera a que acepte en su panel. Cuando acepte verás «Aceptado» aquí y un WhatsApp «Conductor en camino».",
+      "Conductor asignado — espera a que acepte en su panel. Cuando acepte verás «Aceptado» aquí y un WhatsApp «Conductor en camino». Si tarda, pulsa «Actualizar estado».",
+    rideCancelledStaleMatched:
+      "Este viaje ya fue cancelado (la pantalla estaba desactualizada). Puedes pedir otro viaje abajo.",
     driverArrivedHint:
       "El conductor está en el origen. Muéstrale tu código de ticket al subir.",
     driverInTripHint:
@@ -195,7 +197,9 @@ const VIAJE = {
     rideDriverEnRoute: "Driver on the way",
     driverAcceptedHint: "Driver accepted and is heading to pickup. Have your ticket code ready.",
     driverMatchedHint:
-      "Driver assigned — wait for them to accept in their panel. When they accept you will see «Accepted» here and a WhatsApp «Driver on the way».",
+      "Driver assigned — wait for them to accept in their panel. When they accept you will see «Accepted» here and a WhatsApp «Driver on the way». If it takes long, tap «Refresh status».",
+    rideCancelledStaleMatched:
+      "This ride was already cancelled (the screen was out of date). You can request a new ride below.",
     driverArrivedHint:
       "Driver is at pickup. Show your ticket code when you get in.",
     driverInTripHint:
