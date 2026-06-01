@@ -7,9 +7,8 @@ import { useAppLang } from "@/hooks/use-app-lang";
 import { formatCurrencyMXN } from "@/lib/locale-format";
 import { RidesStagingBanner } from "@/components/RidesStagingBanner";
 import { useRideLiveStream } from "@/hooks/use-ride-live-stream";
-import { fetchRideRowById } from "@/lib/rides/client-ride-sync";
+import { fetchRideRowById, fetchRideSync } from "@/lib/rides/client-ride-sync";
 import {
-  mergeDriverPanelTripList,
   mergeRideStatusRow,
   rideStatusRank,
 } from "@/lib/rides/ride-status-merge";
@@ -128,22 +127,18 @@ function ConductorViajesInner() {
 
   const applyServerTrips = useCallback((raw: RideRow[], source: string) => {
     const next = activeTripsFromPanel(raw);
-    let merged = next;
-    setTrips((prev) => {
-      merged = activeTripsFromPanel(mergeDriverPanelTripList(prev, next));
-      return merged;
-    });
+    setTrips(next);
     const apiSummary =
-      merged.length === 0
+      next.length === 0
         ? "0 trips"
-        : `${merged.length} trip · ${merged[0].status}${merged[0].ticket_code ? ` · ${merged[0].ticket_code}` : ""}`;
+        : `${next.length} trip · ${next[0].status}${next[0].ticket_code ? ` · ${next[0].ticket_code}` : ""}`;
     setSyncDebug({
       source,
       at: new Date().toLocaleTimeString(),
       apiCount: next.length,
       apiSummary,
-      uiCount: merged.length,
-      mismatch: merged.length !== next.length,
+      uiCount: next.length,
+      mismatch: false,
     });
     return next;
   }, []);
@@ -157,33 +152,20 @@ function ConductorViajesInner() {
   }, []);
 
   const load = useCallback(async (source = "poll") => {
-    const r = await fetch(`/api/rides/drivers/me/panel?_=${Date.now()}`, {
-      credentials: "include",
-      cache: "no-store",
-      headers: { Accept: "application/json", "Cache-Control": "no-cache" },
-    });
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      setPanelError(
-        r.status === 404 ? t.ridesDisabled : data?.error ?? t.panelLoadFailed,
-      );
+    const sync = await fetchRideSync();
+    if (!sync) {
+      setPanelError(t.panelLoadFailed);
       return;
     }
 
-    if (data.driver) setOnline(mergeDriverOnline(data.driver as DriverOnline));
-    const panelTrips = Array.isArray(data.trips) ? (data.trips as RideRow[]) : [];
-    applyServerTrips(panelTrips, source);
+    if (sync.driver) setOnline(mergeDriverOnline(sync.driver as DriverOnline));
+    applyServerTrips((sync.trips ?? []) as RideRow[], source);
 
-    const sessionId = data.session_user_id ?? null;
-    setCanonicalUserId(data.canonical_user_id ?? data.driver?.user_id ?? null);
-    if (!data.driver?.is_active_driver && data.driver !== null) {
+    setCanonicalUserId(sync.canonical_user_id ?? sync.driver?.user_id ?? null);
+    if (!sync.driver?.is_active_driver && sync.driver !== null) {
       setPanelError(t.inactiveDriverShort);
-    } else if (!data.driver && !data.canonical_user_id) {
-      const phoneHint = data.auth_phone_set ? "" : ` ${t.sessionMissingPhone}`;
-      const sessionHint = sessionId
-        ? ` ${t.sessionIdLabel} ${String(sessionId).slice(0, 8)}…`
-        : "";
-      setPanelError(t.noDriverProfile + phoneHint + sessionHint);
+    } else if (!sync.driver && !sync.canonical_user_id) {
+      setPanelError(t.noDriverProfile);
     } else {
       setPanelError(null);
     }
@@ -193,9 +175,6 @@ function ConductorViajesInner() {
     t.panelLoadFailed,
     t.inactiveDriverShort,
     t.noDriverProfile,
-    t.ridesDisabled,
-    t.sessionMissingPhone,
-    t.sessionIdLabel,
   ]);
 
   const displayError = actionError ?? panelError;

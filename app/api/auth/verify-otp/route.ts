@@ -4,8 +4,7 @@ import { canonicalizeAuthPhone, isValidAuthPhone, normalizeAuthPhone } from "@/l
 import { getJwtSecretBytes } from "@/lib/jwt-secret";
 import { TIANGUIS_TOKEN_COOKIE, createAdminSupabase } from "@/lib/auth-server";
 import {
-  canonicalizeDuplicateUserPhones,
-  pickLoginUserForPhone,
+  findOrInsertLoginUserForPhone,
 } from "@/lib/resolve-login-user";
 
 const IS_PROD = process.env.NODE_ENV === "production";
@@ -81,31 +80,19 @@ export async function POST(req: NextRequest) {
       return clientError(500, "No se pudo actualizar el OTP");
     }
 
-    let user: { id: string; display_name: string | null; trust_badge: string } | null =
-      await pickLoginUserForPhone(supabase, phone);
+    let user: { id: string; display_name: string | null; trust_badge: string } | null = null;
 
-    if (user) {
-      await canonicalizeDuplicateUserPhones(supabase, phone);
-    } else {
-      let referredBy: string | null = null;
-      if (referralCodeRaw.length >= 4) {
-        const { data: rc } = await supabase
-          .from("referral_codes")
-          .select("user_id")
-          .eq("code", referralCodeRaw)
-          .maybeSingle();
-        if (rc?.user_id) referredBy = rc.user_id;
-      }
-      const { data: inserted, error: insErr } = await supabase
-        .from("users")
-        .insert({ phone, phone_verified: true, trust_badge: "bronze", referred_by: referredBy })
-        .select("id, display_name, trust_badge")
-        .single();
-      if (insErr || !inserted) {
-        return clientError(500, "No se pudo crear/actualizar usuario");
-      }
-      user = inserted;
+    let referredBy: string | null = null;
+    if (referralCodeRaw.length >= 4) {
+      const { data: rc } = await supabase
+        .from("referral_codes")
+        .select("user_id")
+        .eq("code", referralCodeRaw)
+        .maybeSingle();
+      if (rc?.user_id) referredBy = rc.user_id;
     }
+
+    user = await findOrInsertLoginUserForPhone(supabase, phone, { referredBy });
     if (!user) {
       return clientError(500, "No se pudo crear/actualizar usuario");
     }

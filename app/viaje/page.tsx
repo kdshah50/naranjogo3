@@ -9,8 +9,9 @@ import { COLONIA_KEYS, COLONIAS, coloniaLabel } from "@/lib/colonias";
 import { formatCurrencyMXN } from "@/lib/locale-format";
 import { useRideLiveStream } from "@/hooks/use-ride-live-stream";
 import {
-  applyMonotonicRideRow,
   fetchRideRowById,
+  fetchRideSync,
+  type RideDriverPublic,
 } from "@/lib/rides/client-ride-sync";
 import { rideStatusLabel, viajeCopy } from "@/lib/rides/ui-copy";
 
@@ -124,20 +125,7 @@ function syncDebugForRow(
   };
 }
 
-/** Server already verified open status — trust list payload (skip extra GET round-trip). */
-function trustServerVerifiedTrip(candidate: RideRow | null | undefined): RideRow | null {
-  if (!candidate?.id || !isBuyerActiveStatus(candidate.status)) return null;
-  return candidate;
-}
-
-/** Pinned / display rows may be stale — confirm with GET /api/rides/:id. */
-async function resolveOpenBuyerRide(candidate: RideRow | undefined): Promise<RideRow | null> {
-  if (!candidate?.id || !isBuyerActiveStatus(candidate.status)) return null;
-  const truth = await fetchRideRowById<RideRow>(candidate.id);
-  const row = truth ?? candidate;
-  return isBuyerActiveStatus(row.status) ? row : null;
-}
-
+/** Pinned ride fallback when sync API fails. */
 async function fetchOpenPinnedRide(rideId: string): Promise<RideRow | null> {
   const truth = await fetchRideRowById<RideRow>(rideId);
   return truth && isBuyerActiveStatus(truth.status) ? truth : null;
@@ -189,6 +177,7 @@ function ViajePageInner() {
 
   const [authError, setAuthError] = useState<string | null>(null);
   const [syncDebug, setSyncDebug] = useState<SyncDebug | null>(null);
+  const [driverPublic, setDriverPublic] = useState<RideDriverPublic | null>(null);
 
   const applyServerRide = useCallback(
     (row: RideRow | null, source: string, note?: string, dropReason?: string | null) => {
@@ -211,7 +200,7 @@ function ViajePageInner() {
     }
 
     if (row && isBuyerActiveStatus(row.status)) {
-      setRide((current) => applyMonotonicRideRow(current, row));
+      setRide(row);
       setTerminalBanner(null);
       pinRideId(row.id);
       rideIdRef.current = row.id;
@@ -238,109 +227,54 @@ function ViajePageInner() {
     setSyncDebug(syncDebugForRow(null, "clear"));
   }, []);
 
-  /** Server wins: open trips only on poll — ignore stale as_buyer_display completed rows. */
+  /** Server wins via GET /api/rides/sync — single source of truth. */
   const refreshActiveRide = useCallback(async (source = "poll") => {
     const seq = ++refreshSeqRef.current;
     const isStale = () => seq !== refreshSeqRef.current;
 
     const pinnedId = rideIdRef.current ?? readPinnedRideId();
-    const reconcileQs = pinnedId
-      ? `&reconcile_ride_id=${encodeURIComponent(pinnedId)}`
-      : "";
-
-    const trackedIdEarly = rideIdRef.current ?? readPinnedRideId();
-    if (trackedIdEarly) {
-      const fresh = await fetchRideRowById<RideRow>(trackedIdEarly);
-      if (isStale()) return;
-      if (fresh) {
-        applyServerRide(fresh, "verified", "GET by id");
-        return;
-      }
-    }
-
-    const r = await fetch(`/api/rides/active?_=${Date.now()}${reconcileQs}`, {
-      credentials: "include",
-      cache: "no-store",
-      headers: { Accept: "application/json", "Cache-Control": "no-cache" },
-    });
+    const sync = await fetchRideSync(pinnedId ?? undefined);
     if (isStale()) return;
 
-    if (!r.ok) {
-      const trackedId = rideIdRef.current ?? pinnedId;
-      if (trackedId) {
-        const pinnedOpen = await fetchOpenPinnedRide(trackedId);
+    if (!sync) {
+      if (pinnedId) {
+        const pinnedOpen = await fetchOpenPinnedRide(pinnedId);
         if (pinnedOpen && !isStale()) {
-          applyServerRide(pinnedOpen, source, "pinned (active API error)");
+          applyServerRide(pinnedOpen, source, "pinned (sync error)");
           return;
         }
       }
       if (!isStale()) clearStaleRideUi();
       return;
     }
-    const data = await r.json().catch(() => ({}));
-    if (isStale()) return;
 
-    const debugMeta = data.debug as
-      | {
-          user_id?: string;
-          pool_size?: number;
-          raw_buyer_count?: number;
-          verified_count?: number;
-          drop_reason?: string | null;
-          ghost_hidden_tickets?: string[];
-        }
-      | undefined;
+    setDriverPublic(sync.driver_public ?? null);
+
+    const debugMeta = sync.debug;
     const debugSuffix = debugMeta
-      ? ` · uid ${debugMeta.user_id ?? "?"} · pool ${debugMeta.pool_size ?? "?"} · raw ${debugMeta.raw_buyer_count ?? "?"} · verified ${debugMeta.verified_count ?? "?"}${debugMeta.drop_reason ? ` · ${debugMeta.drop_reason}` : ""}`
+      ? ` · pool ${debugMeta.pool_size} · raw ${debugMeta.raw_buyer_count} · verified ${debugMeta.verified_buyer_count}${debugMeta.drop_reason ? ` · ${debugMeta.drop_reason}` : ""}`
       : "";
 
-    const active = data.as_buyer_active as RideRow | null | undefined;
-    const openFromActive = trustServerVerifiedTrip(active);
-    if (openFromActive && !isStale()) {
-      const truth = await fetchRideRowById<RideRow>(openFromActive.id);
-      if (isStale()) return;
-      applyServerRide(truth ?? openFromActive, truth ? "verified" : source);
-      return;
-    }
-
-    const activeList = Array.isArray(data.as_buyer) ? (data.as_buyer as RideRow[]) : [];
-    for (const candidate of activeList) {
-      const open = trustServerVerifiedTrip(candidate);
-      if (!open) continue;
-      const truth = await fetchRideRowById<RideRow>(open.id);
-      if (isStale()) return;
-      applyServerRide(truth ?? open, truth ? "verified" : source);
-      return;
-    }
-
-    const reconciled = data.reconciled_ride as RideRow | undefined;
-    const openFromReconcile = await resolveOpenBuyerRide(reconciled);
-    if (openFromReconcile && !isStale()) {
-      applyServerRide(openFromReconcile, source, "reconciled");
-      return;
-    }
-
-    const trackedId = rideIdRef.current ?? readPinnedRideId();
-    if (trackedId) {
-      const pinnedTruth = await fetchRideRowById<RideRow>(trackedId);
-      if (isStale()) return;
-      if (pinnedTruth) {
-        applyServerRide(pinnedTruth, "verified", "pinned GET");
-        return;
+    const row = sync.ride as RideRow | null;
+    if (row?.id) {
+      if (!isStale()) {
+        applyServerRide(
+          row,
+          source,
+          isBuyerActiveStatus(row.status) || isTerminalRideStatus(row.status)
+            ? `${row.status}${row.ticket_code ? ` · ${row.ticket_code}` : ""}${debugSuffix}`
+            : undefined,
+          debugMeta?.drop_reason ?? null,
+        );
       }
-    }
-
-    if (!isStale() && Date.now() < requestLatchUntilRef.current && trackedId) {
       return;
     }
 
-    const display = data.as_buyer_display as RideRow | undefined;
-    const ignoredNote =
-      display?.id && !isBuyerActiveStatus(display.status)
-        ? `0 open (skipped last ${display.status}${display.ticket_code ? ` · ${display.ticket_code}` : ""})${debugSuffix}`
-        : `0 open${debugSuffix}`;
+    if (!isStale() && Date.now() < requestLatchUntilRef.current && pinnedId) {
+      return;
+    }
 
-    if (!isStale()) applyServerRide(null, source, ignoredNote, debugMeta?.drop_reason ?? null);
+    if (!isStale()) applyServerRide(null, source, `0 open${debugSuffix}`, debugMeta?.drop_reason ?? null);
   }, [applyServerRide, clearStaleRideUi]);
 
   // Do not use ?ride= in the URL for SSE — it re-attaches ghost trips after refresh.
@@ -479,6 +413,9 @@ function ViajePageInner() {
               ? `\n\n${(data.dispatch_debug.checks as string[]).join("\n")}`
               : "";
           setRequestError((data?.error ?? t.noDriversAvailable) + hints);
+        } else if (data?.code === "active_ride_exists") {
+          setRequestError(data?.error ?? t.requestFailed);
+          void refreshActiveRide("active-ride-block");
         } else {
           setRequestError(data?.error ?? t.requestFailed);
         }
@@ -735,6 +672,33 @@ function ViajePageInner() {
               <p className="mt-3 text-lg font-mono font-bold">
                 {t.ticket} {ride.ticket_code}
               </p>
+            )}
+            {driverPublic && ride.driver_id && ride.status !== "requested" && (
+              <div className="mt-4 rounded-xl border border-[#1B4332]/15 bg-[#F8F4ED] px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-[#1B4332]/60">
+                  {lang === "es" ? "Tu conductor" : "Your driver"}
+                </p>
+                <p className="mt-1 text-base font-semibold">
+                  {driverPublic.display_name ?? (lang === "es" ? "Conductor" : "Driver")}
+                </p>
+                {(driverPublic.vehicle_color ||
+                  driverPublic.vehicle_make ||
+                  driverPublic.vehicle_plates) && (
+                  <p className="mt-1 text-sm text-[#1B4332]/80">
+                    {[
+                      driverPublic.vehicle_color,
+                      [driverPublic.vehicle_make, driverPublic.vehicle_model]
+                        .filter(Boolean)
+                        .join(" "),
+                      driverPublic.vehicle_plates
+                        ? `${lang === "es" ? "Placas" : "Plates"} ${driverPublic.vehicle_plates}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                )}
+              </div>
             )}
             {!ride.driver_id && ride.status === "requested" && (
               <p className="mt-2 text-sm text-amber-800">{t.findingDriver}</p>

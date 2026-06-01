@@ -292,18 +292,20 @@ async function main() {
     ok("ride matched to driver");
   }
 
-  // 5) Driver panel sees trip
-  const panel = await api(base, "/api/rides/drivers/me/panel", { cookie });
+  // 5) Driver sync sees trip
+  const panel = await api(base, "/api/rides/sync", { cookie });
   if (!panel.ok) {
-    fail(`GET panel → ${panel.status}`);
+    fail(`GET sync → ${panel.status}`);
   } else {
     const trips = (panel.data as { trips?: { id: string }[] }).trips ?? [];
     const found = trips.some((t) => t.id === rideId);
-    if (!found) fail(`panel trips (${trips.length}) missing new ride`);
-    else ok(`panel lists ${trips.length} trip(s) including new ride`);
+    if (!found) fail(`sync trips (${trips.length}) missing new ride`);
+    else ok(`sync lists ${trips.length} trip(s) including new ride`);
   }
 
-  // 6) Accept
+  // 6) Accept → arrive → start → complete (full Uber-style lifecycle)
+  let ticketCode = String(ride?.ticket_code ?? "");
+
   if (status === "matched") {
     const acc = await api(base, `/api/rides/${rideId}/accept`, {
       method: "POST",
@@ -311,25 +313,73 @@ async function main() {
     });
     if (!acc.ok) {
       fail(`POST accept → ${acc.status} ${JSON.stringify(acc.data)}`);
-    } else {
-      const st = String((acc.data as { ride?: { status?: string } }).ride?.status ?? "");
-      if (st === "accepted") ok("driver accepted ride");
-      else fail(`accept returned status ${st}`);
+      process.exit(1);
     }
+    status = String((acc.data as { ride?: { status?: string } }).ride?.status ?? "accepted");
+    ticketCode = String((acc.data as { ride?: { ticket_code?: string } }).ride?.ticket_code ?? ticketCode);
+    ok(`accept → ${status}`);
   }
 
-  // 7) Cleanup — cancel + offline
-  const cancel = await api(base, `/api/rides/${rideId}/cancel`, {
-    method: "POST",
-    cookie,
-    body: { reason: "e2e_test_cleanup" },
-  });
-  if (!cancel.ok) {
-    warn(`cancel cleanup → ${cancel.status} (may need SQL)`);
+  if (status === "accepted") {
+    const arr = await api(base, `/api/rides/${rideId}/arrive`, {
+      method: "POST",
+      cookie,
+    });
+    if (!arr.ok) {
+      fail(`POST arrive → ${arr.status} ${JSON.stringify(arr.data)}`);
+      process.exit(1);
+    }
+    status = String((arr.data as { ride?: { status?: string } }).ride?.status ?? "arrived");
+    ok(`arrive → ${status}`);
+  }
+
+  if (status === "arrived") {
+    if (!ticketCode) {
+      const { data: row } = await supabase
+        .from("ride_bookings")
+        .select("ticket_code")
+        .eq("id", rideId)
+        .maybeSingle();
+      ticketCode = String(row?.ticket_code ?? "");
+    }
+    const st = await api(base, `/api/rides/${rideId}/start`, {
+      method: "POST",
+      cookie,
+      body: { ticket_code: ticketCode },
+    });
+    if (!st.ok) {
+      fail(`POST start → ${st.status} ${JSON.stringify(st.data)}`);
+      process.exit(1);
+    }
+    status = String((st.data as { ride?: { status?: string } }).ride?.status ?? "in_trip");
+    ok(`start → ${status}`);
+  }
+
+  if (status === "in_trip") {
+    const done = await api(base, `/api/rides/${rideId}/complete`, {
+      method: "POST",
+      cookie,
+    });
+    if (!done.ok) {
+      fail(`POST complete → ${done.status} ${JSON.stringify(done.data)}`);
+      process.exit(1);
+    }
+    status = String((done.data as { ride?: { status?: string } }).ride?.status ?? "completed");
+    ok(`complete → ${status}`);
+  }
+
+  // 7) Sync API reflects terminal state
+  const sync = await api(base, `/api/rides/sync?ride_id=${encodeURIComponent(rideId)}`, { cookie });
+  if (!sync.ok) {
+    fail(`GET sync → ${sync.status}`);
   } else {
-    ok("ride cancelled (cleanup)");
+    const syncRide = (sync.data as { ride?: { status?: string; id?: string } }).ride;
+    if (syncRide?.id !== rideId) fail("sync ride id mismatch");
+    else if (syncRide?.status !== "completed") fail(`sync expected completed, got ${syncRide?.status}`);
+    else ok("sync confirms completed ride");
   }
 
+  // 8) Cleanup — driver offline
   await api(base, "/api/rides/drivers/me/online", {
     method: "POST",
     cookie,

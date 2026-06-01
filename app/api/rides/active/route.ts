@@ -5,6 +5,7 @@ import { ridesRouteGuard } from "@/lib/rides/ride-route-guard";
 import { getRideById, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 import { dropActiveRowsWithCompletedTicket } from "@/lib/rides/ride-ghost-filter";
+import { resolveCanonicalRideByTicketForBuyer } from "@/lib/rides/resolve-ride-by-ticket";
 import {
   latestBuyerRideForDisplay,
   listActiveTripsForBuyer,
@@ -66,6 +67,17 @@ export async function GET(req: NextRequest) {
 
   const asDriver = Boolean(profile?.user_id);
   const reconcileRideId = req.nextUrl.searchParams.get("reconcile_ride_id")?.trim();
+  const ticketCodeParam = req.nextUrl.searchParams.get("ticket_code")?.trim() ?? "";
+
+  let canonicalByTicket: RideBookingRow | null = null;
+  if (ticketCodeParam) {
+    canonicalByTicket = await resolveCanonicalRideByTicketForBuyer(
+      guard.supabase,
+      guard.userId,
+      ticketCodeParam,
+      accountOpts,
+    );
+  }
 
   const [buyerTripsRaw, buyerDisplayRaw, driverTrips] = await Promise.all([
     listActiveTripsForBuyer(guard.supabase, guard.userId, accountOpts),
@@ -93,7 +105,18 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const primaryBuyerActive = buyerActiveTrips[0] ?? null;
+  let primaryBuyerActive = buyerActiveTrips[0] ?? null;
+  if (canonicalByTicket) {
+    if (BUYER_OPEN_STATUSES.has(canonicalByTicket.status)) {
+      const [verified] = await verifyBuyerActiveTrips(guard.supabase, [canonicalByTicket]);
+      primaryBuyerActive = verified ?? canonicalByTicket;
+      if (verified && !buyerActiveTrips.some((t) => t.id === verified.id)) {
+        buyerActiveTrips = [verified, ...buyerActiveTrips];
+      }
+    } else {
+      primaryBuyerActive = null;
+    }
+  }
 
   const dropReason =
     buyerTripsRaw.length > 0 && buyerActiveTrips.length === 0
@@ -124,6 +147,7 @@ export async function GET(req: NextRequest) {
       as_buyer_has_open: buyerActiveTrips.length > 0,
       as_driver: driverTrips,
       reconciled_ride: reconciledRide,
+      canonical_by_ticket: canonicalByTicket,
       debug: {
         user_id: guard.userId.slice(0, 8),
         pool_size: pool.length,
@@ -133,6 +157,11 @@ export async function GET(req: NextRequest) {
         ghost_hidden_tickets: hideTickets,
         drop_reason: dropReason,
         reconcile_id: reconcileRideId ? reconcileRideId.slice(0, 8) : null,
+        ticket_code: ticketCodeParam ? ticketCodeParam.slice(0, 12) : null,
+        canonical_ticket_status: canonicalByTicket?.status ?? null,
+        canonical_ticket_id: canonicalByTicket?.id
+          ? String(canonicalByTicket.id).slice(0, 8)
+          : null,
       },
     },
     { headers: { "Cache-Control": "no-store, max-age=0" } },

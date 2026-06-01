@@ -137,6 +137,29 @@ async function cancelSupersededMatchedRides(
   }
 }
 
+const BUYER_OPEN_STATUSES = ["requested", "matched", "accepted", "arrived", "in_trip"] as const;
+
+async function findOpenRideForBuyer(
+  supabase: SupabaseClient,
+  buyerId: string,
+): Promise<Pick<RideBookingRow, "id" | "status" | "ticket_code"> | null> {
+  const pool = await expandUserAccountIdPool(supabase, buyerId);
+  if (pool.length === 0) return null;
+  const { data, error } = await supabase
+    .from("ride_bookings")
+    .select("id, status, ticket_code")
+    .in("buyer_id", pool)
+    .in("status", [...BUYER_OPEN_STATUSES])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.error("[ride-bookings] findOpenRideForBuyer", error);
+    return null;
+  }
+  return data as Pick<RideBookingRow, "id" | "status" | "ticket_code"> | null;
+}
+
 export type CreateRideRequestArgs = {
   buyerId: string;
   pickup: RideLocation;
@@ -152,7 +175,7 @@ export type CreateRideRequestArgs = {
 
 export type CreateRideRequestResult =
   | { ok: true; ride: RideBookingRow; estimate: ReturnType<typeof estimateFare>; matched: boolean }
-  | { ok: false; error: string; code?: "insufficient_balance" | "no_drivers" };
+  | { ok: false; error: string; code?: "insufficient_balance" | "no_drivers" | "active_ride_exists" };
 
 /**
  * Validates buyer has enough spendable saldo; hold is placed at match (Phase 4).
@@ -173,6 +196,15 @@ export async function createRideRequest(
       ok: false,
       error: `Saldo insuficiente. Necesitas al menos $${Math.ceil(estimate.hold_amount_mxn_cents / 100)} MXN disponibles.`,
       code: "insufficient_balance",
+    };
+  }
+
+  const openTrip = await findOpenRideForBuyer(supabase, buyerId);
+  if (openTrip) {
+    return {
+      ok: false,
+      error: `Ya tienes un viaje activo (${openTrip.status}${openTrip.ticket_code ? ` · ${openTrip.ticket_code}` : ""}). Complétalo o cancélalo antes de solicitar otro.`,
+      code: "active_ride_exists",
     };
   }
 

@@ -89,6 +89,19 @@ export async function pickLoginUserForPhone(
     if (match) return match as LoginUserRow;
   }
 
+  const { data: walletRows } = await supabase
+    .from("wallets")
+    .select("user_id")
+    .in("user_id", idPool)
+    .order("updated_at", { ascending: false })
+    .limit(5);
+
+  if (walletRows?.length) {
+    const targetId = String(walletRows[0].user_id);
+    const match = users.find((u) => isSameUserId(String(u.id), targetId));
+    if (match) return match as LoginUserRow;
+  }
+
   return users[0] as LoginUserRow;
 }
 
@@ -109,4 +122,45 @@ export async function canonicalizeDuplicateUserPhones(
   if (error) {
     console.error("[resolve-login-user] canonicalizeDuplicateUserPhones", error);
   }
+}
+
+/**
+ * Resolve login user without creating duplicate rows (Phase 0).
+ * On insert race / unique violation, re-picks existing row by phone variants.
+ */
+export async function findOrInsertLoginUserForPhone(
+  supabase: SupabaseClient,
+  phone: string,
+  options?: { referredBy?: string | null },
+): Promise<LoginUserRow | null> {
+  const canonical = normalizeLoginPhone(phone);
+  const existing = await pickLoginUserForPhone(supabase, canonical);
+  if (existing) {
+    await canonicalizeDuplicateUserPhones(supabase, canonical);
+    return existing;
+  }
+
+  const { data: inserted, error: insErr } = await supabase
+    .from("users")
+    .insert({
+      phone: canonical,
+      phone_verified: true,
+      trust_badge: "bronze",
+      referred_by: options?.referredBy ?? null,
+    })
+    .select("id, display_name, trust_badge")
+    .single();
+
+  if (inserted) return inserted as LoginUserRow;
+
+  if (insErr) {
+    console.warn("[resolve-login-user] insert fallback after error", insErr.message);
+    const retry = await pickLoginUserForPhone(supabase, canonical);
+    if (retry) {
+      await canonicalizeDuplicateUserPhones(supabase, canonical);
+      return retry;
+    }
+  }
+
+  return null;
 }

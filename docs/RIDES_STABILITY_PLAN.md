@@ -54,7 +54,8 @@ In-app updates: **Realtime subscription** on `ride_bookings` row (Phase 2) repla
 
 Run **once** before the next test day:
 
-1. **`rides-one-driver-cleanup.sql`** — one script: merge 3 users → 1 driver, one profile, cancel open rides
+1. **`rides-phase0-preview-setup.sql`** — cancel stale/open test rides, verify counts ([RIDES_PHASE0.md](./RIDES_PHASE0.md))
+2. **`rides-one-driver-cleanup.sql`** — if duplicate users > 1: merge to one driver
 2. `rides-restore-driver-profile.sql` (only if Conectar still broken after step 1)
 3. `rides-cancel-stale-active-test-rides.sql` (only if old in_trip rows reappear)
 
@@ -72,8 +73,8 @@ Driver: `/conductor/viajes` · Rider: `/viaje` · Same phones every time.
 - [x] Rider: always prefer **active** trip over pinned completed; poll after complete for new request
 - [x] Buyer/driver trip queries: UUID id pool variants for PostgREST `.in()`
 - [ ] **Central `notifyRidePhase(ride, phase)`** — buyer + driver, every transition
-- [ ] **Single sync endpoint** `GET /api/rides/sync?ride_id=` used by both UIs
-- [ ] **Automated E2E** — `npm run test:rides-full` in CI on `rides-setup`
+- [ ] **Single sync endpoint** `GET /api/rides/sync?ride_id=` used by both UIs — ✅ done; see [RIDES_UBER_PARITY.md](./RIDES_UBER_PARITY.md) (Uber / **DiDi** México parity)
+- [ ] **Automated E2E** — `npm run test:rides-full` in CI on `rides-setup` — ✅ full lifecycle (accept→complete)
 
 ### Phase 2 — Real-time in-app (1 day dev)
 

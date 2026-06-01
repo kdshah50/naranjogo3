@@ -180,7 +180,7 @@ async function main() {
     .in("status", ["matched", "accepted", "arrived", "in_trip", "requested"]);
 
   if (openRides && openRides > 0) {
-    warn(`${openRides} open ride(s) for driver — may block dispatch; run rides-fix-driver-test-session.sql`);
+    fail(`${openRides} open ride(s) for driver — run supabase/scripts/rides-phase0-preview-setup.sql`);
   } else {
     ok("no open rides blocking driver");
   }
@@ -216,8 +216,8 @@ async function main() {
     );
 
   if (userDupes && userDupes > 1) {
-    warn(
-      `${userDupes} users rows for test phone — OTP may flip accounts; merge-duplicate-users-by-phone.sql when stable`,
+    fail(
+      `${userDupes} users rows for test phone — run supabase/scripts/rides-phase0-preview-setup.sql then rides-one-driver-cleanup.sql`,
     );
   } else {
     ok(`users rows for phone: ${userDupes ?? 0}`);

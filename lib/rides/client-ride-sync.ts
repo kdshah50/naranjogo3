@@ -1,10 +1,74 @@
 /**
- * Client-side ride UI sync — monotonic status only, safe for poll/SSE/POST races.
+ * Client-side ride UI sync — server is source of truth via GET /api/rides/sync.
  */
 
 import { mergeRideStatusRow, type RideStatusRow } from "@/lib/rides/ride-status-merge";
 
 export type { RideStatusRow };
+
+export type RideDriverPublic = {
+  display_name: string | null;
+  vehicle_make: string | null;
+  vehicle_model: string | null;
+  vehicle_year: number | null;
+  vehicle_color: string | null;
+  vehicle_plates: string | null;
+  last_lat: number | null;
+  last_lng: number | null;
+  last_location_at: string | null;
+};
+
+export type RideSyncPayload = {
+  ride: RideStatusRow | null;
+  trips: RideStatusRow[];
+  driver_public: RideDriverPublic | null;
+  canonical_user_id: string | null;
+  hide_tickets: string[];
+  debug: {
+    pool_size: number;
+    drop_reason: string | null;
+    raw_buyer_count: number;
+    verified_buyer_count: number;
+  };
+};
+
+/** Single sync load for rider + driver panels (Uber-style). */
+export async function fetchRideSync(rideId?: string | null): Promise<RideSyncPayload | null> {
+  const qs = new URLSearchParams();
+  const id = String(rideId ?? "").trim();
+  if (id) qs.set("ride_id", id);
+  const suffix = qs.toString() ? `?${qs}&` : "?";
+  const r = await fetch(`/api/rides/sync${suffix}_=${Date.now()}`, {
+    credentials: "include",
+    cache: "no-store",
+    headers: { Accept: "application/json", "Cache-Control": "no-cache" },
+  });
+  if (!r.ok) return null;
+  return (await r.json().catch(() => null)) as RideSyncPayload | null;
+}
+
+export function normalizeTicketCode(ticket: string | null | undefined): string {
+  return (ticket ?? "").trim().toUpperCase();
+}
+
+/** Canonical row for a ticket (handles duplicate ride_bookings per NG- ticket). */
+export async function fetchCanonicalRideByTicket<T extends RideStatusRow>(
+  ticketCode: string,
+): Promise<T | null> {
+  const ticket = normalizeTicketCode(ticketCode);
+  if (!ticket) return null;
+  const r = await fetch(
+    `/api/rides/active?ticket_code=${encodeURIComponent(ticket)}&_=${Date.now()}`,
+    {
+      credentials: "include",
+      cache: "no-store",
+      headers: { Accept: "application/json", "Cache-Control": "no-cache" },
+    },
+  );
+  if (!r.ok) return null;
+  const data = (await r.json().catch(() => ({}))) as { canonical_by_ticket?: T };
+  return data.canonical_by_ticket?.id ? data.canonical_by_ticket : null;
+}
 
 export async function fetchRideRowById<T extends RideStatusRow>(
   rideId: string,
