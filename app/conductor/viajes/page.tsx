@@ -7,6 +7,7 @@ import { useAppLang } from "@/hooks/use-app-lang";
 import { formatCurrencyMXN } from "@/lib/locale-format";
 import { RidesStagingBanner } from "@/components/RidesStagingBanner";
 import { useRideLiveStream } from "@/hooks/use-ride-live-stream";
+import { fetchRideRowById } from "@/lib/rides/client-ride-sync";
 import {
   mergeRideListsByStatus,
   mergeRideStatusRow,
@@ -114,6 +115,17 @@ function ConductorViajesInner() {
     });
   }, []);
 
+  /** Authoritative row by id — list/panel endpoints can lag behind POST. */
+  const refreshTripById = useCallback(
+    async (rideId: string) => {
+      const row = await fetchRideRowById<RideRow>(rideId);
+      if (!row) return;
+      if (isDriverActiveTrip(row)) upsertTripFromAction(row);
+      else setTrips((prev) => prev.filter((t) => t.id !== rideId));
+    },
+    [upsertTripFromAction],
+  );
+
   const applyServerTrips = useCallback((raw: RideRow[], source: string) => {
     const next = activeTripsFromPanel(raw);
     let merged = next;
@@ -210,10 +222,10 @@ function ConductorViajesInner() {
 
   useEffect(() => {
     void load("mount");
-    const ms = isOnline ? 5_000 : 8_000;
+    const ms = trips.length > 0 ? 3_000 : isOnline ? 5_000 : 8_000;
     const timer = setInterval(() => void load("poll"), ms);
     return () => clearInterval(timer);
-  }, [load, isOnline]);
+  }, [load, isOnline, trips.length]);
 
   useEffect(() => {
     const onPageShow = (event: PageTransitionEvent) => {
@@ -318,7 +330,7 @@ function ConductorViajesInner() {
       const rideFromAction = data.ride as RideRow | undefined;
       if (rideFromAction?.id) upsertTripFromAction(rideFromAction);
 
-      await load("action-" + path);
+      await refreshTripById(rideId);
 
       if (path === "complete") setActionSuccess(t.completeSuccess);
       else if (path === "accept") setActionSuccess(t.acceptSuccess);

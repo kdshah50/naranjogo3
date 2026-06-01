@@ -8,7 +8,10 @@ import { useAppLang } from "@/hooks/use-app-lang";
 import { COLONIA_KEYS, COLONIAS, coloniaLabel } from "@/lib/colonias";
 import { formatCurrencyMXN } from "@/lib/locale-format";
 import { useRideLiveStream } from "@/hooks/use-ride-live-stream";
-import { mergeRideStatusRow } from "@/lib/rides/ride-status-merge";
+import {
+  applyMonotonicRideRow,
+  fetchRideRowById,
+} from "@/lib/rides/client-ride-sync";
 import { rideStatusLabel, viajeCopy } from "@/lib/rides/ui-copy";
 
 type FareEstimate = {
@@ -83,17 +86,6 @@ function stripRideIdFromBrowserUrl() {
   window.history.replaceState(null, "", url.toString());
 }
 
-async function fetchBuyerRideRow(rideId: string): Promise<RideRow | null> {
-  const r = await fetch(`/api/rides/${rideId}?_=${Date.now()}`, {
-    credentials: "include",
-    cache: "no-store",
-    headers: { Accept: "application/json", "Cache-Control": "no-cache" },
-  });
-  if (!r.ok) return null;
-  const data = (await r.json().catch(() => ({}))) as { ride?: RideRow };
-  return data.ride?.id ? data.ride : null;
-}
-
 type SyncDebug = {
   source: string;
   at: string;
@@ -141,13 +133,13 @@ function trustServerVerifiedTrip(candidate: RideRow | null | undefined): RideRow
 /** Pinned / display rows may be stale — confirm with GET /api/rides/:id. */
 async function resolveOpenBuyerRide(candidate: RideRow | undefined): Promise<RideRow | null> {
   if (!candidate?.id || !isBuyerActiveStatus(candidate.status)) return null;
-  const truth = await fetchBuyerRideRow(candidate.id);
+  const truth = await fetchRideRowById<RideRow>(candidate.id);
   const row = truth ?? candidate;
   return isBuyerActiveStatus(row.status) ? row : null;
 }
 
 async function fetchOpenPinnedRide(rideId: string): Promise<RideRow | null> {
-  const truth = await fetchBuyerRideRow(rideId);
+  const truth = await fetchRideRowById<RideRow>(rideId);
   return truth && isBuyerActiveStatus(truth.status) ? truth : null;
 }
 
@@ -205,10 +197,7 @@ function ViajePageInner() {
     }
 
     if (row && isBuyerActiveStatus(row.status)) {
-      setRide((current) => {
-        if (!current || current.id !== row.id) return row;
-        return mergeRideStatusRow(current, row);
-      });
+      setRide((current) => applyMonotonicRideRow(current, row));
       setTerminalBanner(null);
       pinRideId(row.id);
       rideIdRef.current = row.id;
@@ -263,6 +252,22 @@ function ViajePageInner() {
     const reconcileQs = pinnedId
       ? `&reconcile_ride_id=${encodeURIComponent(pinnedId)}`
       : "";
+
+    const trackedIdEarly = rideIdRef.current ?? readPinnedRideId();
+    if (trackedIdEarly) {
+      const fresh = await fetchRideRowById<RideRow>(trackedIdEarly);
+      if (isStale()) return;
+      if (fresh) {
+        if (isBuyerActiveStatus(fresh.status)) {
+          applyServerRide(fresh, source, "GET by id");
+          return;
+        }
+        if (isTerminalRideStatus(fresh.status)) {
+          applyServerRide(fresh, source, "GET terminal");
+          return;
+        }
+      }
+    }
 
     const r = await fetch(`/api/rides/active?_=${Date.now()}${reconcileQs}`, {
       credentials: "include",
@@ -380,7 +385,7 @@ function ViajePageInner() {
   useEffect(() => {
     if (authError) return;
     const terminal = ride?.status === "completed" || ride?.status === "cancelled";
-    const ms = terminal ? 8_000 : 5_000;
+    const ms = terminal ? 8_000 : ride ? 3_000 : 5_000;
     const timer = setInterval(() => void refreshActiveRide("poll"), ms);
     return () => clearInterval(timer);
   }, [authError, ride?.status, refreshActiveRide]);
@@ -506,6 +511,10 @@ function ViajePageInner() {
         }
       }
       applyServerRide(rideRow, "request");
+      if (rideRow?.id) {
+        const fresh = await fetchRideRowById<RideRow>(rideRow.id);
+        if (fresh) applyServerRide(fresh, "request-verify");
+      }
       if (data.estimate) setEstimate(data.estimate);
     } finally {
       setRequesting(false);
@@ -528,7 +537,12 @@ function ViajePageInner() {
         setRequestError(data?.error ?? t.cancelFailed);
         return;
       }
-      applyServerRide(data.ride ?? null, "cancel");
+      const cancelled = data.ride as RideRow | undefined;
+      applyServerRide(cancelled ?? null, "cancel");
+      if (ride?.id) {
+        const fresh = await fetchRideRowById<RideRow>(ride.id);
+        if (fresh) applyServerRide(fresh, "cancel-verify");
+      }
     } finally {
       setActionBusy(false);
     }
