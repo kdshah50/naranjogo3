@@ -15,6 +15,22 @@ import {
 export const dynamic = "force-dynamic";
 
 const BUYER_OPEN_STATUSES = new Set(["requested", "matched", "accepted", "arrived", "in_trip"]);
+const DRIVER_OPEN_STATUSES = new Set(["matched", "accepted", "arrived", "in_trip"]);
+
+async function verifyDriverActiveTrips(
+  supabase: SupabaseClient,
+  rows: RideBookingRow[],
+): Promise<RideBookingRow[]> {
+  if (rows.length === 0) return [];
+  const verified = await Promise.all(
+    rows.map(async (row) => {
+      const fresh = await getRideById(supabase, row.id);
+      if (!fresh || !DRIVER_OPEN_STATUSES.has(fresh.status)) return null;
+      return fresh;
+    }),
+  );
+  return verified.filter((row): row is RideBookingRow => row !== null);
+}
 
 async function verifyBuyerActiveTrips(
   supabase: SupabaseClient,
@@ -79,11 +95,17 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const [buyerTripsRaw, buyerDisplayRaw, driverTrips] = await Promise.all([
+  const [buyerTripsRaw, buyerDisplayRaw, driverTripsRaw] = await Promise.all([
     listActiveTripsForBuyer(guard.supabase, guard.userId, accountOpts),
     latestBuyerRideForDisplay(guard.supabase, guard.userId, accountOpts),
     asDriver ? listActiveTripsForDriver(guard.supabase, guard.userId, accountOpts) : Promise.resolve([]),
   ]);
+
+  const { trips: driverTripsGhostFiltered } = await dropActiveRowsWithCompletedTicket(
+    guard.supabase,
+    driverTripsRaw,
+  );
+  const asDriverVerified = await verifyDriverActiveTrips(guard.supabase, driverTripsGhostFiltered);
 
   const { trips: buyerActiveTripsRaw, hideTickets } = await dropActiveRowsWithCompletedTicket(
     guard.supabase,
@@ -145,7 +167,7 @@ export async function GET(req: NextRequest) {
       as_buyer_active: primaryBuyerActive,
       as_buyer_display: buyerDisplay,
       as_buyer_has_open: buyerActiveTrips.length > 0,
-      as_driver: driverTrips,
+      as_driver: asDriverVerified,
       reconciled_ride: reconciledRide,
       canonical_by_ticket: canonicalByTicket,
       debug: {

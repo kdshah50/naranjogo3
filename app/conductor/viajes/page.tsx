@@ -8,9 +8,8 @@ import { useAppLang } from "@/hooks/use-app-lang";
 import { formatCurrencyMXN } from "@/lib/locale-format";
 import { RidesStagingBanner } from "@/components/RidesStagingBanner";
 import { useRideLiveStream } from "@/hooks/use-ride-live-stream";
-import { fetchActiveDriverTrips, fetchDriverPanel, fetchRideRowById } from "@/lib/rides/client-ride-sync";
+import { fetchDriverPanel, fetchRideRowById } from "@/lib/rides/client-ride-sync";
 import {
-  mergeDriverPanelTripList,
   mergeRideStatusRow,
   rideStatusRank,
 } from "@/lib/rides/ride-status-merge";
@@ -23,6 +22,23 @@ import {
 } from "@/lib/rides/ui-copy";
 
 const DRIVER_ACTIVE_STATUSES = new Set(["matched", "accepted", "arrived", "in_trip"]);
+const CONDUCTOR_TERMINAL_RIDE_KEY = "ng_conductor_terminal_ride_id";
+
+function readDriverTerminalRideId(): string | null {
+  if (typeof sessionStorage === "undefined") return null;
+  const id = sessionStorage.getItem(CONDUCTOR_TERMINAL_RIDE_KEY)?.trim();
+  return id || null;
+}
+
+function rememberDriverTerminalRideId(rideId: string) {
+  if (typeof sessionStorage === "undefined") return;
+  sessionStorage.setItem(CONDUCTOR_TERMINAL_RIDE_KEY, rideId);
+}
+
+function clearDriverTerminalRideId() {
+  if (typeof sessionStorage === "undefined") return;
+  sessionStorage.removeItem(CONDUCTOR_TERMINAL_RIDE_KEY);
+}
 
 function isDriverActiveTrip(row: RideRow): boolean {
   return DRIVER_ACTIVE_STATUSES.has(row.status);
@@ -81,6 +97,10 @@ function stripRideFromBrowserUrl() {
   window.history.replaceState(null, "", url.toString());
 }
 
+function isTerminalDriverTrip(status: string): boolean {
+  return status === "completed" || status === "cancelled";
+}
+
 export default function ConductorViajesPage() {
   return (
     <Suspense
@@ -109,10 +129,13 @@ function ConductorViajesInner() {
   const lang = useAppLang();
   const t = driverTripsCopy(lang);
   const searchParams = useSearchParams();
-  const pinnedRideId = String(searchParams.get("ride") ?? "").trim() || null;
+  const pinnedRideIdRef = useRef<string | null>(
+    String(searchParams.get("ride") ?? "").trim() || null,
+  );
 
   const [online, setOnline] = useState<DriverOnline | null>(null);
   const [trips, setTrips] = useState<RideRow[]>([]);
+  const [completedNotice, setCompletedNotice] = useState<RideRow | null>(null);
   const [syncDebug, setSyncDebug] = useState<SyncDebug | null>(null);
   const [panelError, setPanelError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -158,26 +181,65 @@ function ConductorViajesInner() {
   );
 
   const applyServerTrips = useCallback((raw: RideRow[], source: string) => {
-    const serverRows = activeTripsFromPanel(raw);
-    setTrips((prev) => {
-      const merged =
-        serverRows.length > 0 ? mergeDriverPanelTripList(prev, serverRows) : serverRows;
-      const next = activeTripsFromPanel(merged);
-      const apiSummary =
-        next.length === 0
-          ? "0 trips"
-          : `${next.length} trip · ${next[0].status}${next[0].ticket_code ? ` · ${next[0].ticket_code}` : ""}`;
-      setSyncDebug({
-        source,
-        at: new Date().toLocaleTimeString(),
-        apiCount: next.length,
-        apiSummary,
-        uiCount: next.length,
-        mismatch: false,
-      });
-      return next;
+    const next = activeTripsFromPanel(raw);
+    setTrips(next);
+    const apiSummary =
+      next.length === 0
+        ? "0 trips"
+        : `${next.length} trip · ${next[0].status}${next[0].ticket_code ? ` · ${next[0].ticket_code}` : ""}`;
+    setSyncDebug({
+      source,
+      at: new Date().toLocaleTimeString(),
+      apiCount: next.length,
+      apiSummary,
+      uiCount: next.length,
+      mismatch: false,
     });
   }, []);
+
+  /** Re-fetch each row by id — list/SSE payloads can lag behind DB (e.g. completed still shown as accepted). */
+  const verifyAndSetTrips = useCallback(
+    async (candidates: RideRow[], source: string) => {
+      const ids = new Set<string>();
+      for (const row of candidates) {
+        if (row?.id) ids.add(row.id);
+      }
+      const pin = pinnedRideIdRef.current;
+      if (pin) ids.add(pin);
+      const terminalHint = readDriverTerminalRideId();
+      if (terminalHint) ids.add(terminalHint);
+
+      const verified: RideRow[] = [];
+      let terminalPin: RideRow | null = null;
+
+      for (const id of ids) {
+        const fresh = await fetchRideRowById<RideRow>(id);
+        if (!fresh?.id) continue;
+        if (isDriverActiveTrip(fresh)) {
+          verified.push(fresh);
+        } else if (id === pin && isTerminalDriverTrip(fresh.status)) {
+          terminalPin = fresh;
+        } else if (id === terminalHint && isTerminalDriverTrip(fresh.status)) {
+          terminalPin = fresh;
+        }
+      }
+
+      if (pin && (terminalPin || !verified.some((r) => r.id === pin))) {
+        pinnedRideIdRef.current = null;
+        stripRideFromBrowserUrl();
+      }
+
+      applyServerTrips(verified, source);
+      if (verified.length === 0 && terminalPin) {
+        setCompletedNotice(terminalPin);
+        rememberDriverTerminalRideId(terminalPin.id);
+      } else if (verified.length > 0) {
+        setCompletedNotice(null);
+        clearDriverTerminalRideId();
+      }
+    },
+    [applyServerTrips],
+  );
 
   const mergeDriverOnline = useCallback((incoming: DriverOnline | null | undefined): DriverOnline | null => {
     if (!incoming) return null;
@@ -201,26 +263,10 @@ function ConductorViajesInner() {
     }
 
     const panel = panelResult.payload;
-    let nextTrips = (panel.trips ?? []) as RideRow[];
-
-    if (nextTrips.length === 0) {
-      const activeTrips = await fetchActiveDriverTrips();
-      if (activeTrips.length > 0) {
-        nextTrips = activeTrips as RideRow[];
-      }
-    }
-
-    if (pinnedRideId) {
-      const pinned = await fetchRideRowById<RideRow>(pinnedRideId);
-      if (pinned?.id && isDriverActiveTrip(pinned)) {
-        nextTrips = [pinned, ...nextTrips.filter((row) => row.id !== pinned.id)];
-      } else if (pinned?.id && !isDriverActiveTrip(pinned)) {
-        stripRideFromBrowserUrl();
-      }
-    }
+    const candidates = (panel.trips ?? []) as RideRow[];
 
     if (panel.driver) setOnline(mergeDriverOnline(panel.driver as DriverOnline));
-    applyServerTrips(nextTrips, source);
+    await verifyAndSetTrips(candidates, source);
 
     setCanonicalUserId(panel.canonical_user_id ?? panel.driver?.user_id ?? null);
     setSessionUserId(panel.session_user_id ?? null);
@@ -232,14 +278,20 @@ function ConductorViajesInner() {
       setPanelError(null);
     }
   }, [
-    applyServerTrips,
+    verifyAndSetTrips,
     mergeDriverOnline,
-    pinnedRideId,
     t.panelLoadFailed,
     t.inactiveDriverShort,
     t.noDriverProfile,
     t.ridesDisabled,
   ]);
+
+  useEffect(() => {
+    const id = searchParams.get("ride")?.trim();
+    if (id) pinnedRideIdRef.current = id;
+    stripRideFromBrowserUrl();
+    void load("url-pin");
+  }, [searchParams, load]);
 
   const displayError = actionError ?? panelError;
   const isOnline = Boolean(online?.is_online);
@@ -310,7 +362,7 @@ function ConductorViajesInner() {
         canonical_user_id?: string | null;
       };
       if (data.driver) setOnline(mergeDriverOnline(data.driver));
-      if (Array.isArray(data.trips)) applyServerTrips(data.trips, "SSE");
+      void load("SSE");
       if (data.canonical_user_id) setCanonicalUserId(data.canonical_user_id);
     },
     fallbackPollMs: 12_000,
@@ -450,7 +502,11 @@ function ConductorViajesInner() {
       void load("action");
 
       if (path === "complete") {
-        setTrips((prev) => prev.filter((t) => t.id !== rideId));
+        setTrips([]);
+        if (rideFromAction?.id) rememberDriverTerminalRideId(rideFromAction.id);
+        setCompletedNotice(rideFromAction ?? null);
+        pinnedRideIdRef.current = null;
+        stripRideFromBrowserUrl();
         setActionSuccess(t.completeSuccess);
       } else if (path === "accept") setActionSuccess(t.acceptSuccess);
       else if (path === "arrive") setActionSuccess(t.arriveSuccess);
@@ -595,7 +651,19 @@ function ConductorViajesInner() {
 
         {trips.length === 0 ? (
           <div className="mb-6 space-y-2">
-            <p className="text-sm text-[#1B4332]/70">{t.noActiveTrips}</p>
+            {completedNotice ? (
+              <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+                <p className="font-medium">{t.tripCompletedBanner}</p>
+                {completedNotice.ticket_code && (
+                  <p className="mt-1 font-mono font-bold">{completedNotice.ticket_code}</p>
+                )}
+                <p className="mt-1 text-xs opacity-80">
+                  {completedNotice.pickup_address} → {completedNotice.dropoff_address}
+                </p>
+              </div>
+            ) : (
+              <p className="text-sm text-[#1B4332]/70">{t.noActiveTrips}</p>
+            )}
             {canonicalUserId && (
               <p className="text-xs text-[#1B4332]/50 leading-relaxed">
                 {t.staleTripHint}{" "}
@@ -720,7 +788,7 @@ function ConductorViajesInner() {
           )}
         </section>
 
-        {isOnline && (
+        {isOnline && trips.length > 0 && (
           <section className="mb-6 rounded-2xl border border-[#1B4332]/15 bg-white/80 p-4 text-sm">
             <p className="font-medium">{t.flowGuideTitle}</p>
             <p className="mt-1 text-xs text-[#1B4332]/60 leading-relaxed">{t.flowWhereHint}</p>
