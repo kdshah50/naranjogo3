@@ -56,3 +56,19 @@ export function mergeRideListsByStatus<T extends RideStatusRow>(
   }
   return [...byId.values()];
 }
+
+/**
+ * Driver panel poll/SSE: server list is authoritative for which trips exist.
+ * Only merge lifecycle status per id — never keep local-only ghosts when server is empty.
+ */
+export function mergeDriverPanelTripList<T extends RideStatusRow>(
+  localRows: T[],
+  serverRows: T[],
+): T[] {
+  if (serverRows.length === 0) return [];
+  const localById = new Map(localRows.map((row) => [row.id, row]));
+  return serverRows.map((server) => {
+    const local = localById.get(server.id);
+    return local ? mergeRideStatusRow(local, server) : server;
+  });
+}

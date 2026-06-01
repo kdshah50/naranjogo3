@@ -9,7 +9,7 @@ import { RidesStagingBanner } from "@/components/RidesStagingBanner";
 import { useRideLiveStream } from "@/hooks/use-ride-live-stream";
 import { fetchRideRowById } from "@/lib/rides/client-ride-sync";
 import {
-  mergeRideListsByStatus,
+  mergeDriverPanelTripList,
   mergeRideStatusRow,
   rideStatusRank,
 } from "@/lib/rides/ride-status-merge";
@@ -130,7 +130,7 @@ function ConductorViajesInner() {
     const next = activeTripsFromPanel(raw);
     let merged = next;
     setTrips((prev) => {
-      merged = activeTripsFromPanel(mergeRideListsByStatus(prev, next));
+      merged = activeTripsFromPanel(mergeDriverPanelTripList(prev, next));
       return merged;
     });
     const apiSummary =
@@ -323,7 +323,12 @@ function ConductorViajesInner() {
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) {
-        setActionError(data?.error ?? t.actionFailed);
+        const raw = String(data?.error ?? "");
+        setActionError(
+          raw.includes("cancelled") ? t.tripAlreadyCancelled : raw || t.actionFailed,
+        );
+        await refreshTripById(rideId);
+        void load("action-error");
         return;
       }
 

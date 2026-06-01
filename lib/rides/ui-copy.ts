@@ -295,6 +295,8 @@ const DRIVER_TRIPS = {
     schemaMissing:
       "Falta migración Phase 4 en Supabase (columnas is_online en driver_profiles).",
     actionFailed: "Acción fallida",
+    tripAlreadyCancelled:
+      "Este viaje ya fue cancelado. La pantalla se actualizará — no uses ese ticket.",
     noActiveTrips: "No tienes viajes activos.",
     staleTripHint:
       "Si WhatsApp muestra un ticket, espera unos segundos o desconecta y vuelve a Conectar.",
@@ -350,6 +352,8 @@ const DRIVER_TRIPS = {
     schemaMissing:
       "Missing Phase 4 migration in Supabase (is_online columns on driver_profiles).",
     actionFailed: "Action failed",
+    tripAlreadyCancelled:
+      "This ride was already cancelled. The screen will refresh — do not use that ticket.",
     noActiveTrips: "You have no active rides.",
     staleTripHint:
       "If WhatsApp shows a ticket, wait a few seconds or go offline and Conectar again.",
