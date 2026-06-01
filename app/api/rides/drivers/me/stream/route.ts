@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { driverRideAccountIdPool } from "@/lib/rides/driver-account";
 import { loadDriverPanel } from "@/lib/rides/driver-panel-server";
 import { ridesRouteGuard } from "@/lib/rides/ride-route-guard";
 import type { RideBookingRow } from "@/lib/rides/ride-bookings-server";
@@ -47,9 +48,20 @@ export async function GET(req: NextRequest) {
     return new Response("Perfil de conductor no encontrado", { status: 404 });
   }
 
+  const driverIdPool = [
+    ...new Set(
+      [
+        driverId,
+        ...(await driverRideAccountIdPool(guard.supabase, guard.userId, {
+          authPhone: guard.authPhone,
+        })),
+      ].filter(Boolean),
+    ),
+  ].slice(0, 8);
+
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      let channel: ReturnType<typeof subscribeRideBookingChanges> | null = null;
+      const channels: ReturnType<typeof subscribeRideBookingChanges>[] = [];
       let reloadTimer: ReturnType<typeof setTimeout> | null = null;
 
       const pushPanel = async () => {
@@ -74,10 +86,14 @@ export async function GET(req: NextRequest) {
 
       await pushPanel();
 
-      channel = subscribeRideBookingChanges(guard.supabase, {
-        filter: `driver_id=eq.${driverId}`,
-        onChange: (_row: RideBookingRow) => scheduleReload(),
-      });
+      for (const poolId of driverIdPool) {
+        channels.push(
+          subscribeRideBookingChanges(guard.supabase, {
+            filter: `driver_id=eq.${poolId}`,
+            onChange: (_row: RideBookingRow) => scheduleReload(),
+          }),
+        );
+      }
 
       const keepalive = setInterval(() => {
         try {
@@ -90,7 +106,7 @@ export async function GET(req: NextRequest) {
       req.signal.addEventListener("abort", () => {
         clearInterval(keepalive);
         if (reloadTimer) clearTimeout(reloadTimer);
-        if (channel) void guard.supabase.removeChannel(channel);
+        for (const ch of channels) void guard.supabase.removeChannel(ch);
         try {
           controller.close();
         } catch {

@@ -7,7 +7,11 @@ import { useAppLang } from "@/hooks/use-app-lang";
 import { formatCurrencyMXN } from "@/lib/locale-format";
 import { RidesStagingBanner } from "@/components/RidesStagingBanner";
 import { useRideLiveStream } from "@/hooks/use-ride-live-stream";
-import { mergeRideListsByStatus, rideStatusRank } from "@/lib/rides/ride-status-merge";
+import {
+  mergeRideListsByStatus,
+  mergeRideStatusRow,
+  rideStatusRank,
+} from "@/lib/rides/ride-status-merge";
 import {
   driverFlowStepIndex,
   driverFlowSteps,
@@ -98,6 +102,17 @@ function ConductorViajesInner() {
 
   /** After Conectar succeeds, ignore stale panel polls that still say offline. */
   const onlineLatchUntilRef = useRef(0);
+
+  /** Apply trip row from POST /accept|arrive|start|complete — panel poll can lag behind DB. */
+  const upsertTripFromAction = useCallback((incoming: RideRow) => {
+    if (!incoming?.id || !isDriverActiveTrip(incoming)) return;
+    setTrips((prev) => {
+      const existing = prev.find((t) => t.id === incoming.id);
+      const row = existing ? mergeRideStatusRow(existing, incoming) : incoming;
+      const rest = prev.filter((t) => t.id !== incoming.id);
+      return activeTripsFromPanel([...rest, row]);
+    });
+  }, []);
 
   const applyServerTrips = useCallback((raw: RideRow[], source: string) => {
     const next = activeTripsFromPanel(raw);
@@ -299,6 +314,9 @@ function ConductorViajesInner() {
         setActionError(data?.error ?? t.actionFailed);
         return;
       }
+
+      const rideFromAction = data.ride as RideRow | undefined;
+      if (rideFromAction?.id) upsertTripFromAction(rideFromAction);
 
       await load("action-" + path);
 
