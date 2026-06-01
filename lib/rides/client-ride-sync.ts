@@ -18,11 +18,19 @@ export type RideDriverPublic = {
   last_location_at: string | null;
 };
 
+export type RideSyncDriver = {
+  user_id?: string;
+  is_online: boolean;
+  is_active_driver?: boolean;
+};
+
 export type RideSyncPayload = {
   ride: RideStatusRow | null;
   trips: RideStatusRow[];
+  driver: RideSyncDriver | null;
   driver_public: RideDriverPublic | null;
   canonical_user_id: string | null;
+  auth_phone_set?: boolean;
   hide_tickets: string[];
   debug: {
     pool_size: number;

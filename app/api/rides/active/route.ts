@@ -105,7 +105,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  let primaryBuyerActive = buyerActiveTrips[0] ?? null;
+  let primaryBuyerActive: RideBookingRow | null = buyerActiveTrips[0] ?? null;
   if (canonicalByTicket) {
     if (BUYER_OPEN_STATUSES.has(canonicalByTicket.status)) {
       const [verified] = await verifyBuyerActiveTrips(guard.supabase, [canonicalByTicket]);
