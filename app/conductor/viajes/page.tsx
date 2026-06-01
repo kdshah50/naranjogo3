@@ -99,6 +99,8 @@ function ConductorViajesInner() {
   const [busy, setBusy] = useState<string | null>(null);
   const [ticketByRide, setTicketByRide] = useState<Record<string, string>>({});
   const [canonicalUserId, setCanonicalUserId] = useState<string | null>(null);
+  const [sessionUserId, setSessionUserId] = useState<string | null>(null);
+  const [sessionLabel, setSessionLabel] = useState<string | null>(null);
 
   /** After Conectar succeeds, ignore stale panel polls that still say offline. */
   const onlineLatchUntilRef = useRef(0);
@@ -162,6 +164,7 @@ function ConductorViajesInner() {
     applyServerTrips((sync.trips ?? []) as RideRow[], source);
 
     setCanonicalUserId(sync.canonical_user_id ?? sync.driver?.user_id ?? null);
+    setSessionUserId(sync.session_user_id ?? null);
     if (!sync.driver?.is_active_driver && sync.driver !== null) {
       setPanelError(t.inactiveDriverShort);
     } else if (!sync.driver && !sync.canonical_user_id) {
@@ -181,6 +184,28 @@ function ConductorViajesInner() {
   const isOnline = Boolean(online?.is_online);
   const canGoOnline = Boolean(online?.is_active_driver);
   const panelStreamEnabled = !panelError && Boolean(canonicalUserId ?? online?.user_id);
+
+  useEffect(() => {
+    fetch("/api/auth/me", { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d?.user) return;
+        const name = String(d.user.display_name ?? "").trim();
+        const phone = String(d.user.phone ?? "").trim();
+        const tail = phone.length >= 4 ? phone.slice(-4) : "";
+        setSessionLabel(
+          name ? `${name}${tail ? ` · …${tail}` : ""}` : phone || String(d.user.id).slice(0, 8),
+        );
+      })
+      .catch(() => {});
+  }, []);
+
+  const wrongDriverAccount =
+    trips.length === 0 &&
+    Boolean(sessionUserId && canonicalUserId) &&
+    sessionUserId!.toLowerCase() !== canonicalUserId!.toLowerCase();
+
+  const showWrongAccountHint = trips.length === 0 && (!canGoOnline || wrongDriverAccount);
 
   useRideLiveStream({
     streamUrl: panelStreamEnabled ? "/api/rides/drivers/me/stream" : null,
@@ -339,6 +364,21 @@ function ConductorViajesInner() {
             {t.profile}
           </Link>
         </div>
+
+        {sessionLabel && (
+          <p className="mb-3 text-xs text-[#1B4332]/70">
+            {t.loggedInAs} <strong>{sessionLabel}</strong>
+            {!canGoOnline && (
+              <span className="block mt-1 text-amber-800">{t.driverPhoneHint}</span>
+            )}
+          </p>
+        )}
+
+        {showWrongAccountHint && (
+          <div className="mb-4 rounded-lg border border-amber-400 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            {t.wrongAccountForTrips}
+          </div>
+        )}
 
         {syncDebug && (
           <p

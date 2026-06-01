@@ -19,11 +19,11 @@ export function RidesStagingBanner() {
   const title = es ? "Prueba de viajes (staging)" : "Rides staging";
   const body = es
     ? STABLE_ORIGIN
-      ? `Usa siempre esta URL (no cambia en cada deploy): ${STABLE_ORIGIN} — una sola sesión OTP sirve para pasajero y conductor en dos pestañas.`
-      : "Local: RIDES_ENABLED=true npm run dev — una sesión OTP, /viaje y /conductor/viajes en dos pestañas."
+      ? `Usa siempre esta URL: ${STABLE_ORIGIN} — Pasajero (Kay): su teléfono en /viaje. Conductor (Carme): 415 181 6902 en /conductor/viajes. Son cuentas distintas; cierra sesión en /unete al cambiar de rol.`
+      : "Local: RIDES_ENABLED=true npm run dev — pasajero y conductor son cuentas OTP distintas (conductor: 415 181 6902)."
     : STABLE_ORIGIN
-      ? `Bookmark this URL (stable across deploys): ${STABLE_ORIGIN} — one OTP session works for rider + driver in two tabs.`
-      : "Local: RIDES_ENABLED=true npm run dev — one OTP, /viaje and /conductor/viajes in two tabs.";
+      ? `Bookmark this URL: ${STABLE_ORIGIN} — Rider (Kay): their phone on /viaje. Driver (Carme): 415 181 6902 on /conductor/viajes. Different accounts; log out at /unete when switching.`
+      : "Local: RIDES_ENABLED=true npm run dev — rider and driver use different OTP accounts (driver: 415 181 6902).";
 
   return (
     <div className="mb-4 rounded-lg border border-[#1B4332]/20 bg-[#E8F5E9] px-4 py-3 text-xs text-[#1B4332] leading-relaxed">

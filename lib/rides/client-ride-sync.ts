@@ -30,6 +30,7 @@ export type RideSyncPayload = {
   driver: RideSyncDriver | null;
   driver_public: RideDriverPublic | null;
   canonical_user_id: string | null;
+  session_user_id?: string | null;
   auth_phone_set?: boolean;
   hide_tickets: string[];
   debug: {

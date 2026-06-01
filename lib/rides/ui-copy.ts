@@ -321,6 +321,10 @@ const DRIVER_TRIPS = {
     flowWhereHint:
       "Los botones aparecen en cada viaje activo — no en Conectar. Si no ves viajes, espera o revisa el aviso amarillo.",
     tripRecoveredHint: "Viaje recuperado de la base de datos — continúa con el paso actual.",
+    loggedInAs: "Sesión:",
+    wrongAccountForTrips:
+      "Este viaje está asignado al conductor Carme (415 181 6902). Cierra sesión en /unete e inicia con el teléfono del conductor — no con la cuenta del pasajero.",
+    driverPhoneHint: "Conductor de prueba: 415 181 6902",
   },
   en: {
     title: "Assigned rides",
@@ -378,6 +382,10 @@ const DRIVER_TRIPS = {
     flowWhereHint:
       "Buttons appear on each active ride card — not on Go online. If you see no rides, wait or check the yellow notice.",
     tripRecoveredHint: "Ride recovered from the database — continue with the current step.",
+    loggedInAs: "Logged in as:",
+    wrongAccountForTrips:
+      "This ride is assigned to driver Carme (415 181 6902). Log out at /unete and sign in with the driver phone — not the rider account.",
+    driverPhoneHint: "Test driver phone: 415 181 6902",
   },
 } as const;
 
