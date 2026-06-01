@@ -10,6 +10,7 @@ import { RidesStagingBanner } from "@/components/RidesStagingBanner";
 import { useRideLiveStream } from "@/hooks/use-ride-live-stream";
 import { fetchActiveDriverTrips, fetchDriverPanel, fetchRideRowById } from "@/lib/rides/client-ride-sync";
 import {
+  mergeDriverPanelTripList,
   mergeRideStatusRow,
   rideStatusRank,
 } from "@/lib/rides/ride-status-merge";
@@ -145,21 +146,24 @@ function ConductorViajesInner() {
   );
 
   const applyServerTrips = useCallback((raw: RideRow[], source: string) => {
-    const next = activeTripsFromPanel(raw);
-    setTrips(next);
-    const apiSummary =
-      next.length === 0
-        ? "0 trips"
-        : `${next.length} trip · ${next[0].status}${next[0].ticket_code ? ` · ${next[0].ticket_code}` : ""}`;
-    setSyncDebug({
-      source,
-      at: new Date().toLocaleTimeString(),
-      apiCount: next.length,
-      apiSummary,
-      uiCount: next.length,
-      mismatch: false,
+    const serverRows = activeTripsFromPanel(raw);
+    setTrips((prev) => {
+      const next =
+        serverRows.length > 0 ? mergeDriverPanelTripList(prev, serverRows) : serverRows;
+      const apiSummary =
+        next.length === 0
+          ? "0 trips"
+          : `${next.length} trip · ${next[0].status}${next[0].ticket_code ? ` · ${next[0].ticket_code}` : ""}`;
+      setSyncDebug({
+        source,
+        at: new Date().toLocaleTimeString(),
+        apiCount: next.length,
+        apiSummary,
+        uiCount: next.length,
+        mismatch: false,
+      });
+      return next;
     });
-    return next;
   }, []);
 
   const mergeDriverOnline = useCallback((incoming: DriverOnline | null | undefined): DriverOnline | null => {
@@ -306,6 +310,12 @@ function ConductorViajesInner() {
   }, [load, isOnline, trips.length]);
 
   useEffect(() => {
+    const onFocus = () => void load("focus");
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [load]);
+
+  useEffect(() => {
     if (trips.length > 0 || debugChecks !== null || debugBusy) return;
     const timer = setTimeout(() => void runTripsDebug(), 1500);
     return () => clearTimeout(timer);
@@ -420,6 +430,7 @@ function ConductorViajesInner() {
       if (rideFromAction?.id) upsertTripFromAction(rideFromAction);
 
       await refreshTripById(rideId);
+      void load("action");
 
       if (path === "complete") setActionSuccess(t.completeSuccess);
       else if (path === "accept") setActionSuccess(t.acceptSuccess);

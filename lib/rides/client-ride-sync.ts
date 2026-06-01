@@ -81,6 +81,23 @@ export async function fetchActiveDriverTrips(): Promise<RideStatusRow[]> {
   return Array.isArray(data.as_driver) ? data.as_driver : [];
 }
 
+/** Active ride for rider UI when sync returns empty. */
+export async function fetchActiveBuyerRide(): Promise<RideStatusRow | null> {
+  const r = await fetch(`/api/rides/active?_=${Date.now()}`, {
+    credentials: "include",
+    cache: "no-store",
+    headers: { Accept: "application/json", "Cache-Control": "no-cache" },
+  });
+  if (!r.ok) return null;
+  const data = (await r.json().catch(() => ({}))) as {
+    as_buyer_active?: RideStatusRow;
+    as_buyer?: RideStatusRow[];
+  };
+  if (data.as_buyer_active?.id) return data.as_buyer_active;
+  const first = data.as_buyer?.[0];
+  return first?.id ? first : null;
+}
+
 /** Single sync load for rider + driver panels (Uber-style). */
 export async function fetchRideSync(rideId?: string | null): Promise<RideSyncFetchResult> {
   const qs = new URLSearchParams();

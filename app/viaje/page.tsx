@@ -9,10 +9,13 @@ import { COLONIA_KEYS, COLONIAS, coloniaLabel } from "@/lib/colonias";
 import { formatCurrencyMXN } from "@/lib/locale-format";
 import { useRideLiveStream } from "@/hooks/use-ride-live-stream";
 import {
+  applyMonotonicRideRow,
+  fetchActiveBuyerRide,
   fetchRideRowById,
   fetchRideSync,
   type RideDriverPublic,
 } from "@/lib/rides/client-ride-sync";
+import { mergeRideStatusRow } from "@/lib/rides/ride-status-merge";
 import { rideStatusLabel, viajeCopy } from "@/lib/rides/ui-copy";
 
 type FareEstimate = {
@@ -200,10 +203,14 @@ function ViajePageInner() {
     }
 
     if (row && isBuyerActiveStatus(row.status)) {
-      setRide(row);
+      setRide((prev) => {
+        const next =
+          prev && prev.id === row.id ? mergeRideStatusRow(prev, row) : row;
+        pinRideId(next.id);
+        rideIdRef.current = next.id;
+        return next;
+      });
       setTerminalBanner(null);
-      pinRideId(row.id);
-      rideIdRef.current = row.id;
       setSyncDebug(syncDebugForRow(row, source, note, dropReason));
       return;
     }
@@ -271,6 +278,18 @@ function ViajePageInner() {
       return;
     }
 
+    const activeFallback = (await fetchActiveBuyerRide()) as RideRow | null;
+    if (isStale()) return;
+    if (activeFallback?.id && isBuyerActiveStatus(activeFallback.status)) {
+      applyServerRide(
+        activeFallback,
+        `${source}+active`,
+        `${activeFallback.status}${activeFallback.ticket_code ? ` · ${activeFallback.ticket_code}` : ""}${debugSuffix}`,
+        debugMeta?.drop_reason ?? null,
+      );
+      return;
+    }
+
     if (!isStale() && Date.now() < requestLatchUntilRef.current && pinnedId) {
       return;
     }
@@ -290,13 +309,29 @@ function ViajePageInner() {
     onEvent: (payload) => {
       const row = (payload as { ride?: RideRow }).ride;
       if (!row?.id) return;
-      applyServerRide(row, "SSE");
+      setRide((prev) => {
+        const next = applyMonotonicRideRow(prev, row);
+        if (isBuyerActiveStatus(next.status)) {
+          pinRideId(next.id);
+          rideIdRef.current = next.id;
+        }
+        return next;
+      });
+      setDriverPublic((payload as { driver_public?: RideDriverPublic }).driver_public ?? null);
+      setSyncDebug(syncDebugForRow(row, "SSE"));
     },
     fallbackPollMs: 12_000,
     onFallbackPoll: () => void refreshActiveRide("poll-backup"),
   });
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const rideParam = url.searchParams.get("ride")?.trim();
+    if (rideParam) {
+      pinRideId(rideParam);
+      rideIdRef.current = rideParam;
+    }
     stripRideIdFromBrowserUrl();
   }, []);
 
