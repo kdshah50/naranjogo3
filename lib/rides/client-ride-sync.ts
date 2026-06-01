@@ -41,8 +41,48 @@ export type RideSyncPayload = {
   };
 };
 
+export type RideSyncFetchResult =
+  | { ok: true; payload: RideSyncPayload }
+  | { ok: false; status: number };
+
+export type DriverPanelPayload = {
+  driver: RideSyncDriver | null;
+  trips: RideStatusRow[];
+  canonical_user_id: string | null;
+  session_user_id?: string | null;
+  auth_phone_set?: boolean;
+  hide_tickets?: string[];
+};
+
+/** Driver panel load — dedicated endpoint (preferred for /conductor/viajes). */
+export async function fetchDriverPanel(): Promise<
+  { ok: true; payload: DriverPanelPayload } | { ok: false; status: number }
+> {
+  const r = await fetch(`/api/rides/drivers/me/panel?_=${Date.now()}`, {
+    credentials: "include",
+    cache: "no-store",
+    headers: { Accept: "application/json", "Cache-Control": "no-cache" },
+  });
+  if (!r.ok) return { ok: false, status: r.status };
+  const payload = (await r.json().catch(() => null)) as DriverPanelPayload | null;
+  if (!payload) return { ok: false, status: r.status };
+  return { ok: true, payload };
+}
+
+/** Active rides fallback — as_driver array when panel list is empty. */
+export async function fetchActiveDriverTrips(): Promise<RideStatusRow[]> {
+  const r = await fetch(`/api/rides/active?_=${Date.now()}`, {
+    credentials: "include",
+    cache: "no-store",
+    headers: { Accept: "application/json", "Cache-Control": "no-cache" },
+  });
+  if (!r.ok) return [];
+  const data = (await r.json().catch(() => ({}))) as { as_driver?: RideStatusRow[] };
+  return Array.isArray(data.as_driver) ? data.as_driver : [];
+}
+
 /** Single sync load for rider + driver panels (Uber-style). */
-export async function fetchRideSync(rideId?: string | null): Promise<RideSyncPayload | null> {
+export async function fetchRideSync(rideId?: string | null): Promise<RideSyncFetchResult> {
   const qs = new URLSearchParams();
   const id = String(rideId ?? "").trim();
   if (id) qs.set("ride_id", id);
@@ -52,8 +92,10 @@ export async function fetchRideSync(rideId?: string | null): Promise<RideSyncPay
     cache: "no-store",
     headers: { Accept: "application/json", "Cache-Control": "no-cache" },
   });
-  if (!r.ok) return null;
-  return (await r.json().catch(() => null)) as RideSyncPayload | null;
+  if (!r.ok) return { ok: false, status: r.status };
+  const payload = (await r.json().catch(() => null)) as RideSyncPayload | null;
+  if (!payload) return { ok: false, status: r.status };
+  return { ok: true, payload };
 }
 
 export function normalizeTicketCode(ticket: string | null | undefined): string {

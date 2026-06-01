@@ -2,12 +2,13 @@
 
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { withLang } from "@/components/BuyerRetentionPanel";
 import { useAppLang } from "@/hooks/use-app-lang";
 import { formatCurrencyMXN } from "@/lib/locale-format";
 import { RidesStagingBanner } from "@/components/RidesStagingBanner";
 import { useRideLiveStream } from "@/hooks/use-ride-live-stream";
-import { fetchRideRowById, fetchRideSync } from "@/lib/rides/client-ride-sync";
+import { fetchActiveDriverTrips, fetchDriverPanel, fetchRideRowById } from "@/lib/rides/client-ride-sync";
 import {
   mergeRideStatusRow,
   rideStatusRank,
@@ -85,9 +86,21 @@ export default function ConductorViajesPage() {
   );
 }
 
+const STABLE_ORIGIN = process.env.NEXT_PUBLIC_STABLE_ORIGIN?.replace(/\/$/, "") ?? "";
+
+function isLikelyRidesHost(): boolean {
+  if (typeof window === "undefined") return true;
+  const env = process.env.NEXT_PUBLIC_VERCEL_ENV ?? "";
+  if (env === "preview" || env === "development") return true;
+  const h = window.location.hostname;
+  return h.includes("vercel.app") || h === "localhost" || h === "127.0.0.1";
+}
+
 function ConductorViajesInner() {
   const lang = useAppLang();
   const t = driverTripsCopy(lang);
+  const searchParams = useSearchParams();
+  const pinnedRideId = String(searchParams.get("ride") ?? "").trim() || null;
 
   const [online, setOnline] = useState<DriverOnline | null>(null);
   const [trips, setTrips] = useState<RideRow[]>([]);
@@ -101,6 +114,10 @@ function ConductorViajesInner() {
   const [canonicalUserId, setCanonicalUserId] = useState<string | null>(null);
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
   const [sessionLabel, setSessionLabel] = useState<string | null>(null);
+  const [sessionPhone, setSessionPhone] = useState<string | null>(null);
+  const [wrongHost, setWrongHost] = useState(false);
+  const [debugChecks, setDebugChecks] = useState<string[] | null>(null);
+  const [debugBusy, setDebugBusy] = useState(false);
 
   /** After Conectar succeeds, ignore stale panel polls that still say offline. */
   const onlineLatchUntilRef = useRef(0);
@@ -154,20 +171,43 @@ function ConductorViajesInner() {
   }, []);
 
   const load = useCallback(async (source = "poll") => {
-    const sync = await fetchRideSync();
-    if (!sync) {
-      setPanelError(t.panelLoadFailed);
+    const panelResult = await fetchDriverPanel();
+    if (!panelResult.ok) {
+      if (panelResult.status === 404) {
+        setPanelError(t.ridesDisabled);
+      } else if (panelResult.status === 401) {
+        setPanelError(t.panelLoadFailed);
+      } else {
+        setPanelError(t.panelLoadFailed);
+      }
       return;
     }
 
-    if (sync.driver) setOnline(mergeDriverOnline(sync.driver as DriverOnline));
-    applyServerTrips((sync.trips ?? []) as RideRow[], source);
+    const panel = panelResult.payload;
+    let nextTrips = (panel.trips ?? []) as RideRow[];
 
-    setCanonicalUserId(sync.canonical_user_id ?? sync.driver?.user_id ?? null);
-    setSessionUserId(sync.session_user_id ?? null);
-    if (!sync.driver?.is_active_driver && sync.driver !== null) {
+    if (nextTrips.length === 0) {
+      const activeTrips = await fetchActiveDriverTrips();
+      if (activeTrips.length > 0) {
+        nextTrips = activeTrips as RideRow[];
+      }
+    }
+
+    if (pinnedRideId) {
+      const pinned = await fetchRideRowById<RideRow>(pinnedRideId);
+      if (pinned?.id && isDriverActiveTrip(pinned)) {
+        nextTrips = [pinned, ...nextTrips.filter((row) => row.id !== pinned.id)];
+      }
+    }
+
+    if (panel.driver) setOnline(mergeDriverOnline(panel.driver as DriverOnline));
+    applyServerTrips(nextTrips, source);
+
+    setCanonicalUserId(panel.canonical_user_id ?? panel.driver?.user_id ?? null);
+    setSessionUserId(panel.session_user_id ?? null);
+    if (!panel.driver?.is_active_driver && panel.driver !== null) {
       setPanelError(t.inactiveDriverShort);
-    } else if (!sync.driver && !sync.canonical_user_id) {
+    } else if (!panel.driver && !panel.canonical_user_id) {
       setPanelError(t.noDriverProfile);
     } else {
       setPanelError(null);
@@ -175,9 +215,11 @@ function ConductorViajesInner() {
   }, [
     applyServerTrips,
     mergeDriverOnline,
+    pinnedRideId,
     t.panelLoadFailed,
     t.inactiveDriverShort,
     t.noDriverProfile,
+    t.ridesDisabled,
   ]);
 
   const displayError = actionError ?? panelError;
@@ -186,12 +228,17 @@ function ConductorViajesInner() {
   const panelStreamEnabled = !panelError && Boolean(canonicalUserId ?? online?.user_id);
 
   useEffect(() => {
+    setWrongHost(!isLikelyRidesHost());
+  }, []);
+
+  useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (!d?.user) return;
         const name = String(d.user.display_name ?? "").trim();
         const phone = String(d.user.phone ?? "").trim();
+        setSessionPhone(phone || null);
         const tail = phone.length >= 4 ? phone.slice(-4) : "";
         setSessionLabel(
           name ? `${name}${tail ? ` · …${tail}` : ""}` : phone || String(d.user.id).slice(0, 8),
@@ -206,6 +253,33 @@ function ConductorViajesInner() {
     sessionUserId!.toLowerCase() !== canonicalUserId!.toLowerCase();
 
   const showWrongAccountHint = trips.length === 0 && (!canGoOnline || wrongDriverAccount);
+
+  const isRiderTestSession =
+    Boolean(sessionPhone) &&
+    (sessionPhone!.endsWith("8527") || sessionPhone!.includes("7326908527"));
+  const isDriverTestSession =
+    Boolean(sessionPhone) &&
+    (sessionPhone!.endsWith("6902") || sessionPhone!.includes("4151816902"));
+
+  const runTripsDebug = async () => {
+    setDebugBusy(true);
+    try {
+      const r = await fetch("/api/rides-drivers-trips-debug", {
+        credentials: "include",
+        cache: "no-store",
+      });
+      if (r.status === 404) {
+        setDebugChecks([t.ridesDisabled]);
+        return;
+      }
+      const data = await r.json().catch(() => ({}));
+      setDebugChecks(Array.isArray(data.checks) ? data.checks : [t.panelLoadFailed]);
+    } catch {
+      setDebugChecks([t.panelLoadFailed]);
+    } finally {
+      setDebugBusy(false);
+    }
+  };
 
   useRideLiveStream({
     streamUrl: panelStreamEnabled ? "/api/rides/drivers/me/stream" : null,
@@ -230,6 +304,12 @@ function ConductorViajesInner() {
     const timer = setInterval(() => void load("poll"), ms);
     return () => clearInterval(timer);
   }, [load, isOnline, trips.length]);
+
+  useEffect(() => {
+    if (trips.length > 0 || debugChecks !== null || debugBusy) return;
+    const timer = setTimeout(() => void runTripsDebug(), 1500);
+    return () => clearTimeout(timer);
+  }, [trips.length, debugChecks, debugBusy]);
 
   useEffect(() => {
     const onPageShow = (event: PageTransitionEvent) => {
@@ -355,6 +435,17 @@ function ConductorViajesInner() {
       <div className="mx-auto max-w-lg px-4 py-8">
         <RidesStagingBanner />
 
+        {wrongHost && (
+          <div className="mb-4 rounded-lg border border-red-400 bg-red-50 px-4 py-3 text-sm text-red-950">
+            <p>{t.ridesDisabled}</p>
+            {STABLE_ORIGIN && (
+              <a href={STABLE_ORIGIN + "/conductor/viajes"} className="mt-2 inline-block font-medium underline break-all">
+                {STABLE_ORIGIN}/conductor/viajes
+              </a>
+            )}
+          </div>
+        )}
+
         <div className="mb-6 flex items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold">{t.title}</h1>
@@ -366,17 +457,56 @@ function ConductorViajesInner() {
         </div>
 
         {sessionLabel && (
-          <p className="mb-3 text-xs text-[#1B4332]/70">
-            {t.loggedInAs} <strong>{sessionLabel}</strong>
-            {!canGoOnline && (
+          <div
+            className={`mb-3 rounded-lg border px-4 py-3 text-sm ${
+              isDriverTestSession
+                ? "border-emerald-300 bg-emerald-50 text-emerald-950"
+                : isRiderTestSession
+                  ? "border-red-300 bg-red-50 text-red-950"
+                  : "border-[#1B4332]/15 bg-white/90 text-[#1B4332]/80"
+            }`}
+          >
+            <p>
+              {t.loggedInAs} <strong>{sessionLabel}</strong>
+              {sessionPhone && (
+                <span className="block font-mono text-xs mt-0.5 opacity-80">{sessionPhone}</span>
+              )}
+            </p>
+            {isRiderTestSession && (
+              <p className="mt-2 text-xs font-medium">{t.riderAccountOnDriverPanel}</p>
+            )}
+            {isDriverTestSession && canGoOnline && (
+              <p className="mt-2 text-xs">{t.driverAccountOk}</p>
+            )}
+            {!canGoOnline && !isRiderTestSession && (
               <span className="block mt-1 text-amber-800">{t.driverPhoneHint}</span>
             )}
-          </p>
+          </div>
         )}
 
         {showWrongAccountHint && (
           <div className="mb-4 rounded-lg border border-amber-400 bg-amber-50 px-4 py-3 text-sm text-amber-950">
             {t.wrongAccountForTrips}
+          </div>
+        )}
+
+        {trips.length === 0 && !wrongHost && (
+          <div className="mb-4 rounded-lg border border-[#1B4332]/15 bg-white/90 px-4 py-3 text-sm">
+            <button
+              type="button"
+              disabled={debugBusy}
+              onClick={() => void runTripsDebug()}
+              className="font-medium underline disabled:opacity-50"
+            >
+              {debugBusy ? "…" : t.diagnoseTrips}
+            </button>
+            {debugChecks && debugChecks.length > 0 && (
+              <ul className="mt-2 list-disc pl-5 text-xs text-[#1B4332]/80 space-y-1">
+                {debugChecks.map((c) => (
+                  <li key={c}>{c}</li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
 
@@ -406,71 +536,6 @@ function ConductorViajesInner() {
           </div>
         )}
 
-        <section className="mb-6 rounded-2xl bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="font-medium">{isOnline ? t.online : t.offline}</p>
-              <p className="text-sm text-[#1B4332]/70">
-                {isOnline ? t.onlineHint : t.offlineHint}
-              </p>
-            </div>
-            <button
-              type="button"
-              disabled={busy === "online" || !canGoOnline}
-              onClick={() => toggleOnline(!isOnline)}
-              className={`rounded-full px-5 py-2 text-sm font-medium text-white disabled:opacity-50 ${
-                isOnline ? "bg-amber-700" : "bg-[#1B4332]"
-              }`}
-            >
-              {busy === "online" ? "…" : isOnline ? t.disconnect : t.connect}
-            </button>
-          </div>
-          {!canGoOnline && (
-            <p className="mt-3 text-xs text-amber-800 leading-relaxed">{t.connectBlockedHint}</p>
-          )}
-        </section>
-
-        {isOnline && (
-          <section className="mb-6 rounded-2xl border border-[#1B4332]/15 bg-white/80 p-4 text-sm">
-            <p className="font-medium">{t.flowGuideTitle}</p>
-            <p className="mt-1 text-xs text-[#1B4332]/60 leading-relaxed">{t.flowWhereHint}</p>
-            <ol className="mt-3 space-y-2">
-              {driverFlowSteps(lang).map((step, i) => {
-                const activeIdx =
-                  trips.length > 0
-                    ? Math.max(...trips.map((tr) => driverFlowStepIndex(tr.status)))
-                    : -1;
-                const isCurrent = i === activeIdx;
-                const isDone = activeIdx >= 0 && i < activeIdx;
-                return (
-                  <li
-                    key={step.key}
-                    className={`flex gap-2 rounded-lg px-2 py-1 ${
-                      isCurrent
-                        ? "bg-emerald-50 font-medium text-emerald-900"
-                        : isDone
-                          ? "text-[#1B4332]/50 line-through"
-                          : "text-[#1B4332]/80"
-                    }`}
-                  >
-                    <span className="font-mono text-xs w-5 shrink-0">{i + 1}.</span>
-                    <span>{step.label}</span>
-                  </li>
-                );
-              })}
-            </ol>
-          </section>
-        )}
-
-        {gpsNotice && (
-          <div
-            className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
-            role="status"
-          >
-            {gpsNotice}
-          </div>
-        )}
-
         {displayError && (
           <div
             className="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800"
@@ -489,10 +554,19 @@ function ConductorViajesInner() {
           </div>
         )}
 
+        {gpsNotice && (
+          <div
+            className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+            role="status"
+          >
+            {gpsNotice}
+          </div>
+        )}
+
         {trips.length === 0 ? (
-          <div className="space-y-2">
+          <div className="mb-6 space-y-2">
             <p className="text-sm text-[#1B4332]/70">{t.noActiveTrips}</p>
-            {isOnline && canonicalUserId && (
+            {canonicalUserId && (
               <p className="text-xs text-[#1B4332]/50 leading-relaxed">
                 {t.staleTripHint}{" "}
                 {t.driverIdLabel}{" "}
@@ -501,13 +575,13 @@ function ConductorViajesInner() {
             )}
           </div>
         ) : (
-          <ul className="space-y-4">
+          <ul className="mb-6 space-y-4">
             {trips.map((trip) => {
               const stepIdx = driverFlowStepIndex(trip.status);
               const currentStep =
                 stepIdx >= 0 ? driverFlowSteps(lang)[stepIdx] : null;
               return (
-                <li key={trip.id} className="rounded-2xl bg-white p-5 shadow-sm space-y-3">
+                <li key={trip.id} className="rounded-2xl bg-white p-5 shadow-sm space-y-3 border-2 border-emerald-400">
                   {currentStep && (
                     <p className="text-xs font-semibold text-emerald-800">
                       Paso {stepIdx + 1}: {currentStep.buttonLabel}
@@ -590,6 +664,62 @@ function ConductorViajesInner() {
               );
             })}
           </ul>
+        )}
+
+        <section className="mb-6 rounded-2xl bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="font-medium">{isOnline ? t.online : t.offline}</p>
+              <p className="text-sm text-[#1B4332]/70">
+                {isOnline ? t.onlineHint : t.offlineHint}
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={busy === "online" || !canGoOnline}
+              onClick={() => toggleOnline(!isOnline)}
+              className={`rounded-full px-5 py-2 text-sm font-medium text-white disabled:opacity-50 ${
+                isOnline ? "bg-amber-700" : "bg-[#1B4332]"
+              }`}
+            >
+              {busy === "online" ? "…" : isOnline ? t.disconnect : t.connect}
+            </button>
+          </div>
+          {!canGoOnline && (
+            <p className="mt-3 text-xs text-amber-800 leading-relaxed">{t.connectBlockedHint}</p>
+          )}
+        </section>
+
+        {isOnline && (
+          <section className="mb-6 rounded-2xl border border-[#1B4332]/15 bg-white/80 p-4 text-sm">
+            <p className="font-medium">{t.flowGuideTitle}</p>
+            <p className="mt-1 text-xs text-[#1B4332]/60 leading-relaxed">{t.flowWhereHint}</p>
+            <ol className="mt-3 space-y-2">
+              {driverFlowSteps(lang).map((step, i) => {
+                const activeIdx =
+                  trips.length > 0
+                    ? Math.max(...trips.map((tr) => driverFlowStepIndex(tr.status)))
+                    : -1;
+                const isCurrent = i === activeIdx;
+                const isDone = activeIdx >= 0 && i < activeIdx;
+                return (
+                  <li
+                    key={step.key}
+                    className={`flex gap-2 rounded-lg px-2 py-1 ${
+                      isCurrent
+                        ? "bg-emerald-50 font-medium text-emerald-900"
+                        : isDone
+                          ? "text-[#1B4332]/50 line-through"
+                          : "text-[#1B4332]/80"
+                    }`}
+                  >
+                    <span className="font-mono text-xs w-5 shrink-0">{i + 1}.</span>
+                    <span>{step.label}</span>
+                  </li>
+                );
+              })}
+            </ol>
+          </section>
         )}
       </div>
     </main>

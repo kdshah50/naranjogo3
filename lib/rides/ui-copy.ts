@@ -325,6 +325,10 @@ const DRIVER_TRIPS = {
     wrongAccountForTrips:
       "Este viaje está asignado al conductor Carme (415 181 6902). Cierra sesión en /unete e inicia con el teléfono del conductor — no con la cuenta del pasajero.",
     driverPhoneHint: "Conductor de prueba: 415 181 6902",
+    diagnoseTrips: "¿Por qué no hay viajes? (diagnóstico)",
+    riderAccountOnDriverPanel:
+      "Esta es la cuenta del pasajero (Kay). Cierra sesión en /unete e inicia con 415 181 6902.",
+    driverAccountOk: "Cuenta de conductor correcta — el viaje debería aparecer abajo.",
   },
   en: {
     title: "Assigned rides",
@@ -343,7 +347,7 @@ const DRIVER_TRIPS = {
     profileLoadFailed: "Could not load driver profile",
     panelLoadFailed: "Could not load driver panel",
     ridesDisabled:
-      "Rides are not enabled on this URL (use the Vercel preview with RIDES_ENABLED=true, not production).",
+      "Rides are not enabled on this URL (naranjogo.com.mx). Open the Vercel preview with RIDES_ENABLED=true.",
     noDriverProfile:
       "No driver profile for this session. Log out at /unete and sign in again with 415 181 6902.",
     sessionMissingPhone: "Session has no phone — log out and sign in again.",
@@ -386,6 +390,10 @@ const DRIVER_TRIPS = {
     wrongAccountForTrips:
       "This ride is assigned to driver Carme (415 181 6902). Log out at /unete and sign in with the driver phone — not the rider account.",
     driverPhoneHint: "Test driver phone: 415 181 6902",
+    diagnoseTrips: "Why no trips? (run diagnosis)",
+    riderAccountOnDriverPanel:
+      "This is the rider account (Kay). Log out at /unete and sign in with 415 181 6902.",
+    driverAccountOk: "Driver account OK — the trip should appear below.",
   },
 } as const;
 

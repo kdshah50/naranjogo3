@@ -233,10 +233,10 @@ function ViajePageInner() {
     const isStale = () => seq !== refreshSeqRef.current;
 
     const pinnedId = rideIdRef.current ?? readPinnedRideId();
-    const sync = await fetchRideSync(pinnedId ?? undefined);
+    const syncResult = await fetchRideSync(pinnedId ?? undefined);
     if (isStale()) return;
 
-    if (!sync) {
+    if (!syncResult.ok) {
       if (pinnedId) {
         const pinnedOpen = await fetchOpenPinnedRide(pinnedId);
         if (pinnedOpen && !isStale()) {
@@ -248,6 +248,7 @@ function ViajePageInner() {
       return;
     }
 
+    const sync = syncResult.payload;
     setDriverPublic(sync.driver_public ?? null);
 
     const debugMeta = sync.debug;

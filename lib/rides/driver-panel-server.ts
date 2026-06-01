@@ -7,8 +7,10 @@ import {
 } from "@/lib/rides/driver-account";
 import { resolveDriverProfileForSession } from "@/lib/rides/resolve-driver-session";
 import { getRideById, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
+import { userIdsForAuthPhone } from "@/lib/resolve-login-user";
 import { dropActiveRowsWithCompletedTicket } from "@/lib/rides/ride-ghost-filter";
 import { listActiveTripsForDriverProfile } from "@/lib/rides/ride-trip-server";
+import { idMatchVariantsForIn, driverProfileUserIdVariants } from "@/lib/user-id-variants";
 
 const DRIVER_ACTIVE_STATUSES = new Set(["matched", "accepted", "arrived", "in_trip"]);
 
@@ -28,6 +30,29 @@ async function verifyDriverPanelTrips(
   return verified.filter((row): row is RideBookingRow => row !== null);
 }
 
+/** Direct assignment lookup — bypasses list scan when profile pool resolution misses rows. */
+async function fallbackTripsByDriverUserId(
+  supabase: SupabaseClient,
+  driverUserId: string,
+): Promise<RideBookingRow[]> {
+  const ids = idMatchVariantsForIn(driverUserId);
+  if (ids.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from("ride_bookings")
+    .select("*")
+    .in("driver_id", ids)
+    .in("status", ["matched", "accepted", "arrived", "in_trip"])
+    .order("updated_at", { ascending: false })
+    .limit(8);
+
+  if (error) {
+    console.error("[driver-panel] fallbackTripsByDriverUserId", error);
+    return [];
+  }
+  return verifyDriverPanelTrips(supabase, (data ?? []) as RideBookingRow[]);
+}
+
 export type DriverPanelState = {
   driver: DriverProfileOnlineRow | null;
   trips: RideBookingRow[];
@@ -44,7 +69,27 @@ export async function loadDriverPanel(
   args: { sessionUserId: string; authPhone: string | null },
 ): Promise<DriverPanelState> {
   const accountOpts = { authPhone: args.authPhone };
-  const resolved = await resolveDriverProfileForSession(supabase, args);
+  let resolved = await resolveDriverProfileForSession(supabase, args);
+
+  if (!resolved && args.authPhone) {
+    const phoneIds = await userIdsForAuthPhone(supabase, args.authPhone);
+    for (const uid of phoneIds) {
+      const profileIds = driverProfileUserIdVariants(uid);
+      const { data } = await supabase
+        .from("driver_profiles")
+        .select("user_id,is_online,is_active_driver,last_lat,last_lng,last_location_at")
+        .in("user_id", profileIds)
+        .eq("is_active_driver", true)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (data) {
+        resolved = data as DriverProfileOnlineRow;
+        break;
+      }
+    }
+  }
+
   const driver = resolved
     ? await enrichDriverOnlineFromAccountPool(supabase, resolved, accountOpts)
     : null;
@@ -53,7 +98,23 @@ export async function loadDriverPanel(
     driver?.is_active_driver && driver.user_id
       ? await listActiveTripsForDriverProfile(supabase, driver.user_id, accountOpts)
       : [];
-  const verified = await verifyDriverPanelTrips(supabase, rawTrips);
+  let verified = await verifyDriverPanelTrips(supabase, rawTrips);
+
+  if (verified.length === 0 && driver?.user_id) {
+    verified = await fallbackTripsByDriverUserId(supabase, driver.user_id);
+  }
+
+  if (verified.length === 0 && args.authPhone) {
+    const phoneIds = await userIdsForAuthPhone(supabase, args.authPhone);
+    for (const uid of phoneIds) {
+      const byPhone = await fallbackTripsByDriverUserId(supabase, uid);
+      if (byPhone.length > 0) {
+        verified = byPhone;
+        break;
+      }
+    }
+  }
+
   const { trips, hideTickets } = await dropActiveRowsWithCompletedTicket(supabase, verified);
 
   return {

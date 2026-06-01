@@ -15,8 +15,10 @@ export function rideBuyerViajeUrl(rideId?: string | null): string {
   return `${base}?ride=${encodeURIComponent(rideId)}`;
 }
 
-export function rideDriverPanelUrl(): string {
-  return `${getPublicAppUrl()}/conductor/viajes`;
+export function rideDriverPanelUrl(rideId?: string | null): string {
+  const base = `${getPublicAppUrl()}/conductor/viajes`;
+  if (!rideId) return base;
+  return `${base}?ride=${encodeURIComponent(rideId)}`;
 }
 
 export async function findUserPhoneById(
@@ -117,7 +119,7 @@ export async function notifyDriverRideMatched(
   if (!phone) return;
 
   const fare = formatMxnFromCents(args.ride.estimated_total_mxn_cents);
-  const panelUrl = rideDriverPanelUrl();
+  const panelUrl = rideDriverPanelUrl(args.ride.id);
   const msg =
     `🚕 *Nuevo viaje asignado*\n` +
     `Recoger: ${args.ride.pickup_address}\n` +
