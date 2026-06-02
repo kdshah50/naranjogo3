@@ -8,7 +8,11 @@ import { useAppLang } from "@/hooks/use-app-lang";
 import { formatCurrencyMXN } from "@/lib/locale-format";
 import { RidesStagingBanner } from "@/components/RidesStagingBanner";
 import { useRideLiveStream } from "@/hooks/use-ride-live-stream";
-import { fetchDriverPanel, fetchRideRowById } from "@/lib/rides/client-ride-sync";
+import {
+  fetchActiveDriverTrips,
+  fetchDriverPanel,
+  fetchRideRowById,
+} from "@/lib/rides/client-ride-sync";
 import { mergeRideStatusRow, rideStatusRank } from "@/lib/rides/ride-status-merge";
 import {
   driverFlowStepIndex,
