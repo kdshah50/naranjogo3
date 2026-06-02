@@ -11,6 +11,7 @@ import { useRideLiveStream } from "@/hooks/use-ride-live-stream";
 import {
   applyMonotonicRideRow,
   fetchActiveBuyerRide,
+  fetchBuyerCompletedDisplayRide,
   fetchRideRowById,
   fetchRideSync,
   type RideDriverPublic,
@@ -451,6 +452,17 @@ function ViajePageInner() {
         );
         return;
       }
+    }
+
+    const completedDisplay = (await fetchBuyerCompletedDisplayRide()) as RideRow | null;
+    if (!isStale() && completedDisplay?.id && completedDisplay.status === "completed") {
+      applyServerRide(
+        completedDisplay,
+        `${source}+display`,
+        `completed${completedDisplay.ticket_code ? ` · ${completedDisplay.ticket_code}` : ""}${debugSuffix}`,
+        debugMeta?.drop_reason ?? null,
+      );
+      return;
     }
 
     if (!isStale()) applyServerRide(null, source, `0 open${debugSuffix}`, debugMeta?.drop_reason ?? null);

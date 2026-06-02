@@ -161,10 +161,12 @@ async function resolveBuyerRide(
     args.sessionUserId,
     accountOpts,
   );
-  if (display && !BUYER_OPEN_STATUSES.has(display.status)) {
+  // Surface completed trips without session pins (refresh / new tab after driver completes).
+  // Skip cancelled rows — stale cleanup cancellations must not block a new request.
+  if (display?.status === "completed") {
     return {
-      ride: null,
-      dropReason,
+      ride: display,
+      dropReason: dropReason ?? "display:completed",
       rawBuyerCount: buyerTripsRaw.length,
       verifiedBuyerCount: 0,
     };

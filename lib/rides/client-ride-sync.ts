@@ -85,21 +85,36 @@ export async function fetchActiveDriverTrips(): Promise<RideStatusRow[]> {
   return Array.isArray(data.as_driver) ? data.as_driver : [];
 }
 
-/** Active ride for rider UI when sync returns empty. */
-export async function fetchActiveBuyerRide(): Promise<RideStatusRow | null> {
+type ActiveBuyerPayload = {
+  as_buyer_active?: RideStatusRow;
+  as_buyer?: RideStatusRow[];
+  as_buyer_display?: RideStatusRow;
+};
+
+async function fetchActiveBuyerPayload(): Promise<ActiveBuyerPayload | null> {
   const r = await fetch(`/api/rides/active?_=${Date.now()}`, {
     credentials: "include",
     cache: "no-store",
     headers: { Accept: "application/json", "Cache-Control": "no-cache" },
   });
   if (!r.ok) return null;
-  const data = (await r.json().catch(() => ({}))) as {
-    as_buyer_active?: RideStatusRow;
-    as_buyer?: RideStatusRow[];
-  };
+  return (await r.json().catch(() => null)) as ActiveBuyerPayload | null;
+}
+
+/** Active ride for rider UI when sync returns empty. */
+export async function fetchActiveBuyerRide(): Promise<RideStatusRow | null> {
+  const data = await fetchActiveBuyerPayload();
+  if (!data) return null;
   if (data.as_buyer_active?.id) return data.as_buyer_active;
   const first = data.as_buyer?.[0];
   return first?.id ? first : null;
+}
+
+/** Latest completed buyer ride for terminal banner when sync has no open trip. */
+export async function fetchBuyerCompletedDisplayRide(): Promise<RideStatusRow | null> {
+  const data = await fetchActiveBuyerPayload();
+  const display = data?.as_buyer_display;
+  return display?.id && display.status === "completed" ? display : null;
 }
 
 /** Single sync load for rider + driver panels (Uber-style). */
