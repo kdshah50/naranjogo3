@@ -14,13 +14,15 @@ type WalletBalanceRow = {
   held_mxn_cents: number;
 };
 import { SignJWT } from "jose";
-import { existsSync, readFileSync } from "fs";
-import { join } from "path";
 import { internalSecretHeaders } from "../lib/rides/internal-auth";
+import {
+  CANONICAL_DRIVER_ID,
+  cancelOpenTestRides,
+  discoverBase,
+  loadDotenv,
+} from "./lib/rides-test-helpers";
 
-const CANONICAL_ID =
-  process.env.RIDES_STAGING_DRIVER_USER_ID?.trim() ||
-  "3d5522b3-aedf-4625-80a1-8a79708bb893";
+const CANONICAL_ID = CANONICAL_DRIVER_ID;
 const TEST_PHONE = "524151816902";
 
 let failed = 0;
@@ -32,45 +34,6 @@ function fail(msg: string) {
 
 function ok(msg: string) {
   console.log("ok:", msg);
-}
-
-function loadDotenv() {
-  for (const name of [".env.local", ".env"]) {
-    const p = join(process.cwd(), name);
-    if (!existsSync(p)) continue;
-    for (const line of readFileSync(p, "utf-8").split("\n")) {
-      const t = line.trim();
-      if (!t || t.startsWith("#")) continue;
-      const eq = t.indexOf("=");
-      if (eq <= 0) continue;
-      const k = t.slice(0, eq).trim();
-      let v = t.slice(eq + 1).trim();
-      if (
-        (v.startsWith('"') && v.endsWith('"')) ||
-        (v.startsWith("'") && v.endsWith("'"))
-      ) {
-        v = v.slice(1, -1);
-      }
-      if (process.env[k] === undefined) process.env[k] = v;
-    }
-  }
-}
-
-async function discoverBase(): Promise<string> {
-  const explicit = process.env.RIDES_STAGING_BASE_URL?.replace(/\/$/, "");
-  if (explicit) return explicit;
-  for (const port of [3000, 3001, 3002]) {
-    const base = `http://127.0.0.1:${port}`;
-    try {
-      const r = await fetch(base, { signal: AbortSignal.timeout(5000) });
-      if (r.status > 0 && r.status < 600) return base;
-    } catch {
-      /* next */
-    }
-  }
-  throw new Error(
-    "No server. Set RIDES_STAGING_BASE_URL to your Vercel preview, or run RIDES_ENABLED=true npm run dev",
-  );
 }
 
 async function jwtFor(sub: string, phone: string): Promise<string> {

@@ -6,7 +6,8 @@
 --   2) If duplicate_users > 1 → rides-one-driver-cleanup.sql (full merge)
 --   3) Apply migration 20260601120000_rides_one_open_per_buyer.sql (if not applied)
 --   4) Both phones: logout /unete → login again
---   5) npm run test:rides-staging && npm run test:rides-full
+--   5) npm run test:rides-pre-mexico
+--      (or: npm run test:rides-staging -- --fix && npm run test:rides-full)
 -- =============================================================================
 
 -- §1 — BEFORE: duplicate users for test phone?
@@ -36,7 +37,7 @@ SET status = 'cancelled',
 WHERE status IN ('requested', 'matched', 'accepted', 'arrived', 'in_trip')
   AND updated_at < now() - interval '24 hours';
 
--- §4 — Cancel ALL open rides for test phone (clean slate for new E2E)
+-- §4 — Cancel ALL open rides for test phones (driver + rider — clean slate for new E2E)
 UPDATE public.ride_bookings
 SET status = 'cancelled',
     cancel_reason = 'phase0_test_reset',
@@ -47,11 +48,15 @@ WHERE status IN ('requested', 'matched', 'accepted', 'arrived', 'in_trip')
       SELECT id FROM public.users
       WHERE phone LIKE '%4151816902%'
          OR phone IN ('524151816902', '+524151816902', '5214151816902')
+         OR phone LIKE '%7326908527%'
+         OR phone IN ('17326908527', '+17326908527', '17326908527')
     )
     OR driver_id IN (
       SELECT id FROM public.users
       WHERE phone LIKE '%4151816902%'
          OR phone IN ('524151816902', '+524151816902', '5214151816902')
+         OR phone LIKE '%7326908527%'
+         OR phone IN ('17326908527', '+17326908527', '17326908527')
     )
   );
 
@@ -88,11 +93,15 @@ WHERE rb.status IN ('requested', 'matched', 'accepted', 'arrived', 'in_trip')
       SELECT id FROM public.users
       WHERE phone LIKE '%4151816902%'
          OR phone IN ('524151816902', '+524151816902', '5214151816902')
+         OR phone LIKE '%7326908527%'
+         OR phone IN ('17326908527', '+17326908527')
     )
     OR rb.driver_id IN (
       SELECT id FROM public.users
       WHERE phone LIKE '%4151816902%'
          OR phone IN ('524151816902', '+524151816902', '5214151816902')
+         OR phone LIKE '%7326908527%'
+         OR phone IN ('17326908527', '+17326908527')
     )
   );
 

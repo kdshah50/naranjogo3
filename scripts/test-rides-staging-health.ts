@@ -10,19 +10,17 @@
  */
 import { createClient } from "@supabase/supabase-js";
 import { SignJWT } from "jose";
-import { existsSync, readFileSync } from "fs";
-import { join } from "path";
 import { isRidesEnabled } from "../lib/rides/flags";
-
-const CANONICAL_DRIVER_ID =
-  process.env.RIDES_STAGING_DRIVER_USER_ID?.trim() ||
-  "3d5522b3-aedf-4625-80a1-8a79708bb893";
-const TEST_PHONE = "524151816902";
-const DUPLICATE_IDS = [
+import {
   CANONICAL_DRIVER_ID,
-  "94a74ff0-d2f4-46a7-b43e-85fb8f2cf524",
-  "7003532b-1bba-4bbe-8b7e-b89e86051169",
-];
+  DUPLICATE_TEST_IDS,
+  cancelOpenTestRides,
+  discoverBase,
+  loadDotenv,
+} from "./lib/rides-test-helpers";
+
+const TEST_PHONE = "524151816902";
+const DUPLICATE_IDS = DUPLICATE_TEST_IDS;
 
 let failed = 0;
 let warned = 0;
@@ -41,45 +39,6 @@ function ok(msg: string) {
   console.log("ok:", msg);
 }
 
-function loadDotenv() {
-  for (const name of [".env.local", ".env"]) {
-    const p = join(process.cwd(), name);
-    if (!existsSync(p)) continue;
-    for (const line of readFileSync(p, "utf-8").split("\n")) {
-      const t = line.trim();
-      if (!t || t.startsWith("#")) continue;
-      const eq = t.indexOf("=");
-      if (eq <= 0) continue;
-      const k = t.slice(0, eq).trim();
-      let v = t.slice(eq + 1).trim();
-      if (
-        (v.startsWith('"') && v.endsWith('"')) ||
-        (v.startsWith("'") && v.endsWith("'"))
-      ) {
-        v = v.slice(1, -1);
-      }
-      if (process.env[k] === undefined) process.env[k] = v;
-    }
-  }
-}
-
-async function discoverBase(): Promise<string> {
-  const explicit = process.env.RIDES_STAGING_BASE_URL?.replace(/\/$/, "");
-  if (explicit) return explicit;
-  for (const port of [3000, 3001, 3002, 3003]) {
-    const base = `http://127.0.0.1:${port}`;
-    try {
-      const r = await fetch(base, { signal: AbortSignal.timeout(5000) });
-      if (r.status > 0 && r.status < 600) return base;
-    } catch {
-      /* try next */
-    }
-  }
-  throw new Error(
-    "No server on :3000–3003. Start: RIDES_ENABLED=true npm run dev — or set RIDES_STAGING_BASE_URL",
-  );
-}
-
 async function jwtFor(sub: string, phone: string): Promise<string> {
   const secret = process.env.JWT_SECRET;
   if (!secret || secret.length < 16) throw new Error("JWT_SECRET missing or too short in .env.local");
@@ -94,6 +53,7 @@ async function jwtFor(sub: string, phone: string): Promise<string> {
 async function main() {
   loadDotenv();
   const live = process.argv.includes("--live");
+  const fix = process.argv.includes("--fix");
 
   console.log("=== Rides staging health ===\n");
 
@@ -113,6 +73,11 @@ async function main() {
   }
 
   const supabase = createClient(url, key, { auth: { persistSession: false } });
+
+  if (fix) {
+    const cleaned = await cancelOpenTestRides(supabase, "staging_health_fix");
+    ok(`--fix: cancelled ${cleaned.cancelled} open ride(s), released ${cleaned.holdsReleased} hold(s)`);
+  }
 
   const { count: profileCount } = await supabase
     .from("driver_profiles")
