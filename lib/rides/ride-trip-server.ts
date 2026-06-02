@@ -441,6 +441,15 @@ export async function completeTrip(
   });
 
   const completed = updated as RideBookingRow;
+
+  if (completed.driver_id) {
+    await cancelDuplicateOpenRowsForTicket(supabase, {
+      ticketCode: completed.ticket_code,
+      driverId: completed.driver_id,
+      keepId: completed.id,
+    });
+  }
+
   void emitRidePhaseNotifications(supabase, {
     ride: completed,
     phase: "completed",

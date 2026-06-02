@@ -59,6 +59,28 @@ function clearDriverTerminalRideId() {
   sessionStorage.removeItem(CONDUCTOR_TERMINAL_RIDE_KEY);
 }
 
+function normalizeTicketKey(ticket: string | null | undefined): string {
+  return (ticket ?? "").trim().toUpperCase();
+}
+
+function filterDriverPanelTrips(
+  trips: RideRow[],
+  hideTickets: string[],
+  completedLatch: { ticket: string; until: number } | null,
+): RideRow[] {
+  const hidden = new Set(hideTickets.map(normalizeTicketKey).filter(Boolean));
+  const latchedTicket =
+    completedLatch && Date.now() < completedLatch.until
+      ? normalizeTicketKey(completedLatch.ticket)
+      : "";
+  return trips.filter((row) => {
+    const ticket = normalizeTicketKey(row.ticket_code);
+    if (ticket && hidden.has(ticket)) return false;
+    if (latchedTicket && ticket === latchedTicket) return false;
+    return true;
+  });
+}
+
 function isDriverActiveTrip(row: RideRow): boolean {
   return DRIVER_ACTIVE_STATUSES.has(row.status);
 }
@@ -198,6 +220,8 @@ function ConductorViajesInner() {
   const syncGenRef = useRef(0);
   /** After POST accept/arrive/start, polls must not downgrade this ride's status. */
   const statusFloorByRideRef = useRef<Map<string, number>>(new Map());
+  /** After complete, ignore ghost duplicate rows for this ticket briefly. */
+  const completedTicketLatchRef = useRef<{ ticket: string; until: number } | null>(null);
 
   /** Never downgrade lifecycle after POST accept/arrive/start (GET/panel can lag). */
   const mergeIncomingDriverTrip = useCallback((prev: RideRow[], incoming: RideRow): RideRow[] => {
@@ -347,8 +371,13 @@ function ConductorViajesInner() {
 
   const load = useCallback(async (source = "poll") => {
     const gen = ++syncGenRef.current;
-    const syncRideId =
-      pinnedRideIdRef.current ?? readDriverActiveRideId() ?? undefined;
+    const skipExplicitRide = Boolean(
+      completedTicketLatchRef.current &&
+        Date.now() < completedTicketLatchRef.current.until,
+    );
+    const syncRideId = skipExplicitRide
+      ? undefined
+      : pinnedRideIdRef.current ?? readDriverActiveRideId() ?? undefined;
     const panelResult = await fetchDriverPanel(syncRideId);
     if (gen !== syncGenRef.current) return;
     if (!panelResult.ok) {
@@ -363,10 +392,23 @@ function ConductorViajesInner() {
     }
 
     const panel = panelResult.payload;
-    let candidates = (panel.trips ?? []) as RideRow[];
-    if (candidates.length === 0) {
-      const activeFallback = await fetchActiveDriverTrips();
-      if (activeFallback.length > 0) candidates = activeFallback as RideRow[];
+    const hideTickets = panel.hide_tickets ?? [];
+    let candidates = filterDriverPanelTrips(
+      (panel.trips ?? []) as RideRow[],
+      hideTickets,
+      completedTicketLatchRef.current,
+    );
+    const skipActiveFallback = Boolean(
+      completedTicketLatchRef.current &&
+        Date.now() < completedTicketLatchRef.current.until,
+    );
+    if (candidates.length === 0 && !skipActiveFallback) {
+      const activeFallback = filterDriverPanelTrips(
+        (await fetchActiveDriverTrips()) as RideRow[],
+        hideTickets,
+        completedTicketLatchRef.current,
+      );
+      if (activeFallback.length > 0) candidates = activeFallback;
     }
 
     if (panel.driver) setOnline(mergeDriverOnline(panel.driver as DriverOnline));
@@ -601,6 +643,26 @@ function ConductorViajesInner() {
       }
 
       const rideFromAction = data.ride as RideRow | undefined;
+
+      if (path === "complete") {
+        syncGenRef.current += 1;
+        statusFloorByRideRef.current.delete(rideId);
+        setTrips([]);
+        pinnedRideIdRef.current = null;
+        clearDriverActiveRideId();
+        stripRideFromBrowserUrl();
+        if (rideFromAction?.ticket_code) {
+          completedTicketLatchRef.current = {
+            ticket: rideFromAction.ticket_code,
+            until: Date.now() + 120_000,
+          };
+        }
+        if (rideFromAction?.id) rememberDriverTerminalRideId(rideFromAction.id);
+        setCompletedNotice(rideFromAction ?? null);
+        setActionSuccess(t.completeSuccess);
+        return;
+      }
+
       if (rideFromAction?.id) {
         syncGenRef.current += 1;
         statusFloorByRideRef.current.set(
@@ -617,16 +679,7 @@ function ConductorViajesInner() {
       await refreshTripById(rideId);
       window.setTimeout(() => void load("post-action"), 500);
 
-      if (path === "complete") {
-        statusFloorByRideRef.current.delete(rideId);
-        setTrips([]);
-        if (rideFromAction?.id) rememberDriverTerminalRideId(rideFromAction.id);
-        setCompletedNotice(rideFromAction ?? null);
-        pinnedRideIdRef.current = null;
-        clearDriverActiveRideId();
-        stripRideFromBrowserUrl();
-        setActionSuccess(t.completeSuccess);
-      } else if (path === "accept") setActionSuccess(t.acceptSuccess);
+      if (path === "accept") setActionSuccess(t.acceptSuccess);
       else if (path === "arrive") setActionSuccess(t.arriveSuccess);
       else if (path === "start") setActionSuccess(t.startSuccess);
     } finally {

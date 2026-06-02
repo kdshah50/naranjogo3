@@ -39,13 +39,8 @@ async function terminalSiblingsForTicket(
 }
 
 function isGhostActiveRow(row: RideBookingRow, terminals: TerminalSibling[]): boolean {
-  const rowCreatedMs = new Date(row.created_at).getTime();
-  return terminals.some((terminal) => {
-    if (String(terminal.id) === String(row.id)) return false;
-    const endedRaw = terminal.trip_ended_at ?? terminal.updated_at ?? terminal.created_at;
-    const endedMs = endedRaw ? new Date(endedRaw).getTime() : 0;
-    return endedMs > 0 && rowCreatedMs <= endedMs;
-  });
+  if (terminals.length === 0) return false;
+  return terminals.some((terminal) => String(terminal.id) !== String(row.id));
 }
 
 /** If a completed/cancelled row shares this ticket, drop older active duplicates (ghost rows). */
