@@ -191,6 +191,7 @@ export async function loadRideSyncState(
     loadDriverPanel(supabase, {
       sessionUserId: args.sessionUserId,
       authPhone: args.authPhone,
+      explicitRideId: args.rideId,
     }),
   ]);
 

@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { isSameUserId } from "@/lib/auth-server";
 import {
   enrichDriverOnlineFromAccountPool,
   type DriverProfileOnlineRow,
@@ -10,6 +11,7 @@ import { getRideById, type RideBookingRow } from "@/lib/rides/ride-bookings-serv
 import { userIdsForAuthPhone } from "@/lib/resolve-login-user";
 import { dropActiveRowsWithCompletedTicket } from "@/lib/rides/ride-ghost-filter";
 import { listActiveTripsForDriverProfile } from "@/lib/rides/ride-trip-server";
+import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 import { idMatchVariantsForIn, driverProfileUserIdVariants } from "@/lib/user-id-variants";
 
 const DRIVER_ACTIVE_STATUSES = new Set(["matched", "accepted", "arrived", "in_trip"]);
@@ -63,10 +65,40 @@ export type DriverPanelState = {
   hide_tickets: string[];
 };
 
+/** Deep-link / sync ride_id — include when list scan misses but driver is assigned. */
+async function mergeExplicitDriverRide(
+  supabase: SupabaseClient,
+  args: {
+    sessionUserId: string;
+    authPhone: string | null;
+    explicitRideId?: string | null;
+  },
+  verified: RideBookingRow[],
+): Promise<RideBookingRow[]> {
+  const id = String(args.explicitRideId ?? "").trim();
+  if (!id || verified.some((row) => row.id === id)) return verified;
+
+  const ride = await getRideById(supabase, id);
+  if (!ride?.driver_id || !DRIVER_ACTIVE_STATUSES.has(ride.status)) return verified;
+
+  const pool = await expandUserAccountIdPool(supabase, args.sessionUserId, {
+    authPhone: args.authPhone,
+  });
+  if (!pool.some((uid) => isSameUserId(uid, ride.driver_id))) return verified;
+
+  const [fresh] = await verifyDriverPanelTrips(supabase, [ride]);
+  if (!fresh) return verified;
+  return [fresh, ...verified.filter((row) => row.id !== fresh.id)];
+}
+
 /** Single load for /conductor/viajes — same profile + trips, no split-brain between APIs. */
 export async function loadDriverPanel(
   supabase: SupabaseClient,
-  args: { sessionUserId: string; authPhone: string | null },
+  args: {
+    sessionUserId: string;
+    authPhone: string | null;
+    explicitRideId?: string | null;
+  },
 ): Promise<DriverPanelState> {
   const accountOpts = { authPhone: args.authPhone };
   let resolved = await resolveDriverProfileForSession(supabase, args);
@@ -115,7 +147,8 @@ export async function loadDriverPanel(
     }
   }
 
-  const { trips, hideTickets } = await dropActiveRowsWithCompletedTicket(supabase, verified);
+  let { trips, hideTickets } = await dropActiveRowsWithCompletedTicket(supabase, verified);
+  trips = await mergeExplicitDriverRide(supabase, args, trips);
 
   return {
     driver,

@@ -23,6 +23,24 @@ import {
 
 const DRIVER_ACTIVE_STATUSES = new Set(["matched", "accepted", "arrived", "in_trip"]);
 const CONDUCTOR_TERMINAL_RIDE_KEY = "ng_conductor_terminal_ride_id";
+const CONDUCTOR_ACTIVE_RIDE_KEY = "ng_conductor_active_ride_id";
+
+function readDriverActiveRideId(): string | null {
+  if (typeof sessionStorage === "undefined") return null;
+  const id = sessionStorage.getItem(CONDUCTOR_ACTIVE_RIDE_KEY)?.trim();
+  return id || null;
+}
+
+function rememberDriverActiveRideId(rideId: string) {
+  if (typeof sessionStorage === "undefined") return;
+  sessionStorage.setItem(CONDUCTOR_ACTIVE_RIDE_KEY, rideId);
+  sessionStorage.removeItem(CONDUCTOR_TERMINAL_RIDE_KEY);
+}
+
+function clearDriverActiveRideId() {
+  if (typeof sessionStorage === "undefined") return;
+  sessionStorage.removeItem(CONDUCTOR_ACTIVE_RIDE_KEY);
+}
 
 function readDriverTerminalRideId(): string | null {
   if (typeof sessionStorage === "undefined") return null;
@@ -153,6 +171,11 @@ function ConductorViajesInner() {
 
   /** After Conectar succeeds, ignore stale panel polls that still say offline. */
   const onlineLatchUntilRef = useRef(0);
+  const tripsRef = useRef<RideRow[]>([]);
+
+  useEffect(() => {
+    tripsRef.current = trips;
+  }, [trips]);
 
   /** Apply trip row from POST /accept|arrive|start|complete — panel poll can lag behind DB. */
   const upsertTripFromAction = useCallback((incoming: RideRow) => {
@@ -204,8 +227,13 @@ function ConductorViajesInner() {
       for (const row of candidates) {
         if (row?.id) ids.add(row.id);
       }
+      for (const row of tripsRef.current) {
+        if (row?.id) ids.add(row.id);
+      }
       const pin = pinnedRideIdRef.current;
       if (pin) ids.add(pin);
+      const activeHint = readDriverActiveRideId();
+      if (activeHint) ids.add(activeHint);
       const terminalHint = readDriverTerminalRideId();
       if (terminalHint) ids.add(terminalHint);
 
@@ -250,7 +278,9 @@ function ConductorViajesInner() {
   }, []);
 
   const load = useCallback(async (source = "poll") => {
-    const panelResult = await fetchDriverPanel();
+    const syncRideId =
+      pinnedRideIdRef.current ?? readDriverActiveRideId() ?? undefined;
+    const panelResult = await fetchDriverPanel(syncRideId);
     if (!panelResult.ok) {
       if (panelResult.status === 404) {
         setPanelError(t.ridesDisabled);
@@ -288,7 +318,10 @@ function ConductorViajesInner() {
 
   useEffect(() => {
     const id = searchParams.get("ride")?.trim();
-    if (id) pinnedRideIdRef.current = id;
+    if (id) {
+      pinnedRideIdRef.current = id;
+      rememberDriverActiveRideId(id);
+    }
     stripRideFromBrowserUrl();
     void load("url-pin");
   }, [searchParams, load]);
@@ -371,7 +404,7 @@ function ConductorViajesInner() {
 
   useEffect(() => {
     void load("mount");
-    const ms = trips.length > 0 ? 3_000 : isOnline ? 5_000 : 8_000;
+    const ms = trips.length > 0 ? 3_000 : isOnline ? 2_000 : 8_000;
     const timer = setInterval(() => void load("poll"), ms);
     return () => clearInterval(timer);
   }, [load, isOnline, trips.length]);
@@ -494,18 +527,23 @@ function ConductorViajesInner() {
       }
 
       const rideFromAction = data.ride as RideRow | undefined;
-      if (rideFromAction?.id) upsertTripFromAction(rideFromAction);
-      else setTrips((prev) => prev.filter((t) => t.id !== rideId));
+      if (rideFromAction?.id) {
+        rememberDriverActiveRideId(rideFromAction.id);
+        pinnedRideIdRef.current = rideFromAction.id;
+        upsertTripFromAction(rideFromAction);
+      } else {
+        setTrips((prev) => prev.filter((t) => t.id !== rideId));
+      }
 
       await refreshTripById(rideId);
-      stripRideFromBrowserUrl();
-      void load("action");
+      await load("action");
 
       if (path === "complete") {
         setTrips([]);
         if (rideFromAction?.id) rememberDriverTerminalRideId(rideFromAction.id);
         setCompletedNotice(rideFromAction ?? null);
         pinnedRideIdRef.current = null;
+        clearDriverActiveRideId();
         stripRideFromBrowserUrl();
         setActionSuccess(t.completeSuccess);
       } else if (path === "accept") setActionSuccess(t.acceptSuccess);

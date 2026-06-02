@@ -203,7 +203,7 @@ export async function notifyDriverRideAccepted(
   const phone = await findUserPhoneById(supabase, args.driverUserId);
   if (!phone) return;
 
-  const panelUrl = rideDriverPanelUrl();
+  const panelUrl = rideDriverPanelUrl(args.ride.id);
   const msg =
     `🚕 *Viaje aceptado*\n` +
     `Ticket *${args.ride.ticket_code ?? "—"}* — ve al origen.\n` +
@@ -240,7 +240,7 @@ export async function notifyDriverTripStarted(
   const phone = await findUserPhoneById(supabase, args.driverUserId);
   if (!phone) return;
 
-  const panelUrl = rideDriverPanelUrl();
+  const panelUrl = rideDriverPanelUrl(args.ride.id);
   const msg =
     `🚕 *Viaje en curso*\n` +
     `Destino: ${args.ride.dropoff_address}\n` +

@@ -55,10 +55,14 @@ export type DriverPanelPayload = {
 };
 
 /** Driver panel load — dedicated endpoint (preferred for /conductor/viajes). */
-export async function fetchDriverPanel(): Promise<
-  { ok: true; payload: DriverPanelPayload } | { ok: false; status: number }
-> {
-  const r = await fetch(`/api/rides/drivers/me/panel?_=${Date.now()}`, {
+export async function fetchDriverPanel(
+  rideId?: string | null,
+): Promise<{ ok: true; payload: DriverPanelPayload } | { ok: false; status: number }> {
+  const qs = new URLSearchParams();
+  const id = String(rideId ?? "").trim();
+  if (id) qs.set("ride_id", id);
+  const suffix = qs.toString() ? `?${qs}&` : "?";
+  const r = await fetch(`/api/rides/drivers/me/panel${suffix}_=${Date.now()}`, {
     credentials: "include",
     cache: "no-store",
     headers: { Accept: "application/json", "Cache-Control": "no-cache" },

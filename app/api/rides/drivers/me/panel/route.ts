@@ -12,9 +12,12 @@ export async function GET(req: NextRequest) {
   const guard = await ridesRouteGuard(req);
   if (!guard.ok) return guard.response;
 
+  const rideId = req.nextUrl.searchParams.get("ride_id")?.trim() || null;
+
   const panel = await loadDriverPanel(guard.supabase, {
     sessionUserId: guard.userId,
     authPhone: guard.authPhone,
+    explicitRideId: rideId,
   });
 
   return NextResponse.json(panel, {
