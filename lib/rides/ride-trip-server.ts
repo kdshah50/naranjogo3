@@ -162,6 +162,28 @@ async function cancelDuplicateOpenRowsForTicket(
   }
 }
 
+/** Cancel stale open rows for this driver after a trip completes (preview hygiene). */
+async function cancelOtherOpenRidesForDriver(
+  supabase: SupabaseClient,
+  args: { driverId: string; keepId: string },
+): Promise<void> {
+  const pool = await expandUserAccountIdPool(supabase, args.driverId);
+  const driverIds = [...new Set(pool.flatMap((id) => idMatchVariantsForIn(id)))];
+  if (driverIds.length === 0) return;
+
+  const now = new Date().toISOString();
+  await supabase
+    .from("ride_bookings")
+    .update({
+      status: "cancelled",
+      cancel_reason: "superseded_by_complete",
+      updated_at: now,
+    })
+    .in("driver_id", driverIds)
+    .in("status", [...ACTIVE_DRIVER_TRIP_STATUSES])
+    .neq("id", args.keepId);
+}
+
 async function updateRideStatus(
   supabase: SupabaseClient,
   rideId: string,
@@ -445,6 +467,10 @@ export async function completeTrip(
   if (completed.driver_id) {
     await cancelDuplicateOpenRowsForTicket(supabase, {
       ticketCode: completed.ticket_code,
+      driverId: completed.driver_id,
+      keepId: completed.id,
+    });
+    await cancelOtherOpenRidesForDriver(supabase, {
       driverId: completed.driver_id,
       keepId: completed.id,
     });

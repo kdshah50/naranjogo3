@@ -338,6 +338,13 @@ function ConductorViajesInner() {
         verified.push(row);
       }
 
+      const latch = completedTicketLatchRef.current;
+      const latchedTicket =
+        latch && Date.now() < latch.until ? normalizeTicketKey(latch.ticket) : "";
+      const filtered = latchedTicket
+        ? verified.filter((row) => normalizeTicketKey(row.ticket_code) !== latchedTicket)
+        : verified;
+
       if (gen !== syncGenRef.current) return;
 
       if (pin && terminalPin?.id === pin) {
@@ -346,16 +353,18 @@ function ConductorViajesInner() {
         stripRideFromBrowserUrl();
       }
 
-      applyServerTrips(verified, source);
-      if (verified.length === 0 && terminalPin) {
+      applyServerTrips(filtered, source);
+      if (filtered.length === 0 && terminalPin) {
         setCompletedNotice(terminalPin);
         rememberDriverTerminalRideId(terminalPin.id);
-      } else if (verified.length > 0) {
-        rememberDriverActiveRideId(verified[0].id);
-        pinnedRideIdRef.current = verified[0].id;
+      } else if (filtered.length > 0 && !latchedTicket) {
+        rememberDriverActiveRideId(filtered[0].id);
+        pinnedRideIdRef.current = filtered[0].id;
         setCompletedNotice(null);
         clearDriverTerminalRideId();
         setActionSuccess(null);
+      } else if (filtered.length === 0 && latchedTicket) {
+        setTrips([]);
       }
     },
     [applyServerTrips],
@@ -651,14 +660,18 @@ function ConductorViajesInner() {
         pinnedRideIdRef.current = null;
         clearDriverActiveRideId();
         stripRideFromBrowserUrl();
-        if (rideFromAction?.ticket_code) {
+        let completedRow = rideFromAction ?? null;
+        if (!completedRow?.id) {
+          completedRow = await fetchRideRowById<RideRow>(rideId);
+        }
+        if (completedRow?.ticket_code) {
           completedTicketLatchRef.current = {
-            ticket: rideFromAction.ticket_code,
+            ticket: completedRow.ticket_code,
             until: Date.now() + 120_000,
           };
         }
-        if (rideFromAction?.id) rememberDriverTerminalRideId(rideFromAction.id);
-        setCompletedNotice(rideFromAction ?? null);
+        if (completedRow?.id) rememberDriverTerminalRideId(completedRow.id);
+        setCompletedNotice(completedRow);
         setActionSuccess(t.completeSuccess);
         return;
       }
@@ -822,21 +835,19 @@ function ConductorViajesInner() {
           </div>
         )}
 
-        {trips.length === 0 ? (
-          <div className="mb-6 space-y-2">
-            {completedNotice ? (
-              <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
-                <p className="font-medium">{t.tripCompletedBanner}</p>
-                {completedNotice.ticket_code && (
-                  <p className="mt-1 font-mono font-bold">{completedNotice.ticket_code}</p>
-                )}
-                <p className="mt-1 text-xs opacity-80">
-                  {completedNotice.pickup_address} → {completedNotice.dropoff_address}
-                </p>
-              </div>
-            ) : (
-              <p className="text-sm text-[#1B4332]/70">{t.noActiveTrips}</p>
+        {completedNotice ? (
+          <div className="mb-6 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+            <p className="font-medium">{t.tripCompletedBanner}</p>
+            {completedNotice.ticket_code && (
+              <p className="mt-1 font-mono font-bold">{completedNotice.ticket_code}</p>
             )}
+            <p className="mt-1 text-xs opacity-80">
+              {completedNotice.pickup_address} → {completedNotice.dropoff_address}
+            </p>
+          </div>
+        ) : trips.length === 0 ? (
+          <div className="mb-6 space-y-2">
+            <p className="text-sm text-[#1B4332]/70">{t.noActiveTrips}</p>
             {canonicalUserId && (
               <p className="text-xs text-[#1B4332]/50 leading-relaxed">
                 {t.staleTripHint}{" "}

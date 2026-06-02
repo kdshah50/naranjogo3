@@ -117,12 +117,12 @@ async function resolveBuyerRide(
       const fresh = await getRideById(supabase, explicitId);
       const resolved = fresh ?? ride;
       return {
-        ride: BUYER_OPEN_STATUSES.has(resolved.status) ? resolved : null,
+        ride: resolved,
         dropReason: BUYER_OPEN_STATUSES.has(resolved.status)
           ? null
           : `verify:${resolved.status}`,
         rawBuyerCount: 1,
-        verifiedBuyerCount: BUYER_OPEN_STATUSES.has(resolved.status) ? 1 : 0,
+        verifiedBuyerCount: 1,
       };
     }
   }

@@ -73,6 +73,18 @@ function isBuyerActiveStatus(status: string): boolean {
   return BUYER_ACTIVE_STATUSES.has(status);
 }
 
+function normalizeTicketKey(ticket: string | null | undefined): string {
+  return (ticket ?? "").trim().toUpperCase();
+}
+
+function isTicketLatched(
+  ticket: string | null | undefined,
+  latch: { ticket: string; until: number } | null,
+): boolean {
+  if (!latch || Date.now() >= latch.until) return false;
+  return normalizeTicketKey(ticket) === normalizeTicketKey(latch.ticket);
+}
+
 function pinRideId(rideId: string) {
   if (typeof sessionStorage === "undefined") return;
   sessionStorage.setItem(VIAJE_PINNED_RIDE_KEY, rideId);
@@ -180,6 +192,8 @@ function ViajePageInner() {
   const refreshSeqRef = useRef(0);
   /** Polls must not downgrade lifecycle after driver accepts / trip progresses. */
   const statusFloorByRideRef = useRef<Map<string, number>>(new Map());
+  /** Ignore ghost duplicate rows for this ticket after trip completes. */
+  const completedTicketLatchRef = useRef<{ ticket: string; until: number } | null>(null);
 
   const [pickupColonia, setPickupColonia] = useState("centro");
   const [dropoffColonia, setDropoffColonia] = useState("guadalupe");
@@ -220,6 +234,12 @@ function ViajePageInner() {
     (row: RideRow | null, source: string, note?: string, dropReason?: string | null) => {
     if (row && isTerminalRideStatus(row.status)) {
       statusFloorByRideRef.current.delete(row.id);
+      if (row.ticket_code) {
+        completedTicketLatchRef.current = {
+          ticket: row.ticket_code,
+          until: Date.now() + 120_000,
+        };
+      }
       setRide(row);
       setTerminalBanner(row);
       pinTerminalRideId(row.id);
@@ -249,6 +269,11 @@ function ViajePageInner() {
       });
       setTerminalBanner(null);
       setSyncDebug(syncDebugForRow(row, source, note, dropReason));
+      return;
+    }
+
+    if (readTerminalRideId()) {
+      setSyncDebug(syncDebugForRow(null, source, note ?? "terminal pinned", dropReason));
       return;
     }
 
@@ -323,9 +348,37 @@ function ViajePageInner() {
       return;
     }
 
+    const pinnedIdNow = rideIdRef.current ?? readPinnedRideId();
+    if (pinnedIdNow) {
+      const direct = await fetchRideRowById<RideRow>(pinnedIdNow);
+      if (isStale()) return;
+      if (direct?.id && isTerminalRideStatus(direct.status)) {
+        applyServerRide(
+          direct,
+          `${source}+direct-terminal`,
+          `${direct.status}${debugSuffix}`,
+          debugMeta?.drop_reason ?? null,
+        );
+        return;
+      }
+      if (direct?.id && isBuyerActiveStatus(direct.status)) {
+        applyServerRide(
+          direct,
+          `${source}+direct`,
+          `${direct.status}${direct.ticket_code ? ` · ${direct.ticket_code}` : ""}${debugSuffix}`,
+          debugMeta?.drop_reason ?? null,
+        );
+        return;
+      }
+    }
+
     const activeFallback = (await fetchActiveBuyerRide()) as RideRow | null;
     if (isStale()) return;
-    if (activeFallback?.id && isBuyerActiveStatus(activeFallback.status)) {
+    if (
+      activeFallback?.id &&
+      isBuyerActiveStatus(activeFallback.status) &&
+      !isTicketLatched(activeFallback.ticket_code, completedTicketLatchRef.current)
+    ) {
       applyServerRide(
         activeFallback,
         `${source}+active`,
@@ -366,15 +419,6 @@ function ViajePageInner() {
     if (pinnedId) {
       const direct = await fetchRideRowById<RideRow>(pinnedId);
       if (isStale()) return;
-      if (direct?.id && isBuyerActiveStatus(direct.status)) {
-        applyServerRide(
-          direct,
-          `${source}+direct`,
-          `${direct.status}${direct.ticket_code ? ` · ${direct.ticket_code}` : ""}${debugSuffix}`,
-          debugMeta?.drop_reason ?? null,
-        );
-        return;
-      }
       if (direct?.id && isTerminalRideStatus(direct.status)) {
         applyServerRide(
           direct,
@@ -384,14 +428,39 @@ function ViajePageInner() {
         );
         return;
       }
+      if (direct?.id && isBuyerActiveStatus(direct.status)) {
+        applyServerRide(
+          direct,
+          `${source}+direct`,
+          `${direct.status}${direct.ticket_code ? ` · ${direct.ticket_code}` : ""}${debugSuffix}`,
+          debugMeta?.drop_reason ?? null,
+        );
+        return;
+      }
+    }
+
+    const heldTerminalId = readTerminalRideId();
+    if (heldTerminalId) {
+      const held = await fetchRideRowById<RideRow>(heldTerminalId);
+      if (!isStale() && held?.id && isTerminalRideStatus(held.status)) {
+        applyServerRide(
+          held,
+          `${source}+terminal-hold`,
+          `${held.status}${debugSuffix}`,
+          debugMeta?.drop_reason ?? null,
+        );
+        return;
+      }
     }
 
     if (!isStale()) applyServerRide(null, source, `0 open${debugSuffix}`, debugMeta?.drop_reason ?? null);
   }, [applyServerRide, clearStaleRideUi]);
 
-  // Do not use ?ride= in the URL for SSE — it re-attaches ghost trips after refresh.
+  // Keep SSE through in_trip so we receive the completed event.
   const liveRideId =
-    ride?.id && isBuyerActiveStatus(ride.status) ? ride.id : null;
+    ride?.id && (isBuyerActiveStatus(ride.status) || ride.status === "in_trip")
+      ? ride.id
+      : readPinnedRideId();
 
   const liveStreamEnabled = !authError && Boolean(liveRideId);
 
@@ -481,9 +550,14 @@ function ViajePageInner() {
                 ? t.rideActive
                 : t.rideCreated;
 
+  const hasBlockingTrip = Boolean(
+    (ride && (isBuyerActiveStatus(ride.status) || isTerminalRideStatus(ride.status))) ||
+      terminalBanner,
+  );
+
   const canSubmit = useMemo(
-    () => pickupColonia !== dropoffColonia && !authError,
-    [pickupColonia, dropoffColonia, authError],
+    () => pickupColonia !== dropoffColonia && !authError && !hasBlockingTrip,
+    [pickupColonia, dropoffColonia, authError, hasBlockingTrip],
   );
 
   const runEstimate = useCallback(async () => {
