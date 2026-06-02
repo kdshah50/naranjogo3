@@ -162,7 +162,7 @@ export async function collapseDriverPanelTripsByTicket(
   }
 
   const out: RideBookingRow[] = [...noTicket];
-  for (const [ticket] of byTicket) {
+  for (const [ticket, picked] of byTicket) {
     const canonical = await resolveCanonicalRideByTicketForDriver(
       supabase,
       args.sessionUserId,
@@ -171,6 +171,9 @@ export async function collapseDriverPanelTripsByTicket(
     );
     if (canonical && DRIVER_ACTIVE.has(canonical.status)) {
       out.push(canonical);
+    } else if (DRIVER_ACTIVE.has(picked.status)) {
+      // Keep list-scan row when ticket resolver misses (session vs profile pool).
+      out.push(picked);
     }
   }
 

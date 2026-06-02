@@ -164,7 +164,10 @@ export async function loadDriverPanel(
   }
 
   let { trips, hideTickets } = await dropActiveRowsWithCompletedTicket(supabase, verified);
-  trips = await collapseDriverPanelTripsByTicket(supabase, trips, args);
+  trips = await collapseDriverPanelTripsByTicket(supabase, trips, {
+    sessionUserId: driver?.user_id ?? args.sessionUserId,
+    authPhone: args.authPhone,
+  });
   trips = await verifyDriverPanelTrips(supabase, trips);
   trips = await mergeExplicitDriverRide(supabase, args, trips);
 

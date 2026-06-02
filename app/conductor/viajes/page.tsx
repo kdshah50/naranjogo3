@@ -195,28 +195,43 @@ function ConductorViajesInner() {
   /** After POST accept/arrive/start, polls must not downgrade this ride's status. */
   const statusFloorByRideRef = useRef<Map<string, number>>(new Map());
 
-  /** Apply trip row from POST /accept|arrive|start|complete — panel poll can lag behind DB. */
-  const upsertTripFromAction = useCallback((incoming: RideRow) => {
-    if (!incoming?.id) return;
-    if (!isDriverActiveTrip(incoming)) {
-      setTrips((prev) => prev.filter((t) => t.id !== incoming.id));
-      return;
+  /** Never downgrade lifecycle after POST accept/arrive/start (GET/panel can lag). */
+  const mergeIncomingDriverTrip = useCallback((prev: RideRow[], incoming: RideRow): RideRow[] => {
+    const ex = prev.find((t) => t.id === incoming.id);
+    let merged = ex ? mergeRideStatusRow(ex, incoming) : incoming;
+    const floor = statusFloorByRideRef.current.get(incoming.id);
+    if (floor !== undefined && rideStatusRank(merged.status) < floor) {
+      merged = ex ?? merged;
     }
-    setTrips((prev) => {
-      const rest = prev.filter((t) => t.id !== incoming.id);
-      return dedupeDriverTrips([...rest, incoming]);
-    });
+    const rest = prev.filter((t) => t.id !== incoming.id);
+    return dedupeDriverTrips([...rest, merged]);
   }, []);
+
+  /** Apply trip row from POST /accept|arrive|start|complete — panel poll can lag behind DB. */
+  const upsertTripFromAction = useCallback(
+    (incoming: RideRow) => {
+      if (!incoming?.id) return;
+      if (!isDriverActiveTrip(incoming)) {
+        setTrips((prev) => prev.filter((t) => t.id !== incoming.id));
+        return;
+      }
+      setTrips((prev) => mergeIncomingDriverTrip(prev, incoming));
+    },
+    [mergeIncomingDriverTrip],
+  );
 
   /** Authoritative row by id — list/panel endpoints can lag behind POST. */
   const refreshTripById = useCallback(
     async (rideId: string) => {
       const row = await fetchRideRowById<RideRow>(rideId);
       if (!row) return;
-      if (isDriverActiveTrip(row)) upsertTripFromAction(row);
-      else setTrips((prev) => prev.filter((t) => t.id !== rideId));
+      if (isDriverActiveTrip(row)) {
+        setTrips((prev) => mergeIncomingDriverTrip(prev, row));
+      } else {
+        setTrips((prev) => prev.filter((t) => t.id !== rideId));
+      }
     },
-    [upsertTripFromAction],
+    [mergeIncomingDriverTrip],
   );
 
   const applyServerTrips = useCallback((raw: RideRow[], source: string) => {
@@ -289,6 +304,12 @@ function ConductorViajesInner() {
         }
       }
 
+      for (const row of candidates) {
+        if (!row?.id || !isDriverActiveTrip(row)) continue;
+        if (verified.some((v) => v.id === row.id)) continue;
+        verified.push(row);
+      }
+
       if (gen !== syncGenRef.current) return;
 
       if (pin && terminalPin?.id === pin) {
@@ -338,7 +359,11 @@ function ConductorViajesInner() {
     }
 
     const panel = panelResult.payload;
-    const candidates = (panel.trips ?? []) as RideRow[];
+    let candidates = (panel.trips ?? []) as RideRow[];
+    if (candidates.length === 0) {
+      const activeFallback = await fetchActiveDriverTrips();
+      if (activeFallback.length > 0) candidates = activeFallback as RideRow[];
+    }
 
     if (panel.driver) setOnline(mergeDriverOnline(panel.driver as DriverOnline));
     await verifyAndSetTrips(candidates, source, gen);
@@ -586,6 +611,7 @@ function ConductorViajesInner() {
       }
 
       await refreshTripById(rideId);
+      window.setTimeout(() => void load("post-action"), 500);
 
       if (path === "complete") {
         statusFloorByRideRef.current.delete(rideId);
