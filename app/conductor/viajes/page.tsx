@@ -25,6 +25,7 @@ import {
 const DRIVER_ACTIVE_STATUSES = new Set(["matched", "accepted", "arrived", "in_trip"]);
 const CONDUCTOR_TERMINAL_RIDE_KEY = "ng_conductor_terminal_ride_id";
 const CONDUCTOR_ACTIVE_RIDE_KEY = "ng_conductor_active_ride_id";
+const CONDUCTOR_COMPLETED_TICKET_KEY = "ng_conductor_completed_ticket";
 
 function readDriverActiveRideId(): string | null {
   if (typeof sessionStorage === "undefined") return null;
@@ -36,6 +37,7 @@ function rememberDriverActiveRideId(rideId: string) {
   if (typeof sessionStorage === "undefined") return;
   sessionStorage.setItem(CONDUCTOR_ACTIVE_RIDE_KEY, rideId);
   sessionStorage.removeItem(CONDUCTOR_TERMINAL_RIDE_KEY);
+  clearDriverCompletedTicketLatch();
 }
 
 function clearDriverActiveRideId() {
@@ -49,14 +51,28 @@ function readDriverTerminalRideId(): string | null {
   return id || null;
 }
 
-function rememberDriverTerminalRideId(rideId: string) {
+function rememberDriverTerminalRideId(rideId: string, ticketCode?: string | null) {
   if (typeof sessionStorage === "undefined") return;
   sessionStorage.setItem(CONDUCTOR_TERMINAL_RIDE_KEY, rideId);
+  const ticket = normalizeTicketKey(ticketCode);
+  if (ticket) sessionStorage.setItem(CONDUCTOR_COMPLETED_TICKET_KEY, ticket);
+}
+
+function readDriverCompletedTicketLatch(): string | null {
+  if (typeof sessionStorage === "undefined") return null;
+  const ticket = sessionStorage.getItem(CONDUCTOR_COMPLETED_TICKET_KEY)?.trim();
+  return ticket ? normalizeTicketKey(ticket) : null;
+}
+
+function clearDriverCompletedTicketLatch() {
+  if (typeof sessionStorage === "undefined") return;
+  sessionStorage.removeItem(CONDUCTOR_COMPLETED_TICKET_KEY);
 }
 
 function clearDriverTerminalRideId() {
   if (typeof sessionStorage === "undefined") return;
   sessionStorage.removeItem(CONDUCTOR_TERMINAL_RIDE_KEY);
+  clearDriverCompletedTicketLatch();
 }
 
 function normalizeTicketKey(ticket: string | null | undefined): string {
@@ -69,10 +85,11 @@ function filterDriverPanelTrips(
   completedLatch: { ticket: string; until: number } | null,
 ): RideRow[] {
   const hidden = new Set(hideTickets.map(normalizeTicketKey).filter(Boolean));
+  const sessionTicket = readDriverCompletedTicketLatch();
   const latchedTicket =
     completedLatch && Date.now() < completedLatch.until
       ? normalizeTicketKey(completedLatch.ticket)
-      : "";
+      : sessionTicket;
   return trips.filter((row) => {
     const ticket = normalizeTicketKey(row.ticket_code);
     if (ticket && hidden.has(ticket)) return false;
@@ -262,9 +279,10 @@ function ConductorViajesInner() {
     [mergeIncomingDriverTrip],
   );
 
-  const applyServerTrips = useCallback((raw: RideRow[], source: string) => {
+  const applyServerTrips = useCallback((raw: RideRow[], source: string, replaceWhenEmpty = false) => {
     const incoming = dedupeDriverTrips(activeTripsFromPanel(raw));
     setTrips((prev) => {
+      if (replaceWhenEmpty && incoming.length === 0) return [];
       const floors = statusFloorByRideRef.current;
       const merged: RideRow[] = [];
       for (const row of incoming) {
@@ -276,11 +294,13 @@ function ConductorViajesInner() {
         }
         merged.push(nextRow);
       }
-      for (const ex of prev) {
-        if (!merged.some((m) => m.id === ex.id) && isDriverActiveTrip(ex)) {
-          const floor = floors.get(ex.id);
-          if (floor === undefined || rideStatusRank(ex.status) >= floor) {
-            merged.push(ex);
+      if (!replaceWhenEmpty) {
+        for (const ex of prev) {
+          if (!merged.some((m) => m.id === ex.id) && isDriverActiveTrip(ex)) {
+            const floor = floors.get(ex.id);
+            if (floor === undefined || rideStatusRank(ex.status) >= floor) {
+              merged.push(ex);
+            }
           }
         }
       }
@@ -340,12 +360,33 @@ function ConductorViajesInner() {
 
       const latch = completedTicketLatchRef.current;
       const latchedTicket =
-        latch && Date.now() < latch.until ? normalizeTicketKey(latch.ticket) : "";
+        latch && Date.now() < latch.until
+          ? normalizeTicketKey(latch.ticket)
+          : readDriverCompletedTicketLatch() ?? "";
       const filtered = latchedTicket
         ? verified.filter((row) => normalizeTicketKey(row.ticket_code) !== latchedTicket)
         : verified;
 
       if (gen !== syncGenRef.current) return;
+
+      const terminalSessionId = readDriverTerminalRideId();
+      if (terminalSessionId) {
+        const terminalFresh = await fetchRideRowById<RideRow>(terminalSessionId);
+        if (gen !== syncGenRef.current) return;
+        if (terminalFresh?.id && isTerminalDriverTrip(terminalFresh.status)) {
+          applyServerTrips([], source, true);
+          setCompletedNotice(terminalFresh);
+          setSyncDebug({
+            source,
+            at: new Date().toLocaleTimeString(),
+            apiCount: 0,
+            apiSummary: `${terminalFresh.status}${terminalFresh.ticket_code ? ` · ${terminalFresh.ticket_code}` : ""}`,
+            uiCount: 0,
+            mismatch: false,
+          });
+          return;
+        }
+      }
 
       if (pin && terminalPin?.id === pin) {
         pinnedRideIdRef.current = null;
@@ -353,10 +394,10 @@ function ConductorViajesInner() {
         stripRideFromBrowserUrl();
       }
 
-      applyServerTrips(filtered, source);
+      applyServerTrips(filtered, source, filtered.length === 0);
       if (filtered.length === 0 && terminalPin) {
         setCompletedNotice(terminalPin);
-        rememberDriverTerminalRideId(terminalPin.id);
+        rememberDriverTerminalRideId(terminalPin.id, terminalPin.ticket_code);
       } else if (filtered.length > 0 && !latchedTicket) {
         rememberDriverActiveRideId(filtered[0].id);
         pinnedRideIdRef.current = filtered[0].id;
@@ -408,8 +449,10 @@ function ConductorViajesInner() {
       completedTicketLatchRef.current,
     );
     const skipActiveFallback = Boolean(
-      completedTicketLatchRef.current &&
-        Date.now() < completedTicketLatchRef.current.until,
+      (completedTicketLatchRef.current &&
+        Date.now() < completedTicketLatchRef.current.until) ||
+        readDriverTerminalRideId() ||
+        readDriverCompletedTicketLatch(),
     );
     if (candidates.length === 0 && !skipActiveFallback) {
       const activeFallback = filterDriverPanelTrips(
@@ -670,7 +713,7 @@ function ConductorViajesInner() {
             until: Date.now() + 120_000,
           };
         }
-        if (completedRow?.id) rememberDriverTerminalRideId(completedRow.id);
+        if (completedRow?.id) rememberDriverTerminalRideId(completedRow.id, completedRow.ticket_code);
         setCompletedNotice(completedRow);
         setActionSuccess(t.completeSuccess);
         return;
@@ -684,6 +727,11 @@ function ConductorViajesInner() {
         );
         rememberDriverActiveRideId(rideFromAction.id);
         pinnedRideIdRef.current = rideFromAction.id;
+        if (path === "accept") {
+          clearDriverTerminalRideId();
+          setCompletedNotice(null);
+          completedTicketLatchRef.current = null;
+        }
         upsertTripFromAction(rideFromAction);
       } else {
         setTrips((prev) => prev.filter((t) => t.id !== rideId));

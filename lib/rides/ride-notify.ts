@@ -5,9 +5,9 @@ import { formatMxnFromCents } from "@/lib/rides/ride-pricing";
 import type { RideBookingRow } from "@/lib/rides/ride-bookings-server";
 import { getPublicAppUrl } from "@/lib/app-url";
 import { sendWhatsAppToE164Digits, isTwilioWhatsAppConfigured } from "@/lib/twilio";
-import { canonicalizeAuthPhone, normalizeAuthPhone } from "@/lib/phone";
+import { e164DigitsForWhatsAppRecipient } from "@/lib/phone";
 import { expandUserAccountIdPool, phoneLookupVariants } from "@/lib/user-account-pool";
-import { idMatchVariantsForIn } from "@/lib/user-id-variants";
+import { idMatchVariantsForIn, sortRowsWithPreferredUserId } from "@/lib/user-id-variants";
 
 export function rideBuyerViajeUrl(rideId?: string | null): string {
   const base = `${getPublicAppUrl()}/viaje`;
@@ -23,15 +23,14 @@ export function rideDriverPanelUrl(rideId?: string | null): string {
 
 export async function findUserPhoneById(
   supabase: SupabaseClient,
-  userId: string
+  userId: string,
 ): Promise<string | null> {
   const pool = await expandUserAccountIdPool(supabase, userId);
   const ids = pool.length > 0 ? pool : idMatchVariantsForIn(userId);
-  const { data: rows } = await supabase.from("users").select("phone").in("id", ids);
-  for (const row of rows ?? []) {
-    const raw = String(row.phone ?? "").trim();
-    if (!raw) continue;
-    const digits = canonicalizeAuthPhone(normalizeAuthPhone(raw));
+  const { data: rowsRaw } = await supabase.from("users").select("id,phone").in("id", ids);
+  const rows = sortRowsWithPreferredUserId(rowsRaw ?? [], userId);
+  for (const row of rows) {
+    const digits = e164DigitsForWhatsAppRecipient(row?.phone);
     if (digits) return digits;
   }
   return null;
@@ -44,7 +43,14 @@ export async function notifyBuyerRideCreated(
   if (!isTwilioWhatsAppConfigured()) return;
 
   const phone = await findUserPhoneById(supabase, args.ride.buyer_id);
-  if (!phone) return;
+  if (!phone) {
+    console.warn("[ride-notify] buyer WhatsApp skipped — no phone", {
+      rideId: args.ride.id.slice(0, 8),
+      buyerId: String(args.ride.buyer_id).slice(0, 8),
+      step: "created",
+    });
+    return;
+  }
 
   const fare = formatMxnFromCents(args.ride.estimated_total_mxn_cents);
   const hold = formatMxnFromCents(args.ride.hold_amount_mxn_cents);
@@ -290,7 +296,7 @@ export async function emitRidePhaseNotifications(
 
 export function extractTwilioPhone(fromField: string): string {
   const raw = String(fromField ?? "").replace(/^whatsapp:/i, "").trim();
-  return canonicalizeAuthPhone(normalizeAuthPhone(raw));
+  return e164DigitsForWhatsAppRecipient(raw);
 }
 
 export async function findUserIdByPhone(

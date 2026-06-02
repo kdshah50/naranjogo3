@@ -126,6 +126,40 @@ export type TripResult =
   | { ok: true; ride: RideBookingRow }
   | { ok: false; error: string; code?: string };
 
+/** Cancel any remaining open rows sharing this ticket (duplicate ghosts after complete). */
+async function cancelOpenDuplicatesForTicket(
+  supabase: SupabaseClient,
+  args: { ticketCode: string | null | undefined; keepId: string },
+): Promise<void> {
+  const ticket = normalizeRideTicketCode(args.ticketCode);
+  if (!ticket) return;
+
+  const { data, error } = await supabase
+    .from("ride_bookings")
+    .select("id, status")
+    .ilike("ticket_code", ticket)
+    .in("status", [...ACTIVE_DRIVER_TRIP_STATUSES, "requested"])
+    .neq("id", args.keepId);
+
+  if (error) {
+    console.error("[ride-trip] cancelOpenDuplicatesForTicket", error);
+    return;
+  }
+
+  const now = new Date().toISOString();
+  for (const row of data ?? []) {
+    await supabase
+      .from("ride_bookings")
+      .update({
+        status: "cancelled",
+        cancel_reason: "duplicate_ticket_row",
+        updated_at: now,
+      })
+      .eq("id", row.id)
+      .eq("status", row.status);
+  }
+}
+
 /** Cancel extra open rows for the same ticket (test/preview duplicate ghosts). */
 async function cancelDuplicateOpenRowsForTicket(
   supabase: SupabaseClient,
@@ -288,7 +322,7 @@ export async function acceptRide(
     toStatus: "accepted",
   });
 
-  void emitRidePhaseNotifications(supabase, {
+  await emitRidePhaseNotifications(supabase, {
     ride: updated,
     phase: "accepted",
     driverUserId: args.driverUserId,
@@ -322,7 +356,7 @@ export async function arriveAtPickup(
     toStatus: "arrived",
   });
 
-  void emitRidePhaseNotifications(supabase, {
+  await emitRidePhaseNotifications(supabase, {
     ride: updated,
     phase: "arrived",
     driverUserId: args.driverUserId,
@@ -367,7 +401,7 @@ export async function startTrip(
     meta: { ticket_verified: true },
   });
 
-  void emitRidePhaseNotifications(supabase, {
+  await emitRidePhaseNotifications(supabase, {
     ride: updated,
     phase: "in_trip",
     driverUserId: args.driverUserId,
@@ -470,13 +504,17 @@ export async function completeTrip(
       driverId: completed.driver_id,
       keepId: completed.id,
     });
+    await cancelOpenDuplicatesForTicket(supabase, {
+      ticketCode: completed.ticket_code,
+      keepId: completed.id,
+    });
     await cancelOtherOpenRidesForDriver(supabase, {
       driverId: completed.driver_id,
       keepId: completed.id,
     });
   }
 
-  void emitRidePhaseNotifications(supabase, {
+  await emitRidePhaseNotifications(supabase, {
     ride: completed,
     phase: "completed",
     driverUserId: driverId,
