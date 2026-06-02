@@ -114,11 +114,15 @@ async function resolveBuyerRide(
   if (explicitId) {
     const ride = await getRideById(supabase, explicitId);
     if (ride && pool.some((uid) => isSameUserId(uid, ride.buyer_id))) {
+      const fresh = await getRideById(supabase, explicitId);
+      const resolved = fresh ?? ride;
       return {
-        ride,
-        dropReason: null,
+        ride: BUYER_OPEN_STATUSES.has(resolved.status) ? resolved : null,
+        dropReason: BUYER_OPEN_STATUSES.has(resolved.status)
+          ? null
+          : `verify:${resolved.status}`,
         rawBuyerCount: 1,
-        verifiedBuyerCount: 1,
+        verifiedBuyerCount: BUYER_OPEN_STATUSES.has(resolved.status) ? 1 : 0,
       };
     }
   }

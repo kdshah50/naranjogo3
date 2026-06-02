@@ -15,7 +15,7 @@ import {
   fetchRideSync,
   type RideDriverPublic,
 } from "@/lib/rides/client-ride-sync";
-import { mergeRideStatusRow } from "@/lib/rides/ride-status-merge";
+import { mergeRideStatusRow, rideStatusRank } from "@/lib/rides/ride-status-merge";
 import { rideStatusLabel, viajeCopy } from "@/lib/rides/ui-copy";
 
 type FareEstimate = {
@@ -178,6 +178,8 @@ function ViajePageInner() {
   const rideIdRef = useRef<string | null>(null);
   const requestLatchUntilRef = useRef(0);
   const refreshSeqRef = useRef(0);
+  /** Polls must not downgrade lifecycle after driver accepts / trip progresses. */
+  const statusFloorByRideRef = useRef<Map<string, number>>(new Map());
 
   const [pickupColonia, setPickupColonia] = useState("centro");
   const [dropoffColonia, setDropoffColonia] = useState("guadalupe");
@@ -200,9 +202,24 @@ function ViajePageInner() {
   const [syncDebug, setSyncDebug] = useState<SyncDebug | null>(null);
   const [driverPublic, setDriverPublic] = useState<RideDriverPublic | null>(null);
 
+  const mergeIncomingBuyerRide = useCallback(
+    (prev: RideRow | null, incoming: RideRow): RideRow => {
+      let merged = prev && prev.id === incoming.id ? mergeRideStatusRow(prev, incoming) : incoming;
+      const floor = statusFloorByRideRef.current.get(incoming.id);
+      if (floor !== undefined && rideStatusRank(merged.status) < floor) {
+        merged = prev && prev.id === incoming.id ? prev : merged;
+      }
+      const nextFloor = Math.max(floor ?? 0, rideStatusRank(merged.status));
+      statusFloorByRideRef.current.set(incoming.id, nextFloor);
+      return merged;
+    },
+    [],
+  );
+
   const applyServerRide = useCallback(
     (row: RideRow | null, source: string, note?: string, dropReason?: string | null) => {
     if (row && isTerminalRideStatus(row.status)) {
+      statusFloorByRideRef.current.delete(row.id);
       setRide(row);
       setTerminalBanner(row);
       pinTerminalRideId(row.id);
@@ -225,8 +242,7 @@ function ViajePageInner() {
       clearTerminalRideId();
       setRide((prev) => {
         if (prev && isTerminalRideStatus(prev.status)) return prev;
-        const next =
-          prev && prev.id === row.id ? mergeRideStatusRow(prev, row) : row;
+        const next = mergeIncomingBuyerRide(prev, row);
         pinRideId(next.id);
         rideIdRef.current = next.id;
         return next;
@@ -245,7 +261,7 @@ function ViajePageInner() {
     setDriverPublic(null);
     setSyncDebug(syncDebugForRow(null, source, note, dropReason));
   },
-  [],
+  [mergeIncomingBuyerRide],
 );
 
   const clearStaleRideUi = useCallback(() => {
@@ -289,12 +305,17 @@ function ViajePageInner() {
 
     const row = sync.ride as RideRow | null;
     if (row?.id) {
+      let resolved = row;
+      const fresh = await fetchRideRowById<RideRow>(row.id);
+      if (fresh?.id) {
+        resolved = mergeRideStatusRow(row, fresh);
+      }
       if (!isStale()) {
         applyServerRide(
-          row,
+          resolved,
           source,
-          isBuyerActiveStatus(row.status) || isTerminalRideStatus(row.status)
-            ? `${row.status}${row.ticket_code ? ` · ${row.ticket_code}` : ""}${debugSuffix}`
+          isBuyerActiveStatus(resolved.status) || isTerminalRideStatus(resolved.status)
+            ? `${resolved.status}${resolved.ticket_code ? ` · ${resolved.ticket_code}` : ""}${debugSuffix}`
             : undefined,
           debugMeta?.drop_reason ?? null,
         );
@@ -342,6 +363,29 @@ function ViajePageInner() {
       return;
     }
 
+    if (pinnedId) {
+      const direct = await fetchRideRowById<RideRow>(pinnedId);
+      if (isStale()) return;
+      if (direct?.id && isBuyerActiveStatus(direct.status)) {
+        applyServerRide(
+          direct,
+          `${source}+direct`,
+          `${direct.status}${direct.ticket_code ? ` · ${direct.ticket_code}` : ""}${debugSuffix}`,
+          debugMeta?.drop_reason ?? null,
+        );
+        return;
+      }
+      if (direct?.id && isTerminalRideStatus(direct.status)) {
+        applyServerRide(
+          direct,
+          `${source}+direct-terminal`,
+          `${direct.status}${debugSuffix}`,
+          debugMeta?.drop_reason ?? null,
+        );
+        return;
+      }
+    }
+
     if (!isStale()) applyServerRide(null, source, `0 open${debugSuffix}`, debugMeta?.drop_reason ?? null);
   }, [applyServerRide, clearStaleRideUi]);
 
@@ -363,7 +407,7 @@ function ViajePageInner() {
       }
       setRide((prev) => {
         if (prev && isTerminalRideStatus(prev.status)) return prev;
-        const next = applyMonotonicRideRow(prev, row);
+        const next = prev ? mergeIncomingBuyerRide(prev, row) : applyMonotonicRideRow(prev, row);
         if (isBuyerActiveStatus(next.status)) {
           pinRideId(next.id);
           rideIdRef.current = next.id;
@@ -519,8 +563,9 @@ function ViajePageInner() {
       }
       clearPinnedRideId();
       if (rideRow?.id) {
-        requestLatchUntilRef.current = Date.now() + 20_000;
+        requestLatchUntilRef.current = Date.now() + 120_000;
         refreshSeqRef.current += 1;
+        statusFloorByRideRef.current.set(rideRow.id, rideStatusRank(rideRow.status));
         pinRideId(rideRow.id);
         rideIdRef.current = rideRow.id;
         if (typeof window !== "undefined") {
@@ -534,6 +579,7 @@ function ViajePageInner() {
         const fresh = await fetchRideRowById<RideRow>(rideRow.id);
         if (fresh) applyServerRide(fresh, "request-verify");
       }
+      window.setTimeout(() => void refreshActiveRide("post-request"), 500);
       if (data.estimate) setEstimate(data.estimate);
     } finally {
       setRequesting(false);
