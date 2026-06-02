@@ -9,10 +9,7 @@ import { formatCurrencyMXN } from "@/lib/locale-format";
 import { RidesStagingBanner } from "@/components/RidesStagingBanner";
 import { useRideLiveStream } from "@/hooks/use-ride-live-stream";
 import { fetchDriverPanel, fetchRideRowById } from "@/lib/rides/client-ride-sync";
-import {
-  mergeRideStatusRow,
-  rideStatusRank,
-} from "@/lib/rides/ride-status-merge";
+import { rideStatusRank } from "@/lib/rides/ride-status-merge";
 import {
   driverFlowStepIndex,
   driverFlowSteps,
@@ -74,6 +71,28 @@ function sortDriverTrips(rows: RideRow[]): RideRow[] {
 
 function activeTripsFromPanel(raw: RideRow[]): RideRow[] {
   return sortDriverTrips(raw.filter((row) => row?.id && isDriverActiveTrip(row)));
+}
+
+/** One ticket → one row (newest / highest lifecycle wins). */
+function dedupeDriverTrips(rows: RideRow[]): RideRow[] {
+  const byKey = new Map<string, RideRow>();
+  for (const row of sortDriverTrips(rows)) {
+    const key = (row.ticket_code ?? "").trim().toUpperCase() || row.id;
+    const cur = byKey.get(key);
+    if (!cur) {
+      byKey.set(key, row);
+      continue;
+    }
+    const rankDiff = rideStatusRank(row.status) - rideStatusRank(cur.status);
+    if (rankDiff > 0) {
+      byKey.set(key, row);
+      continue;
+    }
+    if (rankDiff === 0 && (row.updated_at ?? "") >= (cur.updated_at ?? "")) {
+      byKey.set(key, row);
+    }
+  }
+  return sortDriverTrips([...byKey.values()]);
 }
 
 type RideRow = {
@@ -171,11 +190,6 @@ function ConductorViajesInner() {
 
   /** After Conectar succeeds, ignore stale panel polls that still say offline. */
   const onlineLatchUntilRef = useRef(0);
-  const tripsRef = useRef<RideRow[]>([]);
-
-  useEffect(() => {
-    tripsRef.current = trips;
-  }, [trips]);
 
   /** Apply trip row from POST /accept|arrive|start|complete — panel poll can lag behind DB. */
   const upsertTripFromAction = useCallback((incoming: RideRow) => {
@@ -185,10 +199,8 @@ function ConductorViajesInner() {
       return;
     }
     setTrips((prev) => {
-      const existing = prev.find((t) => t.id === incoming.id);
-      const row = existing ? mergeRideStatusRow(existing, incoming) : incoming;
       const rest = prev.filter((t) => t.id !== incoming.id);
-      return activeTripsFromPanel([...rest, row]);
+      return dedupeDriverTrips([...rest, incoming]);
     });
   }, []);
 
@@ -204,7 +216,7 @@ function ConductorViajesInner() {
   );
 
   const applyServerTrips = useCallback((raw: RideRow[], source: string) => {
-    const next = activeTripsFromPanel(raw);
+    const next = dedupeDriverTrips(activeTripsFromPanel(raw));
     setTrips(next);
     const apiSummary =
       next.length === 0
@@ -227,14 +239,14 @@ function ConductorViajesInner() {
       for (const row of candidates) {
         if (row?.id) ids.add(row.id);
       }
-      for (const row of tripsRef.current) {
-        if (row?.id) ids.add(row.id);
-      }
       const pin = pinnedRideIdRef.current;
       if (pin) ids.add(pin);
       const activeHint = readDriverActiveRideId();
       if (activeHint) ids.add(activeHint);
-      const terminalHint = readDriverTerminalRideId();
+      const terminalHint =
+        candidates.length === 0 && !activeHint && !pin
+          ? readDriverTerminalRideId()
+          : null;
       if (terminalHint) ids.add(terminalHint);
 
       const verified: RideRow[] = [];
@@ -252,8 +264,9 @@ function ConductorViajesInner() {
         }
       }
 
-      if (pin && (terminalPin || !verified.some((r) => r.id === pin))) {
+      if (pin && terminalPin?.id === pin) {
         pinnedRideIdRef.current = null;
+        clearDriverActiveRideId();
         stripRideFromBrowserUrl();
       }
 
@@ -262,8 +275,11 @@ function ConductorViajesInner() {
         setCompletedNotice(terminalPin);
         rememberDriverTerminalRideId(terminalPin.id);
       } else if (verified.length > 0) {
+        rememberDriverActiveRideId(verified[0].id);
+        pinnedRideIdRef.current = verified[0].id;
         setCompletedNotice(null);
         clearDriverTerminalRideId();
+        setActionSuccess(null);
       }
     },
     [applyServerTrips],
@@ -554,6 +570,8 @@ function ConductorViajesInner() {
     }
   };
 
+  const primaryTrip = trips[0] ?? null;
+
   return (
     <main className="min-h-screen bg-[#F8F4ED] text-[#1B4332]">
       <div className="mx-auto max-w-lg px-4 py-8">
@@ -710,9 +728,10 @@ function ConductorViajesInner() {
               </p>
             )}
           </div>
-        ) : (
+        ) : primaryTrip ? (
           <ul className="mb-6 space-y-4">
-            {trips.map((trip) => {
+            {(() => {
+              const trip = primaryTrip;
               const stepIdx = driverFlowStepIndex(trip.status);
               const currentStep =
                 stepIdx >= 0 ? driverFlowSteps(lang)[stepIdx] : null;
@@ -798,9 +817,9 @@ function ConductorViajesInner() {
                   )}
                 </li>
               );
-            })}
+            })()}
           </ul>
-        )}
+        ) : null}
 
         <section className="mb-6 rounded-2xl bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between gap-4">
@@ -826,16 +845,13 @@ function ConductorViajesInner() {
           )}
         </section>
 
-        {isOnline && trips.length > 0 && (
+        {isOnline && primaryTrip && (
           <section className="mb-6 rounded-2xl border border-[#1B4332]/15 bg-white/80 p-4 text-sm">
             <p className="font-medium">{t.flowGuideTitle}</p>
             <p className="mt-1 text-xs text-[#1B4332]/60 leading-relaxed">{t.flowWhereHint}</p>
             <ol className="mt-3 space-y-2">
               {driverFlowSteps(lang).map((step, i) => {
-                const activeIdx =
-                  trips.length > 0
-                    ? Math.max(...trips.map((tr) => driverFlowStepIndex(tr.status)))
-                    : -1;
+                const activeIdx = driverFlowStepIndex(primaryTrip.status);
                 const isCurrent = i === activeIdx;
                 const isDone = activeIdx >= 0 && i < activeIdx;
                 return (
