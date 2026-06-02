@@ -9,7 +9,7 @@ import { formatCurrencyMXN } from "@/lib/locale-format";
 import { RidesStagingBanner } from "@/components/RidesStagingBanner";
 import { useRideLiveStream } from "@/hooks/use-ride-live-stream";
 import { fetchDriverPanel, fetchRideRowById } from "@/lib/rides/client-ride-sync";
-import { rideStatusRank } from "@/lib/rides/ride-status-merge";
+import { mergeRideStatusRow, rideStatusRank } from "@/lib/rides/ride-status-merge";
 import {
   driverFlowStepIndex,
   driverFlowSteps,
@@ -190,6 +190,10 @@ function ConductorViajesInner() {
 
   /** After Conectar succeeds, ignore stale panel polls that still say offline. */
   const onlineLatchUntilRef = useRef(0);
+  /** Ignore out-of-order load() results when a newer load started. */
+  const syncGenRef = useRef(0);
+  /** After POST accept/arrive/start, polls must not downgrade this ride's status. */
+  const statusFloorByRideRef = useRef<Map<string, number>>(new Map());
 
   /** Apply trip row from POST /accept|arrive|start|complete — panel poll can lag behind DB. */
   const upsertTripFromAction = useCallback((incoming: RideRow) => {
@@ -216,25 +220,46 @@ function ConductorViajesInner() {
   );
 
   const applyServerTrips = useCallback((raw: RideRow[], source: string) => {
-    const next = dedupeDriverTrips(activeTripsFromPanel(raw));
-    setTrips(next);
+    const incoming = dedupeDriverTrips(activeTripsFromPanel(raw));
+    setTrips((prev) => {
+      const floors = statusFloorByRideRef.current;
+      const merged: RideRow[] = [];
+      for (const row of incoming) {
+        const floor = floors.get(row.id);
+        const ex = prev.find((p) => p.id === row.id);
+        let nextRow = ex ? mergeRideStatusRow(ex, row) : row;
+        if (floor !== undefined && rideStatusRank(nextRow.status) < floor) {
+          nextRow = ex ?? nextRow;
+        }
+        merged.push(nextRow);
+      }
+      for (const ex of prev) {
+        if (!merged.some((m) => m.id === ex.id) && isDriverActiveTrip(ex)) {
+          const floor = floors.get(ex.id);
+          if (floor === undefined || rideStatusRank(ex.status) >= floor) {
+            merged.push(ex);
+          }
+        }
+      }
+      return dedupeDriverTrips(merged);
+    });
     const apiSummary =
-      next.length === 0
+      incoming.length === 0
         ? "0 trips"
-        : `${next.length} trip · ${next[0].status}${next[0].ticket_code ? ` · ${next[0].ticket_code}` : ""}`;
+        : `${incoming.length} trip · ${incoming[0].status}${incoming[0].ticket_code ? ` · ${incoming[0].ticket_code}` : ""}`;
     setSyncDebug({
       source,
       at: new Date().toLocaleTimeString(),
-      apiCount: next.length,
+      apiCount: incoming.length,
       apiSummary,
-      uiCount: next.length,
+      uiCount: incoming.length,
       mismatch: false,
     });
   }, []);
 
   /** Re-fetch each row by id — list/SSE payloads can lag behind DB (e.g. completed still shown as accepted). */
   const verifyAndSetTrips = useCallback(
-    async (candidates: RideRow[], source: string) => {
+    async (candidates: RideRow[], source: string, gen: number) => {
       const ids = new Set<string>();
       for (const row of candidates) {
         if (row?.id) ids.add(row.id);
@@ -263,6 +288,8 @@ function ConductorViajesInner() {
           terminalPin = fresh;
         }
       }
+
+      if (gen !== syncGenRef.current) return;
 
       if (pin && terminalPin?.id === pin) {
         pinnedRideIdRef.current = null;
@@ -294,9 +321,11 @@ function ConductorViajesInner() {
   }, []);
 
   const load = useCallback(async (source = "poll") => {
+    const gen = ++syncGenRef.current;
     const syncRideId =
       pinnedRideIdRef.current ?? readDriverActiveRideId() ?? undefined;
     const panelResult = await fetchDriverPanel(syncRideId);
+    if (gen !== syncGenRef.current) return;
     if (!panelResult.ok) {
       if (panelResult.status === 404) {
         setPanelError(t.ridesDisabled);
@@ -312,7 +341,7 @@ function ConductorViajesInner() {
     const candidates = (panel.trips ?? []) as RideRow[];
 
     if (panel.driver) setOnline(mergeDriverOnline(panel.driver as DriverOnline));
-    await verifyAndSetTrips(candidates, source);
+    await verifyAndSetTrips(candidates, source, gen);
 
     setCanonicalUserId(panel.canonical_user_id ?? panel.driver?.user_id ?? null);
     setSessionUserId(panel.session_user_id ?? null);
@@ -544,6 +573,11 @@ function ConductorViajesInner() {
 
       const rideFromAction = data.ride as RideRow | undefined;
       if (rideFromAction?.id) {
+        syncGenRef.current += 1;
+        statusFloorByRideRef.current.set(
+          rideFromAction.id,
+          rideStatusRank(rideFromAction.status),
+        );
         rememberDriverActiveRideId(rideFromAction.id);
         pinnedRideIdRef.current = rideFromAction.id;
         upsertTripFromAction(rideFromAction);
@@ -552,9 +586,9 @@ function ConductorViajesInner() {
       }
 
       await refreshTripById(rideId);
-      await load("action");
 
       if (path === "complete") {
+        statusFloorByRideRef.current.delete(rideId);
         setTrips([]);
         if (rideFromAction?.id) rememberDriverTerminalRideId(rideFromAction.id);
         setCompletedNotice(rideFromAction ?? null);
