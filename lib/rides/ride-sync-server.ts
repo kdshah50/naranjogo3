@@ -5,9 +5,12 @@ import { isSameUserId } from "@/lib/auth-server";
 import { loadDriverPanel } from "@/lib/rides/driver-panel-server";
 import { getRideById, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
 import { dropActiveRowsWithCompletedTicket } from "@/lib/rides/ride-ghost-filter";
+import { resolveCanonicalRideByTicketForBuyer } from "@/lib/rides/resolve-ride-by-ticket";
+import { rideStatusRank } from "@/lib/rides/ride-status-merge";
 import {
   latestBuyerRideForDisplay,
   listActiveTripsForBuyer,
+  pickBestOpenBuyerRideRow,
 } from "@/lib/rides/ride-trip-server";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 
@@ -59,6 +62,36 @@ async function verifyBuyerOpenTrips(
     }),
   );
   return verified.filter((row): row is RideBookingRow => row !== null);
+}
+
+function pickBestOpenBuyerRide(rows: RideBookingRow[]): RideBookingRow | null {
+  return pickBestOpenBuyerRideRow(rows);
+}
+
+/** Same NG- ticket may have duplicate rows — always return the highest lifecycle row. */
+async function resolveBuyerRideCanonical(
+  supabase: SupabaseClient,
+  row: RideBookingRow,
+  sessionUserId: string,
+  accountOpts: { authPhone: string | null },
+): Promise<RideBookingRow> {
+  const ticket = String(row.ticket_code ?? "").trim();
+  if (!ticket) return row;
+
+  const canonical = await resolveCanonicalRideByTicketForBuyer(
+    supabase,
+    sessionUserId,
+    ticket,
+    accountOpts,
+  );
+  if (!canonical?.id) return row;
+
+  const fresh = await getRideById(supabase, canonical.id);
+  const resolved = fresh ?? canonical;
+  if (rideStatusRank(resolved.status) >= rideStatusRank(row.status)) {
+    return resolved;
+  }
+  return row;
 }
 
 async function loadDriverPublic(
@@ -114,8 +147,13 @@ async function resolveBuyerRide(
   if (explicitId) {
     const ride = await getRideById(supabase, explicitId);
     if (ride && pool.some((uid) => isSameUserId(uid, ride.buyer_id))) {
-      const fresh = await getRideById(supabase, explicitId);
-      const resolved = fresh ?? ride;
+      let resolved = (await getRideById(supabase, explicitId)) ?? ride;
+      resolved = await resolveBuyerRideCanonical(
+        supabase,
+        resolved,
+        args.sessionUserId,
+        accountOpts,
+      );
       return {
         ride: resolved,
         dropReason: BUYER_OPEN_STATUSES.has(resolved.status)
@@ -139,8 +177,12 @@ async function resolveBuyerRide(
   const verified = await verifyBuyerOpenTrips(supabase, postGhost);
 
   if (verified.length > 0) {
+    const best = pickBestOpenBuyerRide(verified);
+    const resolved = best
+      ? await resolveBuyerRideCanonical(supabase, best, args.sessionUserId, accountOpts)
+      : null;
     return {
-      ride: verified[0],
+      ride: resolved,
       dropReason: null,
       rawBuyerCount: buyerTripsRaw.length,
       verifiedBuyerCount: verified.length,

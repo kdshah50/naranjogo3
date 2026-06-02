@@ -58,9 +58,9 @@ export async function resolveCanonicalRideByTicket(
   if (rows.length === 0) return null;
 
   const sorted = [...rows].sort((a, b) => {
-    const tDiff = rowTimeMs(b) - rowTimeMs(a);
-    if (tDiff !== 0) return tDiff;
-    return rideStatusRank(b.status) - rideStatusRank(a.status);
+    const rankDiff = rideStatusRank(b.status) - rideStatusRank(a.status);
+    if (rankDiff !== 0) return rankDiff;
+    return rowTimeMs(b) - rowTimeMs(a);
   });
 
   const pick = sorted[0];

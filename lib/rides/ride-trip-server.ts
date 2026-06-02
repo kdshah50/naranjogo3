@@ -19,6 +19,7 @@ import {
   releaseWalletHoldForRide,
 } from "@/lib/rides/wallet-hold";
 import { normalizeRideTicketCode } from "@/lib/rides/ride-ghost-filter";
+import { rideStatusRank } from "@/lib/rides/ride-status-merge";
 import { driverRideAccountIdPool, findActiveDriverProfileForAccount } from "@/lib/rides/driver-account";
 import { userIdsForAuthPhone } from "@/lib/resolve-login-user";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
@@ -707,8 +708,28 @@ async function refreshOpenBuyerRows(
     const fresh = await getRideById(supabase, row.id);
     if (fresh && openSet.has(fresh.status)) freshRows.push(fresh);
   }
-  freshRows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  freshRows.sort((a, b) => {
+    const rankDiff = rideStatusRank(b.status) - rideStatusRank(a.status);
+    if (rankDiff !== 0) return rankDiff;
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
   return freshRows;
+}
+
+function buyerRowTimeMs(row: RideBookingRow): number {
+  const raw = row.updated_at ?? row.created_at;
+  const t = raw ? Date.parse(raw) : 0;
+  return Number.isFinite(t) ? t : 0;
+}
+
+/** Highest lifecycle open row — duplicate ticket ghosts often sit at matched. */
+export function pickBestOpenBuyerRideRow(rows: RideBookingRow[]): RideBookingRow | null {
+  if (rows.length === 0) return null;
+  return [...rows].sort((a, b) => {
+    const rankDiff = rideStatusRank(b.status) - rideStatusRank(a.status);
+    if (rankDiff !== 0) return rankDiff;
+    return buyerRowTimeMs(b) - buyerRowTimeMs(a);
+  })[0];
 }
 
 export async function listActiveTripsForBuyer(
@@ -756,7 +777,11 @@ export async function listActiveTripsForBuyer(
   }
 
   const rows = [...byId.values()];
-  rows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  rows.sort((a, b) => {
+    const rankDiff = rideStatusRank(b.status) - rideStatusRank(a.status);
+    if (rankDiff !== 0) return rankDiff;
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
   const freshRows = await refreshOpenBuyerRows(supabase, rows);
   return freshRows.slice(0, 5);
 }
@@ -778,10 +803,7 @@ function pickLatestBuyerRideRow(rows: RideBookingRow[]): RideBookingRow | null {
 
   const active = rows.filter((r) => r.status !== "completed" && r.status !== "cancelled");
   if (active.length > 0) {
-    return [...active].sort(
-      (a, b) =>
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-    )[0];
+    return pickBestOpenBuyerRideRow(active);
   }
 
   const terminal = rows.filter((r) => r.status === "completed" || r.status === "cancelled");

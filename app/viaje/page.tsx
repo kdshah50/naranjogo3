@@ -12,6 +12,7 @@ import {
   applyMonotonicRideRow,
   fetchActiveBuyerRide,
   fetchBuyerCompletedDisplayRide,
+  fetchCanonicalRideByTicket,
   fetchRideRowById,
   fetchRideSync,
   type RideDriverPublic,
@@ -171,6 +172,21 @@ function readPinnedRideId(): string | null {
   return id || null;
 }
 
+/** Duplicate NG- rows share a ticket — follow highest lifecycle row (WhatsApp links pin stale ids). */
+async function resolveRowByTicketCanonical(row: RideRow): Promise<RideRow> {
+  const ticket = normalizeTicketKey(row.ticket_code);
+  if (!ticket) return row;
+
+  const canonical = await fetchCanonicalRideByTicket<RideRow>(ticket);
+  if (!canonical?.id) return row;
+
+  const merged = mergeRideStatusRow(row, canonical);
+  if (rideStatusRank(canonical.status) >= rideStatusRank(row.status)) {
+    return { ...merged, id: canonical.id, status: canonical.status };
+  }
+  return merged;
+}
+
 export default function ViajePage() {
   return (
     <Suspense
@@ -219,13 +235,30 @@ function ViajePageInner() {
 
   const mergeIncomingBuyerRide = useCallback(
     (prev: RideRow | null, incoming: RideRow): RideRow => {
-      let merged = prev && prev.id === incoming.id ? mergeRideStatusRow(prev, incoming) : incoming;
-      const floor = statusFloorByRideRef.current.get(incoming.id);
+      const sameTicket =
+        prev?.ticket_code &&
+        incoming.ticket_code &&
+        normalizeTicketKey(prev.ticket_code) === normalizeTicketKey(incoming.ticket_code);
+      const sameId = prev?.id === incoming.id;
+
+      let merged: RideRow;
+      if (sameId) {
+        merged = mergeRideStatusRow(prev!, incoming);
+      } else if (sameTicket && prev) {
+        const ahead =
+          rideStatusRank(incoming.status) >= rideStatusRank(prev.status) ? incoming : prev;
+        const behind = ahead === incoming ? prev : incoming;
+        merged = { ...mergeRideStatusRow(behind, ahead), id: ahead.id };
+      } else {
+        merged = incoming;
+      }
+
+      const floor = statusFloorByRideRef.current.get(merged.id);
       if (floor !== undefined && rideStatusRank(merged.status) < floor) {
-        merged = prev && prev.id === incoming.id ? prev : merged;
+        if (sameId && prev) merged = prev;
       }
       const nextFloor = Math.max(floor ?? 0, rideStatusRank(merged.status));
-      statusFloorByRideRef.current.set(incoming.id, nextFloor);
+      statusFloorByRideRef.current.set(merged.id, nextFloor);
       return merged;
     },
     [],
@@ -309,6 +342,29 @@ function ViajePageInner() {
     const syncResult = await fetchRideSync(pinnedId ?? undefined);
     if (isStale()) return;
 
+    const applyResolvedRide = async (
+      row: RideRow,
+      src: string,
+      note?: string,
+      dropReason?: string | null,
+    ) => {
+      let resolved = row;
+      const fresh = await fetchRideRowById<RideRow>(row.id);
+      if (fresh?.id) resolved = mergeRideStatusRow(row, fresh);
+      resolved = await resolveRowByTicketCanonical(resolved);
+      if (!isStale()) {
+        applyServerRide(
+          resolved,
+          src,
+          note ??
+            (isBuyerActiveStatus(resolved.status) || isTerminalRideStatus(resolved.status)
+              ? `${resolved.status}${resolved.ticket_code ? ` · ${resolved.ticket_code}` : ""}`
+              : undefined),
+          dropReason ?? null,
+        );
+      }
+    };
+
     if (!syncResult.ok) {
       if (pinnedId) {
         const pinnedOpen = await fetchOpenPinnedRide(pinnedId);
@@ -331,17 +387,12 @@ function ViajePageInner() {
 
     const row = sync.ride as RideRow | null;
     if (row?.id) {
-      let resolved = row;
-      const fresh = await fetchRideRowById<RideRow>(row.id);
-      if (fresh?.id) {
-        resolved = mergeRideStatusRow(row, fresh);
-      }
       if (!isStale()) {
-        applyServerRide(
-          resolved,
+        await applyResolvedRide(
+          row,
           source,
-          isBuyerActiveStatus(resolved.status) || isTerminalRideStatus(resolved.status)
-            ? `${resolved.status}${resolved.ticket_code ? ` · ${resolved.ticket_code}` : ""}${debugSuffix}`
+          isBuyerActiveStatus(row.status) || isTerminalRideStatus(row.status)
+            ? `${row.status}${row.ticket_code ? ` · ${row.ticket_code}` : ""}${debugSuffix}`
             : undefined,
           debugMeta?.drop_reason ?? null,
         );
@@ -354,7 +405,7 @@ function ViajePageInner() {
       const direct = await fetchRideRowById<RideRow>(pinnedIdNow);
       if (isStale()) return;
       if (direct?.id && isTerminalRideStatus(direct.status)) {
-        applyServerRide(
+        await applyResolvedRide(
           direct,
           `${source}+direct-terminal`,
           `${direct.status}${debugSuffix}`,
@@ -363,7 +414,7 @@ function ViajePageInner() {
         return;
       }
       if (direct?.id && isBuyerActiveStatus(direct.status)) {
-        applyServerRide(
+        await applyResolvedRide(
           direct,
           `${source}+direct`,
           `${direct.status}${direct.ticket_code ? ` · ${direct.ticket_code}` : ""}${debugSuffix}`,
@@ -380,7 +431,7 @@ function ViajePageInner() {
       isBuyerActiveStatus(activeFallback.status) &&
       !isTicketLatched(activeFallback.ticket_code, completedTicketLatchRef.current)
     ) {
-      applyServerRide(
+      await applyResolvedRide(
         activeFallback,
         `${source}+active`,
         `${activeFallback.status}${activeFallback.ticket_code ? ` · ${activeFallback.ticket_code}` : ""}${debugSuffix}`,

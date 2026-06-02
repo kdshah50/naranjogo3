@@ -10,7 +10,9 @@ import {
   latestBuyerRideForDisplay,
   listActiveTripsForBuyer,
   listActiveTripsForDriver,
+  pickBestOpenBuyerRideRow,
 } from "@/lib/rides/ride-trip-server";
+import { rideStatusRank } from "@/lib/rides/ride-status-merge";
 
 export const dynamic = "force-dynamic";
 
@@ -127,11 +129,30 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  let primaryBuyerActive: RideBookingRow | null = buyerActiveTrips[0] ?? null;
+  let primaryBuyerActive: RideBookingRow | null =
+    pickBestOpenBuyerRideRow(buyerActiveTrips);
+  if (primaryBuyerActive?.ticket_code) {
+    const canonical = await resolveCanonicalRideByTicketForBuyer(
+      guard.supabase,
+      guard.userId,
+      primaryBuyerActive.ticket_code,
+      accountOpts,
+    );
+    if (canonical && BUYER_OPEN_STATUSES.has(canonical.status)) {
+      const [verified] = await verifyBuyerActiveTrips(guard.supabase, [canonical]);
+      primaryBuyerActive = verified ?? canonical;
+    }
+  }
   if (canonicalByTicket) {
     if (BUYER_OPEN_STATUSES.has(canonicalByTicket.status)) {
       const [verified] = await verifyBuyerActiveTrips(guard.supabase, [canonicalByTicket]);
-      primaryBuyerActive = verified ?? canonicalByTicket;
+      const canonicalActive = verified ?? canonicalByTicket;
+      if (
+        !primaryBuyerActive ||
+        rideStatusRank(canonicalActive.status) >= rideStatusRank(primaryBuyerActive.status)
+      ) {
+        primaryBuyerActive = canonicalActive;
+      }
       if (verified && !buyerActiveTrips.some((t) => t.id === verified.id)) {
         buyerActiveTrips = [verified, ...buyerActiveTrips];
       }
