@@ -18,6 +18,7 @@ import {
   hasHoldForRide,
   releaseWalletHoldForRide,
 } from "@/lib/rides/wallet-hold";
+import { normalizeRideTicketCode } from "@/lib/rides/ride-ghost-filter";
 import { driverRideAccountIdPool, findActiveDriverProfileForAccount } from "@/lib/rides/driver-account";
 import { userIdsForAuthPhone } from "@/lib/resolve-login-user";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
@@ -125,6 +126,42 @@ export type TripResult =
   | { ok: true; ride: RideBookingRow }
   | { ok: false; error: string; code?: string };
 
+/** Cancel extra open rows for the same ticket (test/preview duplicate ghosts). */
+async function cancelDuplicateOpenRowsForTicket(
+  supabase: SupabaseClient,
+  args: { ticketCode: string | null | undefined; driverId: string; keepId: string },
+): Promise<void> {
+  const ticket = normalizeRideTicketCode(args.ticketCode);
+  if (!ticket) return;
+
+  const driverIds = idMatchVariantsForIn(args.driverId);
+  const { data, error } = await supabase
+    .from("ride_bookings")
+    .select("id, status")
+    .ilike("ticket_code", ticket)
+    .in("driver_id", driverIds)
+    .in("status", [...ACTIVE_DRIVER_TRIP_STATUSES])
+    .neq("id", args.keepId);
+
+  if (error) {
+    console.error("[ride-trip] cancelDuplicateOpenRowsForTicket", error);
+    return;
+  }
+
+  const now = new Date().toISOString();
+  for (const row of data ?? []) {
+    await supabase
+      .from("ride_bookings")
+      .update({
+        status: "cancelled",
+        cancel_reason: "duplicate_ticket_row",
+        updated_at: now,
+      })
+      .eq("id", row.id)
+      .eq("status", row.status);
+  }
+}
+
 async function updateRideStatus(
   supabase: SupabaseClient,
   rideId: string,
@@ -191,21 +228,35 @@ export async function acceptRide(
     };
   }
 
-  let updated = await updateRideStatus(supabase, ride.id, "matched", { status: "accepted" });
-  if (!updated && ride.status === "matched") {
+  let updated = await updateRideStatus(supabase, ride.id, ride.status, { status: "accepted" });
+  if (!updated) {
     const { data: retry } = await supabase
       .from("ride_bookings")
       .update({ status: "accepted", updated_at: new Date().toISOString() })
       .eq("id", ride.id)
+      .in("status", ["matched"])
       .select("*")
       .maybeSingle();
     updated = (retry as RideBookingRow) ?? null;
   }
   if (!updated) {
     const fresh = await getRideById(supabase, ride.id);
-    if (fresh?.status === "accepted") return { ok: true, ride: fresh };
-    return { ok: false, error: "No se pudo aceptar el viaje", code: "invalid_state" };
+    if (fresh?.status === "accepted") {
+      updated = fresh;
+    } else {
+      return { ok: false, error: "No se pudo aceptar el viaje", code: "invalid_state" };
+    }
   }
+
+  if (updated.driver_id) {
+    await cancelDuplicateOpenRowsForTicket(supabase, {
+      ticketCode: updated.ticket_code,
+      driverId: updated.driver_id,
+      keepId: updated.id,
+    });
+  }
+  const freshAfter = await getRideById(supabase, updated.id);
+  if (freshAfter) updated = freshAfter;
 
   await appendRideEvent(supabase, {
     rideId: ride.id,

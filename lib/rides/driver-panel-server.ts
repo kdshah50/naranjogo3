@@ -10,6 +10,10 @@ import { resolveDriverProfileForSession } from "@/lib/rides/resolve-driver-sessi
 import { getRideById, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
 import { userIdsForAuthPhone } from "@/lib/resolve-login-user";
 import { dropActiveRowsWithCompletedTicket } from "@/lib/rides/ride-ghost-filter";
+import {
+  collapseDriverPanelTripsByTicket,
+  resolveCanonicalRideByTicketForDriver,
+} from "@/lib/rides/resolve-ride-by-ticket";
 import { listActiveTripsForDriverProfile } from "@/lib/rides/ride-trip-server";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 import { idMatchVariantsForIn, driverProfileUserIdVariants } from "@/lib/user-id-variants";
@@ -78,13 +82,25 @@ async function mergeExplicitDriverRide(
   const id = String(args.explicitRideId ?? "").trim();
   if (!id || verified.some((row) => row.id === id)) return verified;
 
-  const ride = await getRideById(supabase, id);
-  if (!ride?.driver_id || !DRIVER_ACTIVE_STATUSES.has(ride.status)) return verified;
+  let ride = await getRideById(supabase, id);
+  if (!ride?.driver_id) return verified;
 
   const pool = await expandUserAccountIdPool(supabase, args.sessionUserId, {
     authPhone: args.authPhone,
   });
-  if (!pool.some((uid) => isSameUserId(uid, ride.driver_id))) return verified;
+  if (!pool.some((uid) => isSameUserId(uid, ride!.driver_id))) return verified;
+
+  if (ride.ticket_code) {
+    const canonical = await resolveCanonicalRideByTicketForDriver(
+      supabase,
+      args.sessionUserId,
+      ride.ticket_code,
+      { authPhone: args.authPhone },
+    );
+    if (canonical) ride = canonical;
+  }
+
+  if (!DRIVER_ACTIVE_STATUSES.has(ride.status)) return verified;
 
   const [fresh] = await verifyDriverPanelTrips(supabase, [ride]);
   if (!fresh) return verified;
@@ -148,6 +164,8 @@ export async function loadDriverPanel(
   }
 
   let { trips, hideTickets } = await dropActiveRowsWithCompletedTicket(supabase, verified);
+  trips = await collapseDriverPanelTripsByTicket(supabase, trips, args);
+  trips = await verifyDriverPanelTrips(supabase, trips);
   trips = await mergeExplicitDriverRide(supabase, args, trips);
 
   return {
