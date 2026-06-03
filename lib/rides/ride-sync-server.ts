@@ -176,6 +176,35 @@ async function resolveBuyerRide(
   );
   const verified = await verifyBuyerOpenTrips(supabase, postGhost);
 
+  if (verified.length === 0 && buyerTripsRaw.length > 0) {
+    const bestRaw = pickBestOpenBuyerRide(buyerTripsRaw);
+    if (bestRaw?.ticket_code) {
+      const canonical = await resolveCanonicalRideByTicketForBuyer(
+        supabase,
+        args.sessionUserId,
+        bestRaw.ticket_code,
+        accountOpts,
+      );
+      if (canonical) {
+        const resolved = await resolveBuyerRideCanonical(
+          supabase,
+          canonical,
+          args.sessionUserId,
+          accountOpts,
+        );
+        const [fresh] = await verifyBuyerOpenTrips(supabase, [resolved]);
+        if (fresh) {
+          return {
+            ride: fresh,
+            dropReason: null,
+            rawBuyerCount: buyerTripsRaw.length,
+            verifiedBuyerCount: 1,
+          };
+        }
+      }
+    }
+  }
+
   if (verified.length > 0) {
     const best = pickBestOpenBuyerRide(verified);
     const resolved = best

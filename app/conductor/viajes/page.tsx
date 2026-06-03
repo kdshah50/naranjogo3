@@ -85,11 +85,10 @@ function filterDriverPanelTrips(
   completedLatch: { ticket: string; until: number } | null,
 ): RideRow[] {
   const hidden = new Set(hideTickets.map(normalizeTicketKey).filter(Boolean));
-  const sessionTicket = readDriverCompletedTicketLatch();
   const latchedTicket =
     completedLatch && Date.now() < completedLatch.until
       ? normalizeTicketKey(completedLatch.ticket)
-      : sessionTicket;
+      : "";
   return trips.filter((row) => {
     const ticket = normalizeTicketKey(row.ticket_code);
     if (ticket && hidden.has(ticket)) return false;
@@ -362,7 +361,7 @@ function ConductorViajesInner() {
       const latchedTicket =
         latch && Date.now() < latch.until
           ? normalizeTicketKey(latch.ticket)
-          : readDriverCompletedTicketLatch() ?? "";
+          : "";
       const filtered = latchedTicket
         ? verified.filter((row) => normalizeTicketKey(row.ticket_code) !== latchedTicket)
         : verified;
@@ -370,7 +369,7 @@ function ConductorViajesInner() {
       if (gen !== syncGenRef.current) return;
 
       const terminalSessionId = readDriverTerminalRideId();
-      if (terminalSessionId) {
+      if (terminalSessionId && filtered.length === 0) {
         const terminalFresh = await fetchRideRowById<RideRow>(terminalSessionId);
         if (gen !== syncGenRef.current) return;
         if (terminalFresh?.id && isTerminalDriverTrip(terminalFresh.status)) {
@@ -394,15 +393,17 @@ function ConductorViajesInner() {
         stripRideFromBrowserUrl();
       }
 
-      applyServerTrips(filtered, source, filtered.length === 0);
+      const bestFiltered = sortDriverTrips(filtered)[0] ?? null;
+      applyServerTrips(bestFiltered ? [bestFiltered] : [], source, filtered.length === 0);
       if (filtered.length === 0 && terminalPin) {
         setCompletedNotice(terminalPin);
         rememberDriverTerminalRideId(terminalPin.id, terminalPin.ticket_code);
-      } else if (filtered.length > 0 && !latchedTicket) {
-        rememberDriverActiveRideId(filtered[0].id);
-        pinnedRideIdRef.current = filtered[0].id;
+      } else if (bestFiltered && !latchedTicket) {
+        rememberDriverActiveRideId(bestFiltered.id);
+        pinnedRideIdRef.current = bestFiltered.id;
         setCompletedNotice(null);
         clearDriverTerminalRideId();
+        clearDriverCompletedTicketLatch();
         setActionSuccess(null);
       } else if (filtered.length === 0 && latchedTicket) {
         setTrips([]);
@@ -449,10 +450,8 @@ function ConductorViajesInner() {
       completedTicketLatchRef.current,
     );
     const skipActiveFallback = Boolean(
-      (completedTicketLatchRef.current &&
-        Date.now() < completedTicketLatchRef.current.until) ||
-        readDriverTerminalRideId() ||
-        readDriverCompletedTicketLatch(),
+      completedTicketLatchRef.current &&
+        Date.now() < completedTicketLatchRef.current.until,
     );
     if (candidates.length === 0 && !skipActiveFallback) {
       const activeFallback = filterDriverPanelTrips(
