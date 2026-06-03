@@ -190,6 +190,18 @@ async function resolveRowByTicketCanonical(row: RideRow): Promise<RideRow> {
   return merged;
 }
 
+function repinCanonicalRideId(
+  row: RideRow,
+  rideIdRef: { current: string | null },
+  activeTicketRef: { current: string | null },
+) {
+  if (!row?.id) return;
+  pinRideId(row.id);
+  rideIdRef.current = row.id;
+  const ticket = normalizeTicketKey(row.ticket_code);
+  if (ticket) activeTicketRef.current = ticket;
+}
+
 export default function ViajePage() {
   return (
     <Suspense
@@ -210,6 +222,8 @@ function ViajePageInner() {
   const rideIdRef = useRef<string | null>(null);
   /** WhatsApp deep-link ticket — resolves canonical row even when ride id is stale. */
   const urlTicketRef = useRef<string | null>(null);
+  /** Active trip ticket — sent on every sync so server resolves highest lifecycle row. */
+  const activeTicketRef = useRef<string | null>(null);
   const requestLatchUntilRef = useRef(0);
   const refreshSeqRef = useRef(0);
   /** Polls must not downgrade lifecycle after driver accepts / trip progresses. */
@@ -273,6 +287,7 @@ function ViajePageInner() {
     (row: RideRow | null, source: string, note?: string, dropReason?: string | null) => {
     if (row && isTerminalRideStatus(row.status)) {
       statusFloorByRideRef.current.delete(row.id);
+      requestLatchUntilRef.current = 0;
       if (row.ticket_code) {
         completedTicketLatchRef.current = {
           ticket: row.ticket_code,
@@ -309,8 +324,7 @@ function ViajePageInner() {
           if (sameTicket) return prev;
         }
         const next = mergeIncomingBuyerRide(prev, row);
-        pinRideId(next.id);
-        rideIdRef.current = next.id;
+        repinCanonicalRideId(next, rideIdRef, activeTicketRef);
         return next;
       });
       setTerminalBanner(null);
@@ -354,7 +368,7 @@ function ViajePageInner() {
     const isStale = () => seq !== refreshSeqRef.current;
 
     const pinnedId = rideIdRef.current ?? readPinnedRideId();
-    const ticketHint = urlTicketRef.current || undefined;
+    const ticketHint = urlTicketRef.current || activeTicketRef.current || undefined;
     const syncResult = await fetchRideSync(pinnedId ?? undefined, ticketHint || undefined);
     if (syncResult.ok && syncResult.payload.ride?.id) {
       urlTicketRef.current = null;
@@ -371,6 +385,7 @@ function ViajePageInner() {
       const fresh = await fetchRideRowById<RideRow>(row.id);
       if (fresh?.id) resolved = mergeRideStatusRow(row, fresh);
       resolved = await resolveRowByTicketCanonical(resolved);
+      repinCanonicalRideId(resolved, rideIdRef, activeTicketRef);
       if (!isStale()) {
         applyServerRide(
           resolved,
@@ -550,31 +565,19 @@ function ViajePageInner() {
     streamUrl: liveRideId ? `/api/rides/${liveRideId}/stream` : null,
     enabled: liveStreamEnabled,
     onEvent: (payload) => {
-      const row = (payload as { ride?: RideRow }).ride;
-      if (!row?.id) return;
-      if (isTerminalRideStatus(row.status)) {
+      const seqAtEvent = refreshSeqRef.current;
+      void (async () => {
+        let row = (payload as { ride?: RideRow }).ride;
+        if (!row?.id) return;
+        row = await resolveRowByTicketCanonical(row);
+        if (seqAtEvent !== refreshSeqRef.current) return;
+        repinCanonicalRideId(row, rideIdRef, activeTicketRef);
         applyServerRide(row, "SSE");
-        return;
-      }
-      setRide((prev) => {
-        if (prev && isTerminalRideStatus(prev.status)) {
-          const sameTicket =
-            prev.ticket_code &&
-            row.ticket_code &&
-            normalizeTicketKey(prev.ticket_code) === normalizeTicketKey(row.ticket_code);
-          if (sameTicket) return prev;
-        }
-        const next = prev ? mergeIncomingBuyerRide(prev, row) : applyMonotonicRideRow(prev, row);
-        if (isBuyerActiveStatus(next.status)) {
-          pinRideId(next.id);
-          rideIdRef.current = next.id;
-        }
-        return next;
-      });
-      setDriverPublic((payload as { driver_public?: RideDriverPublic }).driver_public ?? null);
-      setSyncDebug(syncDebugForRow(row, "SSE"));
+        const driverPub = (payload as { driver_public?: RideDriverPublic }).driver_public;
+        if (driverPub) setDriverPublic(driverPub);
+      })();
     },
-    fallbackPollMs: 12_000,
+    fallbackPollMs: 8_000,
     onFallbackPoll: () => void refreshActiveRide("poll-backup"),
   });
 
@@ -608,7 +611,7 @@ function ViajePageInner() {
   useEffect(() => {
     if (authError) return;
     const terminal = ride?.status === "completed" || ride?.status === "cancelled";
-    const ms = terminal ? 8_000 : ride ? 3_000 : 5_000;
+    const ms = terminal ? 8_000 : ride ? 2_000 : 5_000;
     const timer = setInterval(() => void refreshActiveRide("poll"), ms);
     return () => clearInterval(timer);
   }, [authError, ride?.status, refreshActiveRide]);
@@ -692,6 +695,7 @@ function ViajePageInner() {
     clearTerminalRideId();
     completedTicketLatchRef.current = null;
     urlTicketRef.current = null;
+    activeTicketRef.current = null;
     setTerminalBanner(null);
     setRide(null);
     try {
@@ -738,8 +742,7 @@ function ViajePageInner() {
         requestLatchUntilRef.current = Date.now() + 120_000;
         refreshSeqRef.current += 1;
         statusFloorByRideRef.current.set(rideRow.id, rideStatusRank(rideRow.status));
-        pinRideId(rideRow.id);
-        rideIdRef.current = rideRow.id;
+        repinCanonicalRideId(rideRow, rideIdRef, activeTicketRef);
         if (typeof window !== "undefined") {
           const url = new URL(window.location.href);
           url.searchParams.set("ride", rideRow.id);

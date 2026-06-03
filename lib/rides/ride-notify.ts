@@ -2,7 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { formatMxnFromCents } from "@/lib/rides/ride-pricing";
-import type { RideBookingRow } from "@/lib/rides/ride-bookings-server";
+import { getRideById, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
 import { getPublicAppUrl } from "@/lib/app-url";
 import { sendWhatsAppToE164Digits, isTwilioWhatsAppConfigured } from "@/lib/twilio";
 import { e164DigitsForWhatsAppRecipient } from "@/lib/phone";
@@ -244,7 +244,7 @@ export async function notifyDriverRideArrived(
   const phone = await findUserPhoneById(supabase, args.driverUserId);
   if (!phone) return;
 
-  const panelUrl = rideDriverPanelUrl(null, args.ride.ticket_code);
+  const panelUrl = rideDriverPanelUrl(args.ride.id, args.ride.ticket_code);
   const msg =
     `🚕 *En el origen*\n` +
     `Ticket *${args.ride.ticket_code ?? "—"}* — pide el código al pasajero.\n\n` +
@@ -286,21 +286,23 @@ export async function emitRidePhaseNotifications(
   },
 ): Promise<void> {
   const { ride, phase, driverUserId } = args;
+  const fresh = (await getRideById(supabase, ride.id)) ?? ride;
   try {
     if (phase === "accepted") {
-      await notifyBuyerRideAccepted(supabase, { ride });
-      await notifyDriverRideAccepted(supabase, { ride, driverUserId });
+      await notifyBuyerRideAccepted(supabase, { ride: fresh });
+      await notifyDriverRideAccepted(supabase, { ride: fresh, driverUserId });
     } else if (phase === "arrived") {
-      await notifyBuyerRideArrived(supabase, { ride });
-      await notifyDriverRideArrived(supabase, { ride, driverUserId });
+      await notifyBuyerRideArrived(supabase, { ride: fresh });
+      await notifyDriverRideArrived(supabase, { ride: fresh, driverUserId });
     } else if (phase === "in_trip") {
-      await notifyBuyerTripStarted(supabase, { ride });
-      await notifyDriverTripStarted(supabase, { ride, driverUserId });
+      await notifyBuyerTripStarted(supabase, { ride: fresh });
+      await notifyDriverTripStarted(supabase, { ride: fresh, driverUserId });
     } else if (phase === "completed") {
-      const fare = args.finalTotalMxnCents ?? ride.final_total_mxn_cents ?? ride.estimated_total_mxn_cents;
-      await notifyBuyerRideCompleted(supabase, { ride, finalTotalMxnCents: fare });
+      const fare =
+        args.finalTotalMxnCents ?? fresh.final_total_mxn_cents ?? fresh.estimated_total_mxn_cents;
+      await notifyBuyerRideCompleted(supabase, { ride: fresh, finalTotalMxnCents: fare });
       await notifyDriverRideCompleted(supabase, {
-        ride,
+        ride: fresh,
         driverUserId,
         driverPayoutMxnCents: args.driverPayoutMxnCents ?? 0,
       });

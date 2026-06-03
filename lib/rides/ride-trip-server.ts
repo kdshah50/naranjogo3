@@ -90,20 +90,22 @@ export async function listActiveTripsForDriverProfile(
     }
   }
 
-  // Always merge fallback scan — eq-only pass can miss new trips when stale rows exist for pool ids.
-  const { data: recent, error: recentErr } = await supabase
-    .from("ride_bookings")
-    .select("*")
-    .in("status", [...statuses])
-    .not("driver_id", "is", null)
-    .order("created_at", { ascending: false })
-    .limit(60);
+  // Fallback scan only when targeted queries returned nothing — avoids stale rows from other drivers racing in.
+  if (byId.size === 0) {
+    const { data: recent, error: recentErr } = await supabase
+      .from("ride_bookings")
+      .select("*")
+      .in("status", [...statuses])
+      .not("driver_id", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(60);
 
-  if (recentErr) {
-    console.error("[ride-trip] listActiveTripsForDriverProfile scan", recentErr);
-  } else {
-    for (const row of (recent ?? []) as RideBookingRow[]) {
-      if (rideMatchesDriverPool(row, driverPool)) byId.set(row.id, row);
+    if (recentErr) {
+      console.error("[ride-trip] listActiveTripsForDriverProfile scan", recentErr);
+    } else {
+      for (const row of (recent ?? []) as RideBookingRow[]) {
+        if (rideMatchesDriverPool(row, driverPool)) byId.set(row.id, row);
+      }
     }
   }
 
@@ -349,6 +351,14 @@ export async function arriveAtPickup(
   const updated = await updateRideStatus(supabase, ride.id, "accepted", { status: "arrived" });
   if (!updated) return { ok: false, error: "No se pudo marcar llegada" };
 
+  if (updated.driver_id) {
+    await cancelDuplicateOpenRowsForTicket(supabase, {
+      ticketCode: updated.ticket_code,
+      driverId: updated.driver_id,
+      keepId: updated.id,
+    });
+  }
+
   await appendRideEvent(supabase, {
     rideId: ride.id,
     actorId: args.driverUserId,
@@ -392,6 +402,14 @@ export async function startTrip(
     trip_started_at: now,
   });
   if (!updated) return { ok: false, error: "No se pudo iniciar el viaje" };
+
+  if (updated.driver_id) {
+    await cancelDuplicateOpenRowsForTicket(supabase, {
+      ticketCode: updated.ticket_code,
+      driverId: updated.driver_id,
+      keepId: updated.id,
+    });
+  }
 
   await appendRideEvent(supabase, {
     rideId: ride.id,
@@ -760,19 +778,21 @@ export async function listActiveTripsForBuyer(
     byId.set(row.id, row);
   }
 
-  // Always merge fallback scan — eq-only pass can miss new trips when stale rows exist for pool ids.
-  const { data: recent, error: recentErr } = await supabase
-    .from("ride_bookings")
-    .select("*")
-    .in("status", [...statuses])
-    .order("created_at", { ascending: false })
-    .limit(40);
+  // Fallback scan only when the targeted query returned nothing — avoids stale rows from other buyers racing in.
+  if (byId.size === 0) {
+    const { data: recent, error: recentErr } = await supabase
+      .from("ride_bookings")
+      .select("*")
+      .in("status", [...statuses])
+      .order("created_at", { ascending: false })
+      .limit(40);
 
-  if (recentErr) {
-    console.error("[ride-trip] listActiveTripsForBuyer scan", recentErr);
-  } else {
-    for (const row of (recent ?? []) as RideBookingRow[]) {
-      if (tripMatchesBuyerPool(row, pool)) byId.set(row.id, row);
+    if (recentErr) {
+      console.error("[ride-trip] listActiveTripsForBuyer scan", recentErr);
+    } else {
+      for (const row of (recent ?? []) as RideBookingRow[]) {
+        if (tripMatchesBuyerPool(row, pool)) byId.set(row.id, row);
+      }
     }
   }
 

@@ -295,8 +295,14 @@ export async function loadRideSyncState(
   const accountOpts = { authPhone: args.authPhone };
   const pool = await expandUserAccountIdPool(supabase, args.sessionUserId, accountOpts);
 
+  let ticketCode = String(args.ticketCode ?? "").trim() || null;
+  if (!ticketCode && args.rideId) {
+    const hint = await getRideById(supabase, args.rideId);
+    ticketCode = String(hint?.ticket_code ?? "").trim() || null;
+  }
+
   const [buyer, panel] = await Promise.all([
-    resolveBuyerRide(supabase, args),
+    resolveBuyerRide(supabase, { ...args, ticketCode }),
     loadDriverPanel(supabase, {
       sessionUserId: args.sessionUserId,
       authPhone: args.authPhone,
