@@ -9,16 +9,32 @@ import { e164DigitsForWhatsAppRecipient } from "@/lib/phone";
 import { expandUserAccountIdPool, phoneLookupVariants } from "@/lib/user-account-pool";
 import { idMatchVariantsForIn, sortRowsWithPreferredUserId } from "@/lib/user-id-variants";
 
-export function rideBuyerViajeUrl(rideId?: string | null): string {
+export function rideBuyerViajeUrl(
+  rideId?: string | null,
+  ticketCode?: string | null,
+): string {
   const base = `${getPublicAppUrl()}/viaje`;
-  if (!rideId) return base;
-  return `${base}?ride=${encodeURIComponent(rideId)}`;
+  const qs = new URLSearchParams();
+  const id = String(rideId ?? "").trim();
+  const ticket = String(ticketCode ?? "").trim();
+  if (id) qs.set("ride", id);
+  if (ticket) qs.set("ticket", ticket);
+  const suffix = qs.toString();
+  return suffix ? `${base}?${suffix}` : base;
 }
 
-export function rideDriverPanelUrl(rideId?: string | null): string {
+export function rideDriverPanelUrl(
+  rideId?: string | null,
+  ticketCode?: string | null,
+): string {
   const base = `${getPublicAppUrl()}/conductor/viajes`;
-  if (!rideId) return base;
-  return `${base}?ride=${encodeURIComponent(rideId)}`;
+  const qs = new URLSearchParams();
+  const id = String(rideId ?? "").trim();
+  const ticket = String(ticketCode ?? "").trim();
+  if (id) qs.set("ride", id);
+  if (ticket) qs.set("ticket", ticket);
+  const suffix = qs.toString();
+  return suffix ? `${base}?${suffix}` : base;
 }
 
 export async function findUserPhoneById(
@@ -54,7 +70,7 @@ export async function notifyBuyerRideCreated(
 
   const fare = formatMxnFromCents(args.ride.estimated_total_mxn_cents);
   const hold = formatMxnFromCents(args.ride.hold_amount_mxn_cents);
-  const viajeUrl = rideBuyerViajeUrl(args.ride.id);
+  const viajeUrl = rideBuyerViajeUrl(args.ride.id, args.ride.ticket_code);
   let msg =
     `🚕 *Solicitud de viaje recibida*\n` +
     `Origen: ${args.ride.pickup_address}\n` +
@@ -84,7 +100,7 @@ export async function notifyBuyerTripStarted(
   const phone = await findUserPhoneById(supabase, args.ride.buyer_id);
   if (!phone) return;
 
-  const viajeUrl = rideBuyerViajeUrl(args.ride.id);
+  const viajeUrl = rideBuyerViajeUrl(args.ride.id, args.ride.ticket_code);
   const msg =
     `🚕 *Viaje en curso*\n` +
     `Tu viaje comenzó hacia el destino.\n` +
@@ -104,7 +120,7 @@ export async function notifyBuyerRideArrived(
   const phone = await findUserPhoneById(supabase, args.ride.buyer_id);
   if (!phone) return;
 
-  const viajeUrl = rideBuyerViajeUrl(args.ride.id);
+  const viajeUrl = rideBuyerViajeUrl(args.ride.id, args.ride.ticket_code);
   const msg =
     `🚕 *Conductor en el origen*\n` +
     `Ya está en tu punto de recogida.\n` +
@@ -125,7 +141,7 @@ export async function notifyDriverRideMatched(
   if (!phone) return;
 
   const fare = formatMxnFromCents(args.ride.estimated_total_mxn_cents);
-  const panelUrl = rideDriverPanelUrl(args.ride.id);
+  const panelUrl = rideDriverPanelUrl(args.ride.id, args.ride.ticket_code);
   const msg =
     `🚕 *Nuevo viaje asignado*\n` +
     `Recoger: ${args.ride.pickup_address}\n` +
@@ -147,7 +163,7 @@ export async function notifyBuyerRideCompleted(
   if (!phone) return;
 
   const fare = formatMxnFromCents(args.finalTotalMxnCents);
-  const viajeUrl = rideBuyerViajeUrl(args.ride.id);
+  const viajeUrl = rideBuyerViajeUrl(args.ride.id, args.ride.ticket_code);
   const msg =
     `🚕 *Viaje completado*\n` +
     `Gracias por viajar con NaranjoGo.\n` +
@@ -189,7 +205,7 @@ export async function notifyBuyerRideAccepted(
   const phone = await findUserPhoneById(supabase, args.ride.buyer_id);
   if (!phone) return;
 
-  const viajeUrl = rideBuyerViajeUrl(args.ride.id);
+  const viajeUrl = rideBuyerViajeUrl(args.ride.id, args.ride.ticket_code);
   const msg =
     `🚕 *Conductor en camino*\n` +
     `Tu viaje fue aceptado.\n` +
@@ -209,7 +225,7 @@ export async function notifyDriverRideAccepted(
   const phone = await findUserPhoneById(supabase, args.driverUserId);
   if (!phone) return;
 
-  const panelUrl = rideDriverPanelUrl(args.ride.id);
+  const panelUrl = rideDriverPanelUrl(args.ride.id, args.ride.ticket_code);
   const msg =
     `🚕 *Viaje aceptado*\n` +
     `Ticket *${args.ride.ticket_code ?? "—"}* — ve al origen.\n` +
@@ -228,7 +244,7 @@ export async function notifyDriverRideArrived(
   const phone = await findUserPhoneById(supabase, args.driverUserId);
   if (!phone) return;
 
-  const panelUrl = rideDriverPanelUrl();
+  const panelUrl = rideDriverPanelUrl(null, args.ride.ticket_code);
   const msg =
     `🚕 *En el origen*\n` +
     `Ticket *${args.ride.ticket_code ?? "—"}* — pide el código al pasajero.\n\n` +
@@ -246,7 +262,7 @@ export async function notifyDriverTripStarted(
   const phone = await findUserPhoneById(supabase, args.driverUserId);
   if (!phone) return;
 
-  const panelUrl = rideDriverPanelUrl(args.ride.id);
+  const panelUrl = rideDriverPanelUrl(args.ride.id, args.ride.ticket_code);
   const msg =
     `🚕 *Viaje en curso*\n` +
     `Destino: ${args.ride.dropoff_address}\n` +

@@ -171,8 +171,11 @@ function formatSyncDebug(d: SyncDebug): string {
 function stripRideFromBrowserUrl() {
   if (typeof window === "undefined") return;
   const url = new URL(window.location.href);
-  if (!url.searchParams.has("ride")) return;
-  url.searchParams.delete("ride");
+  const hadRide = url.searchParams.has("ride");
+  const hadTicket = url.searchParams.has("ticket");
+  if (!hadRide && !hadTicket) return;
+  if (hadRide) url.searchParams.delete("ride");
+  if (hadTicket) url.searchParams.delete("ticket");
   window.history.replaceState(null, "", url.toString());
 }
 
@@ -211,6 +214,11 @@ function ConductorViajesInner() {
   const pinnedRideIdRef = useRef<string | null>(
     String(searchParams.get("ride") ?? "").trim() || null,
   );
+  const urlTicketRef = useRef<string | null>(
+    normalizeTicketKey(String(searchParams.get("ticket") ?? "").trim()) || null,
+  );
+  /** After accept/arrive/start, ignore stale panel polls briefly. */
+  const actionLatchUntilRef = useRef(0);
 
   const [online, setOnline] = useState<DriverOnline | null>(null);
   const [trips, setTrips] = useState<RideRow[]>([]);
@@ -421,6 +429,13 @@ function ConductorViajesInner() {
   }, []);
 
   const load = useCallback(async (source = "poll") => {
+    if (
+      Date.now() < actionLatchUntilRef.current &&
+      source !== "mount" &&
+      source !== "url-pin"
+    ) {
+      return;
+    }
     const gen = ++syncGenRef.current;
     const skipExplicitRide = Boolean(
       completedTicketLatchRef.current &&
@@ -429,7 +444,11 @@ function ConductorViajesInner() {
     const syncRideId = skipExplicitRide
       ? undefined
       : pinnedRideIdRef.current ?? readDriverActiveRideId() ?? undefined;
-    const panelResult = await fetchDriverPanel(syncRideId);
+    const panelResult = await fetchDriverPanel(
+      syncRideId,
+      urlTicketRef.current || undefined,
+    );
+    if (panelResult.ok) urlTicketRef.current = null;
     if (gen !== syncGenRef.current) return;
     if (!panelResult.ok) {
       if (panelResult.status === 404) {
@@ -484,10 +503,21 @@ function ConductorViajesInner() {
   ]);
 
   useEffect(() => {
+    if (!readDriverActiveRideId()) {
+      clearDriverCompletedTicketLatch();
+      completedTicketLatchRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
     const id = searchParams.get("ride")?.trim();
+    const ticket = normalizeTicketKey(String(searchParams.get("ticket") ?? "").trim());
+    if (ticket) urlTicketRef.current = ticket;
     if (id) {
       pinnedRideIdRef.current = id;
       rememberDriverActiveRideId(id);
+      completedTicketLatchRef.current = null;
+      clearDriverCompletedTicketLatch();
     }
     stripRideFromBrowserUrl();
     void load("url-pin");
@@ -719,6 +749,7 @@ function ConductorViajesInner() {
       }
 
       if (rideFromAction?.id) {
+        actionLatchUntilRef.current = Date.now() + 4_000;
         syncGenRef.current += 1;
         statusFloorByRideRef.current.set(
           rideFromAction.id,
@@ -737,7 +768,6 @@ function ConductorViajesInner() {
       }
 
       await refreshTripById(rideId);
-      window.setTimeout(() => void load("post-action"), 500);
 
       if (path === "accept") setActionSuccess(t.acceptSuccess);
       else if (path === "arrive") setActionSuccess(t.arriveSuccess);

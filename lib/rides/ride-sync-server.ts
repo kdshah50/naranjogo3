@@ -133,6 +133,7 @@ async function resolveBuyerRide(
     sessionUserId: string;
     authPhone: string | null;
     rideId?: string | null;
+    ticketCode?: string | null;
   },
 ): Promise<{
   ride: RideBookingRow | null;
@@ -142,6 +143,36 @@ async function resolveBuyerRide(
 }> {
   const accountOpts = { authPhone: args.authPhone };
   const pool = await expandUserAccountIdPool(supabase, args.sessionUserId, accountOpts);
+
+  const ticketParam = String(args.ticketCode ?? "").trim();
+  if (ticketParam) {
+    const canonical = await resolveCanonicalRideByTicketForBuyer(
+      supabase,
+      args.sessionUserId,
+      ticketParam,
+      accountOpts,
+    );
+    if (
+      canonical?.id &&
+      canonical.buyer_id &&
+      pool.some((uid) => isSameUserId(uid, canonical.buyer_id))
+    ) {
+      const resolved = await resolveBuyerRideCanonical(
+        supabase,
+        canonical,
+        args.sessionUserId,
+        accountOpts,
+      );
+      return {
+        ride: resolved,
+        dropReason: BUYER_OPEN_STATUSES.has(resolved.status)
+          ? null
+          : `verify:${resolved.status}`,
+        rawBuyerCount: 1,
+        verifiedBuyerCount: 1,
+      };
+    }
+  }
 
   const explicitId = String(args.rideId ?? "").trim();
   if (explicitId) {
@@ -258,6 +289,7 @@ export async function loadRideSyncState(
     sessionUserId: string;
     authPhone: string | null;
     rideId?: string | null;
+    ticketCode?: string | null;
   },
 ): Promise<RideSyncState> {
   const accountOpts = { authPhone: args.authPhone };
@@ -269,6 +301,7 @@ export async function loadRideSyncState(
       sessionUserId: args.sessionUserId,
       authPhone: args.authPhone,
       explicitRideId: args.rideId,
+      explicitTicketCode: args.ticketCode,
     }),
   ]);
 

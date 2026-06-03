@@ -13,11 +13,13 @@ export async function GET(req: NextRequest) {
   if (!guard.ok) return guard.response;
 
   const rideId = req.nextUrl.searchParams.get("ride_id")?.trim() || null;
+  const ticketCode = req.nextUrl.searchParams.get("ticket_code")?.trim() || null;
 
   const state = await loadRideSyncState(guard.supabase, {
     sessionUserId: guard.userId,
     authPhone: guard.authPhone,
     rideId,
+    ticketCode,
   });
 
   return NextResponse.json(state, {

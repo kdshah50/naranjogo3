@@ -117,8 +117,11 @@ function clearTerminalRideId() {
 function stripRideIdFromBrowserUrl() {
   if (typeof window === "undefined") return;
   const url = new URL(window.location.href);
-  if (!url.searchParams.has("ride")) return;
-  url.searchParams.delete("ride");
+  const hadRide = url.searchParams.has("ride");
+  const hadTicket = url.searchParams.has("ticket");
+  if (!hadRide && !hadTicket) return;
+  if (hadRide) url.searchParams.delete("ride");
+  if (hadTicket) url.searchParams.delete("ticket");
   window.history.replaceState(null, "", url.toString());
 }
 
@@ -205,6 +208,8 @@ function ViajePageInner() {
   const lang = useAppLang();
   const t = viajeCopy(lang);
   const rideIdRef = useRef<string | null>(null);
+  /** WhatsApp deep-link ticket — resolves canonical row even when ride id is stale. */
+  const urlTicketRef = useRef<string | null>(null);
   const requestLatchUntilRef = useRef(0);
   const refreshSeqRef = useRef(0);
   /** Polls must not downgrade lifecycle after driver accepts / trip progresses. */
@@ -294,8 +299,15 @@ function ViajePageInner() {
 
     if (row && isBuyerActiveStatus(row.status)) {
       clearTerminalRideId();
+      setTerminalBanner(null);
       setRide((prev) => {
-        if (prev && isTerminalRideStatus(prev.status)) return prev;
+        if (prev && isTerminalRideStatus(prev.status)) {
+          const sameTicket =
+            prev.ticket_code &&
+            row.ticket_code &&
+            normalizeTicketKey(prev.ticket_code) === normalizeTicketKey(row.ticket_code);
+          if (sameTicket) return prev;
+        }
         const next = mergeIncomingBuyerRide(prev, row);
         pinRideId(next.id);
         rideIdRef.current = next.id;
@@ -306,9 +318,12 @@ function ViajePageInner() {
       return;
     }
 
-    if (readTerminalRideId()) {
+    if (readTerminalRideId() && Date.now() < requestLatchUntilRef.current) {
       setSyncDebug(syncDebugForRow(null, source, note ?? "terminal pinned", dropReason));
       return;
+    }
+    if (readTerminalRideId()) {
+      clearTerminalRideId();
     }
 
     setRide(null);
@@ -339,7 +354,11 @@ function ViajePageInner() {
     const isStale = () => seq !== refreshSeqRef.current;
 
     const pinnedId = rideIdRef.current ?? readPinnedRideId();
-    const syncResult = await fetchRideSync(pinnedId ?? undefined);
+    const ticketHint = urlTicketRef.current || undefined;
+    const syncResult = await fetchRideSync(pinnedId ?? undefined, ticketHint || undefined);
+    if (syncResult.ok && syncResult.payload.ride?.id) {
+      urlTicketRef.current = null;
+    }
     if (isStale()) return;
 
     const applyResolvedRide = async (
@@ -538,7 +557,13 @@ function ViajePageInner() {
         return;
       }
       setRide((prev) => {
-        if (prev && isTerminalRideStatus(prev.status)) return prev;
+        if (prev && isTerminalRideStatus(prev.status)) {
+          const sameTicket =
+            prev.ticket_code &&
+            row.ticket_code &&
+            normalizeTicketKey(prev.ticket_code) === normalizeTicketKey(row.ticket_code);
+          if (sameTicket) return prev;
+        }
         const next = prev ? mergeIncomingBuyerRide(prev, row) : applyMonotonicRideRow(prev, row);
         if (isBuyerActiveStatus(next.status)) {
           pinRideId(next.id);
@@ -557,6 +582,12 @@ function ViajePageInner() {
     if (typeof window === "undefined") return;
     const url = new URL(window.location.href);
     const rideParam = url.searchParams.get("ride")?.trim();
+    const ticketParam = url.searchParams.get("ticket")?.trim();
+    if (ticketParam) urlTicketRef.current = normalizeTicketKey(ticketParam);
+    if (rideParam || ticketParam) {
+      clearTerminalRideId();
+      completedTicketLatchRef.current = null;
+    }
     if (rideParam) {
       pinRideId(rideParam);
       rideIdRef.current = rideParam;
@@ -658,6 +689,10 @@ function ViajePageInner() {
     if (!canSubmit) return;
     setRequesting(true);
     setRequestError(null);
+    clearTerminalRideId();
+    completedTicketLatchRef.current = null;
+    urlTicketRef.current = null;
+    setTerminalBanner(null);
     setRide(null);
     try {
       const r = await fetch("/api/rides/request", {

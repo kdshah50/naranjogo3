@@ -69,16 +69,32 @@ export type DriverPanelState = {
   hide_tickets: string[];
 };
 
-/** Deep-link / sync ride_id — include when list scan misses but driver is assigned. */
+/** Deep-link ride_id / ticket — include when list scan misses but driver is assigned. */
 async function mergeExplicitDriverRide(
   supabase: SupabaseClient,
   args: {
     sessionUserId: string;
     authPhone: string | null;
     explicitRideId?: string | null;
+    explicitTicketCode?: string | null;
   },
   verified: RideBookingRow[],
 ): Promise<RideBookingRow[]> {
+  const ticketParam = String(args.explicitTicketCode ?? "").trim();
+  if (ticketParam) {
+    const canonical = await resolveCanonicalRideByTicketForDriver(
+      supabase,
+      args.sessionUserId,
+      ticketParam,
+      { authPhone: args.authPhone },
+    );
+    if (canonical?.id && DRIVER_ACTIVE_STATUSES.has(canonical.status)) {
+      if (verified.some((row) => row.id === canonical.id)) return verified;
+      const [fresh] = await verifyDriverPanelTrips(supabase, [canonical]);
+      if (fresh) return [fresh, ...verified.filter((row) => row.id !== fresh.id)];
+    }
+  }
+
   const id = String(args.explicitRideId ?? "").trim();
   if (!id || verified.some((row) => row.id === id)) return verified;
 
@@ -114,6 +130,7 @@ export async function loadDriverPanel(
     sessionUserId: string;
     authPhone: string | null;
     explicitRideId?: string | null;
+    explicitTicketCode?: string | null;
   },
 ): Promise<DriverPanelState> {
   const accountOpts = { authPhone: args.authPhone };

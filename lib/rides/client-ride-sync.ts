@@ -57,10 +57,13 @@ export type DriverPanelPayload = {
 /** Driver panel load — dedicated endpoint (preferred for /conductor/viajes). */
 export async function fetchDriverPanel(
   rideId?: string | null,
+  ticketCode?: string | null,
 ): Promise<{ ok: true; payload: DriverPanelPayload } | { ok: false; status: number }> {
   const qs = new URLSearchParams();
   const id = String(rideId ?? "").trim();
+  const ticket = String(ticketCode ?? "").trim();
   if (id) qs.set("ride_id", id);
+  if (ticket) qs.set("ticket_code", ticket);
   const suffix = qs.toString() ? `?${qs}&` : "?";
   const r = await fetch(`/api/rides/drivers/me/panel${suffix}_=${Date.now()}`, {
     credentials: "include",
@@ -118,10 +121,15 @@ export async function fetchBuyerCompletedDisplayRide(): Promise<RideStatusRow | 
 }
 
 /** Single sync load for rider + driver panels (Uber-style). */
-export async function fetchRideSync(rideId?: string | null): Promise<RideSyncFetchResult> {
+export async function fetchRideSync(
+  rideId?: string | null,
+  ticketCode?: string | null,
+): Promise<RideSyncFetchResult> {
   const qs = new URLSearchParams();
   const id = String(rideId ?? "").trim();
+  const ticket = String(ticketCode ?? "").trim();
   if (id) qs.set("ride_id", id);
+  if (ticket) qs.set("ticket_code", ticket);
   const suffix = qs.toString() ? `?${qs}&` : "?";
   const r = await fetch(`/api/rides/sync${suffix}_=${Date.now()}`, {
     credentials: "include",

@@ -121,7 +121,7 @@ export async function POST(req: NextRequest) {
       `${ride.pickup_address} → ${ride.dropoff_address}\n` +
       `Tarifa est.: *${fare}*`;
 
-    const viajeUrl = rideBuyerViajeUrl(ride.id);
+    const viajeUrl = rideBuyerViajeUrl(ride.id, ride.ticket_code);
     if (matched && ride.ticket_code) {
       reply += `\n\nConductor asignado. Código: *${ride.ticket_code}*\n${viajeUrl}`;
     } else if (!matched) {
