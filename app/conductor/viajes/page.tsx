@@ -421,11 +421,13 @@ function ConductorViajesInner() {
   );
 
   const mergeDriverOnline = useCallback((incoming: DriverOnline | null | undefined): DriverOnline | null => {
-    if (!incoming) return null;
-    if (onlineLatchUntilRef.current > Date.now() && incoming.is_online === false) {
-      return { ...incoming, is_online: true };
+    const latchActive = onlineLatchUntilRef.current > Date.now();
+    // While latch is active, protect against both is_online=false AND null
+    // (null means the server couldn't resolve the driver profile for this session).
+    if (latchActive && (!incoming || incoming.is_online === false)) {
+      return incoming ? { ...incoming, is_online: true } : { is_online: true };
     }
-    return incoming;
+    return incoming ?? null;
   }, []);
 
   const load = useCallback(async (source = "poll") => {
@@ -654,7 +656,7 @@ function ConductorViajesInner() {
       }
       const driver = data.driver as DriverOnline | undefined;
       if (driver) {
-        if (next) onlineLatchUntilRef.current = Date.now() + 90_000;
+        if (next) onlineLatchUntilRef.current = Date.now() + 600_000;
         else onlineLatchUntilRef.current = 0;
         setOnline(mergeDriverOnline({ ...driver, is_online: next }));
       }
@@ -709,7 +711,7 @@ function ConductorViajesInner() {
     // the DB write commits server-side, which is mid-request before the HTTP
     // response arrives. Any latch set after await fetch() is too late.
     if (onlineLatchUntilRef.current > 0) {
-      onlineLatchUntilRef.current = Date.now() + 90_000;
+      onlineLatchUntilRef.current = Date.now() + 600_000;
     }
     if (path === "complete") {
       // Pre-set completed ticket latch using the ticket from current trips state
@@ -747,7 +749,7 @@ function ConductorViajesInner() {
         // Conectar latch; without this, stale is_online=false from the replica
         // shows the driver as offline immediately after completing a ride.
         if (onlineLatchUntilRef.current > 0) {
-          onlineLatchUntilRef.current = Date.now() + 90_000;
+          onlineLatchUntilRef.current = Date.now() + 600_000;
         }
         // Set latch BEFORE incrementing gen — prevents any poll that fires in the
         // gap between syncGenRef++ and latch assignment from showing a stale matched trip.
@@ -785,7 +787,7 @@ function ConductorViajesInner() {
         // Extend online latch so stale is_online=false polls don't mark driver
         // offline during active trip processing (accept → arrive → start).
         if (onlineLatchUntilRef.current > 0) {
-          onlineLatchUntilRef.current = Date.now() + 90_000;
+          onlineLatchUntilRef.current = Date.now() + 600_000;
         }
         syncGenRef.current += 1;
         statusFloorByRideRef.current.set(
