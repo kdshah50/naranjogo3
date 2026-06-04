@@ -230,6 +230,8 @@ function ViajePageInner() {
   const statusFloorByRideRef = useRef<Map<string, number>>(new Map());
   /** Ignore ghost duplicate rows for this ticket after trip completes. */
   const completedTicketLatchRef = useRef<{ ticket: string; until: number } | null>(null);
+  /** True when page was opened from a WhatsApp link (?ride= or ?ticket= in URL). */
+  const hadUrlRideParamsRef = useRef(false);
 
   const [pickupColonia, setPickupColonia] = useState("centro");
   const [dropoffColonia, setDropoffColonia] = useState("guadalupe");
@@ -590,6 +592,9 @@ function ViajePageInner() {
     if (rideParam || ticketParam) {
       clearTerminalRideId();
       completedTicketLatchRef.current = null;
+      // WhatsApp links open in a fresh context — replica lag can make the first
+      // sync return a stale status. Schedule a re-sync to catch up.
+      hadUrlRideParamsRef.current = true;
     }
     if (rideParam) {
       pinRideId(rideParam);
@@ -603,7 +608,14 @@ function ViajePageInner() {
       .then((r) => r.json())
       .then((d) => {
         if (!d?.user?.id) setAuthError(t.loginRequired);
-        else void refreshActiveRide("mount");
+        else {
+          void refreshActiveRide("mount");
+          // WhatsApp links open in a fresh tab — do a follow-up sync after 1.5s
+          // to catch any Supabase replica lag on the initial load.
+          if (hadUrlRideParamsRef.current) {
+            setTimeout(() => void refreshActiveRide("mount-retry"), 1500);
+          }
+        }
       })
       .catch(() => setAuthError(t.sessionError));
   }, [refreshActiveRide, t.loginRequired, t.sessionError]);

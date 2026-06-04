@@ -726,6 +726,15 @@ function ConductorViajesInner() {
       const rideFromAction = data.ride as RideRow | undefined;
 
       if (path === "complete") {
+        // Set latch BEFORE incrementing gen — prevents any poll that fires in the
+        // gap between syncGenRef++ and latch assignment from showing a stale matched trip.
+        const earlyTicket = rideFromAction?.ticket_code ?? null;
+        if (earlyTicket) {
+          completedTicketLatchRef.current = {
+            ticket: earlyTicket,
+            until: Date.now() + 120_000,
+          };
+        }
         syncGenRef.current += 1;
         statusFloorByRideRef.current.delete(rideId);
         setTrips([]);
@@ -736,7 +745,7 @@ function ConductorViajesInner() {
         if (!completedRow?.id) {
           completedRow = await fetchRideRowById<RideRow>(rideId);
         }
-        if (completedRow?.ticket_code) {
+        if (completedRow?.ticket_code && !completedTicketLatchRef.current) {
           completedTicketLatchRef.current = {
             ticket: completedRow.ticket_code,
             until: Date.now() + 120_000,
