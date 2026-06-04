@@ -726,6 +726,12 @@ function ConductorViajesInner() {
       const rideFromAction = data.ride as RideRow | undefined;
 
       if (path === "complete") {
+        // Keep online latch alive — trip actions can take longer than the 90s
+        // Conectar latch; without this, stale is_online=false from the replica
+        // shows the driver as offline immediately after completing a ride.
+        if (onlineLatchUntilRef.current > 0) {
+          onlineLatchUntilRef.current = Date.now() + 90_000;
+        }
         // Set latch BEFORE incrementing gen — prevents any poll that fires in the
         // gap between syncGenRef++ and latch assignment from showing a stale matched trip.
         const earlyTicket = rideFromAction?.ticket_code ?? null;
@@ -759,6 +765,11 @@ function ConductorViajesInner() {
 
       if (rideFromAction?.id) {
         actionLatchUntilRef.current = Date.now() + 4_000;
+        // Extend online latch so stale is_online=false polls don't mark driver
+        // offline during active trip processing (accept → arrive → start).
+        if (onlineLatchUntilRef.current > 0) {
+          onlineLatchUntilRef.current = Date.now() + 90_000;
+        }
         syncGenRef.current += 1;
         statusFloorByRideRef.current.set(
           rideFromAction.id,
