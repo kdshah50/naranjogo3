@@ -151,17 +151,14 @@ async function resolveBuyerRide(
   if (explicitId) {
     const ride = await getRideById(supabase, explicitId);
     if (ride && pool.some((uid) => isSameUserId(uid, ride.buyer_id))) {
-      const resolved = await resolveBuyerRideCanonical(
-        supabase,
-        ride,
-        args.sessionUserId,
-        accountOpts,
-      );
+      // We have the exact row — skip the ticket scan entirely.
+      // resolveBuyerRideCanonical would do another ilike ticket scan which is
+      // more susceptible to replica lag and could return a stale lower-rank row.
       return {
-        ride: resolved,
-        dropReason: BUYER_OPEN_STATUSES.has(resolved.status)
+        ride,
+        dropReason: BUYER_OPEN_STATUSES.has(ride.status)
           ? null
-          : `verify:${resolved.status}`,
+          : `verify:${ride.status}`,
         rawBuyerCount: 1,
         verifiedBuyerCount: 1,
       };
