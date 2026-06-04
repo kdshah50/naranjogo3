@@ -636,6 +636,16 @@ function ConductorViajesInner() {
     return () => window.removeEventListener("pageshow", onPageShow);
   }, [load]);
 
+  // visibilitychange fires when user returns to this tab from WhatsApp in-app
+  // browser or any other app — re-syncs the panel immediately on return.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void load("visibility");
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [load]);
+
   const refreshOnlineStatus = useCallback(async () => {
     const r = await fetch("/api/rides/drivers/me/online", {
       credentials: "include",

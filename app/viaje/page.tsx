@@ -673,6 +673,17 @@ function ViajePageInner() {
     return () => window.removeEventListener("pageshow", onPageShow);
   }, [refreshActiveRide]);
 
+  // visibilitychange fires reliably on mobile (WhatsApp in-app browser, iOS Safari)
+  // when the user switches back to this tab after checking WhatsApp messages.
+  // The polling timers are throttled/paused in background — this re-syncs on return.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void refreshActiveRide("visibility");
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [refreshActiveRide]);
+
   const rideSectionTitle =
     ride?.status === "cancelled"
       ? t.rideCancelled
