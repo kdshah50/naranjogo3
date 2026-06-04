@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminSupabase, isSameUserId } from "@/lib/auth-server";
 import { isRidesEnabled } from "@/lib/rides/flags";
 import { verifyInternalSecret } from "@/lib/rides/internal-auth";
-import { getRideById } from "@/lib/rides/ride-bookings-server";
+import { getRideById, getRideByIdFresh } from "@/lib/rides/ride-bookings-server";
 import { ridesRouteGuard } from "@/lib/rides/ride-route-guard";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 
@@ -46,7 +46,7 @@ export async function GET(
     const guard = await ridesRouteGuard(req);
     if (!guard.ok) return guard.response;
 
-    const ride = await getRideById(guard.supabase, rideId);
+    const ride = await getRideByIdFresh(guard.supabase, rideId);
     if (!ride) {
       return NextResponse.json({ error: "Viaje no encontrado" }, { status: 404 });
     }

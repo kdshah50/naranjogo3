@@ -523,14 +523,43 @@ function ConductorViajesInner() {
     const id = searchParams.get("ride")?.trim();
     const ticket = normalizeTicketKey(String(searchParams.get("ticket") ?? "").trim());
     if (ticket) urlTicketRef.current = ticket;
-    if (id) {
-      pinnedRideIdRef.current = id;
+    stripRideFromBrowserUrl();
+
+    if (!id) {
+      void load("url-pin");
+      return;
+    }
+
+    pinnedRideIdRef.current = id;
+    void (async () => {
+      const row = await fetchRideRowById<RideRow>(id);
+      if (row?.id && isTerminalDriverTrip(row.status)) {
+        rememberDriverTerminalRideId(row.id, row.ticket_code);
+        if (row.ticket_code) {
+          completedTicketLatchRef.current = {
+            ticket: row.ticket_code,
+            until: Date.now() + 120_000,
+          };
+        }
+        clearDriverActiveRideId();
+        pinnedRideIdRef.current = null;
+        setTrips([]);
+        setCompletedNotice(row);
+        setSyncDebug({
+          source: "url-pin",
+          at: new Date().toLocaleTimeString(),
+          apiCount: 0,
+          apiSummary: `${row.status}${row.ticket_code ? ` · ${row.ticket_code}` : ""}`,
+          uiCount: 0,
+          mismatch: false,
+        });
+        return;
+      }
       rememberDriverActiveRideId(id);
       completedTicketLatchRef.current = null;
       clearDriverCompletedTicketLatch();
-    }
-    stripRideFromBrowserUrl();
-    void load("url-pin");
+      void load("url-pin");
+    })();
   }, [searchParams, load]);
 
   const displayError = actionError ?? panelError;

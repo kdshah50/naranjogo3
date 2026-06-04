@@ -9,6 +9,7 @@ import { locationFromColoniaKey } from "@/lib/rides/ride-locations";
 import { estimateFare, type RideLocation } from "@/lib/rides/ride-pricing";
 import { holdWalletForRide, hasHoldForRide, releaseWalletHoldForRide } from "@/lib/rides/wallet-hold";
 import { getWalletForUser } from "@/lib/rides/wallet-server";
+import { rideStatusRank } from "@/lib/rides/ride-status-merge";
 
 export type RideBookingStatus =
   | "requested"
@@ -281,6 +282,42 @@ export async function getRideById(
     return null;
   }
   return (data as RideBookingRow) ?? null;
+}
+
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Re-read a ride row with short retries — Vercel/Supabase read paths can lag
+ * 1–2s behind primary after accept/complete. Returns the highest lifecycle
+ * snapshot seen across attempts (so completed wins over stale matched).
+ */
+export async function getRideByIdFresh(
+  supabase: SupabaseClient,
+  rideId: string,
+  opts?: { attempts?: number; delayMs?: number },
+): Promise<RideBookingRow | null> {
+  const attempts = Math.min(Math.max(opts?.attempts ?? 4, 1), 6);
+  const delayMs = opts?.delayMs ?? 450;
+  let best: RideBookingRow | null = null;
+  let bestRank = -2;
+
+  for (let i = 0; i < attempts; i++) {
+    const row = await getRideById(supabase, rideId);
+    if (row) {
+      const rank = rideStatusRank(row.status);
+      if (rank > bestRank) {
+        best = row;
+        bestRank = rank;
+      }
+      if (row.status === "completed" || row.status === "cancelled") {
+        return row;
+      }
+    }
+    if (i < attempts - 1) await sleepMs(delayMs);
+  }
+  return best;
 }
 
 export type MatchRideResult =

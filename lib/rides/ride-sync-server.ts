@@ -3,7 +3,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isSameUserId } from "@/lib/auth-server";
 import { loadDriverPanel } from "@/lib/rides/driver-panel-server";
-import { getRideById, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
+import { getRideById, getRideByIdFresh, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
 import { dropActiveRowsWithCompletedTicket } from "@/lib/rides/ride-ghost-filter";
 import { resolveCanonicalRideByTicketForBuyer } from "@/lib/rides/resolve-ride-by-ticket";
 import { rideStatusRank } from "@/lib/rides/ride-status-merge";
@@ -56,7 +56,7 @@ async function verifyBuyerOpenTrips(
   if (rows.length === 0) return [];
   const verified = await Promise.all(
     rows.map(async (row) => {
-      const fresh = await getRideById(supabase, row.id);
+      const fresh = await getRideByIdFresh(supabase, row.id);
       if (!fresh || !BUYER_OPEN_STATUSES.has(fresh.status)) return null;
       return fresh;
     }),
@@ -86,7 +86,7 @@ async function resolveBuyerRideCanonical(
   );
   if (!canonical?.id) return row;
 
-  const fresh = await getRideById(supabase, canonical.id);
+  const fresh = await getRideByIdFresh(supabase, canonical.id);
   const resolved = fresh ?? canonical;
   if (rideStatusRank(resolved.status) >= rideStatusRank(row.status)) {
     return resolved;
@@ -149,7 +149,7 @@ async function resolveBuyerRide(
   // ticket-scan which is more susceptible to read-replica lag.
   const explicitId = String(args.rideId ?? "").trim();
   if (explicitId) {
-    const ride = await getRideById(supabase, explicitId);
+    const ride = await getRideByIdFresh(supabase, explicitId);
     if (ride && pool.some((uid) => isSameUserId(uid, ride.buyer_id))) {
       // We have the exact row — skip the ticket scan entirely.
       // resolveBuyerRideCanonical would do another ilike ticket scan which is
@@ -255,7 +255,7 @@ async function resolveBuyerRide(
     dropReason = `ghost:${hideTickets[0]}`;
   } else if (buyerTripsRaw.length > 0) {
     const row = postGhost[0] ?? buyerTripsRaw[0];
-    const fresh = await getRideById(supabase, row.id);
+    const fresh = await getRideByIdFresh(supabase, row.id);
     dropReason = `verify:${fresh?.status ?? "missing"}`;
   }
 

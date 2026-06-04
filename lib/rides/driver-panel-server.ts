@@ -7,7 +7,7 @@ import {
   type DriverProfileOnlineRow,
 } from "@/lib/rides/driver-account";
 import { resolveDriverProfileForSession } from "@/lib/rides/resolve-driver-session";
-import { getRideById, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
+import { getRideById, getRideByIdFresh, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
 import { userIdsForAuthPhone } from "@/lib/resolve-login-user";
 import { dropActiveRowsWithCompletedTicket } from "@/lib/rides/ride-ghost-filter";
 import {
@@ -28,7 +28,7 @@ async function verifyDriverPanelTrips(
   if (rows.length === 0) return [];
   const verified = await Promise.all(
     rows.map(async (row) => {
-      const fresh = await getRideById(supabase, row.id);
+      const fresh = await getRideByIdFresh(supabase, row.id);
       if (!fresh || !DRIVER_ACTIVE_STATUSES.has(fresh.status)) return null;
       return fresh;
     }),
