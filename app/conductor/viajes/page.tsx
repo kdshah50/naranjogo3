@@ -705,6 +705,12 @@ function ConductorViajesInner() {
     setBusy(rideId + path);
     setActionError(null);
     setActionSuccess(null);
+    // Extend online latch BEFORE the fetch — Supabase Realtime SSE fires when the
+    // DB write commits (mid-request), before the response returns. Without this,
+    // the SSE triggers load() with an expired latch and setOnline(false) runs.
+    if (onlineLatchUntilRef.current > 0) {
+      onlineLatchUntilRef.current = Date.now() + 90_000;
+    }
     try {
       const r = await fetch(`/api/rides/${rideId}/${path}`, {
         method: "POST",
