@@ -48,6 +48,20 @@ const COLONIAS_LIST = COLONIA_KEYS.map((key) => ({
 
 const VIAJE_PINNED_RIDE_KEY = "ng_viaje_pinned_ride_id";
 const VIAJE_TERMINAL_RIDE_KEY = "ng_viaje_terminal_ride_id";
+const VIAJE_USER_CLEARED_UNTIL_KEY = "ng_viaje_user_cleared_until";
+
+function readUserClearedUntil(): number {
+  if (typeof sessionStorage === "undefined") return 0;
+  const v = sessionStorage.getItem(VIAJE_USER_CLEARED_UNTIL_KEY);
+  const n = v ? Number(v) : 0;
+  return Number.isFinite(n) && n > Date.now() ? n : 0;
+}
+
+function writeUserClearedUntil(until: number) {
+  if (typeof sessionStorage === "undefined") return;
+  if (until > 0) sessionStorage.setItem(VIAJE_USER_CLEARED_UNTIL_KEY, String(until));
+  else sessionStorage.removeItem(VIAJE_USER_CLEARED_UNTIL_KEY);
+}
 
 const POLL_SOURCES = new Set([
   "poll",
@@ -232,8 +246,8 @@ function ViajePageInner() {
   const completedTicketLatchRef = useRef<{ ticket: string; until: number } | null>(null);
   /** True when page was opened from a WhatsApp link (?ride= or ?ticket= in URL). */
   const hadUrlRideParamsRef = useRef(false);
-  /** Set when user explicitly clears the ride screen — prevents completed ride from reappearing via poll. */
-  const userClearedUntilRef = useRef(0);
+  /** Set when user explicitly clears the ride screen — prevents completed ride from reappearing via poll. Persisted to sessionStorage so page refresh also respects it. */
+  const userClearedUntilRef = useRef(readUserClearedUntil());
 
   const [pickupColonia, setPickupColonia] = useState("centro");
   const [dropoffColonia, setDropoffColonia] = useState("guadalupe");
@@ -375,8 +389,10 @@ function ViajePageInner() {
     setRide(null);
     setTerminalBanner(null);
     setSyncDebug(syncDebugForRow(null, "clear"));
-    // Block completed ride from resurfacing via poll for 10 minutes.
+    // Block completed ride from resurfacing via poll for 10 minutes — persisted
+    // to sessionStorage so a page refresh also respects the clear.
     userClearedUntilRef.current = Date.now() + 600_000;
+    writeUserClearedUntil(userClearedUntilRef.current);
   }, []);
 
   /** Server wins via GET /api/rides/sync — single source of truth. */
@@ -766,7 +782,8 @@ function ViajePageInner() {
       }
       clearPinnedRideId();
       if (rideRow?.id) {
-        userClearedUntilRef.current = 0; // new ride request — allow completed rides to show again if needed
+        userClearedUntilRef.current = 0;
+        writeUserClearedUntil(0); // new ride request — clear the sessionStorage flag too
         requestLatchUntilRef.current = Date.now() + 120_000;
         refreshSeqRef.current += 1;
         statusFloorByRideRef.current.set(rideRow.id, rideStatusRank(rideRow.status));

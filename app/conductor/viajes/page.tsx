@@ -505,9 +505,17 @@ function ConductorViajesInner() {
   ]);
 
   useEffect(() => {
-    if (!readDriverActiveRideId()) {
+    if (!readDriverActiveRideId() && !readDriverTerminalRideId()) {
+      // No active or recently completed ride — safe to clear the latch.
       clearDriverCompletedTicketLatch();
       completedTicketLatchRef.current = null;
+    } else if (!readDriverActiveRideId() && readDriverTerminalRideId()) {
+      // Page was refreshed after completing a ride — restore latch from sessionStorage
+      // so the completed ticket doesn't reappear as Step 1.
+      const ticket = readDriverCompletedTicketLatch();
+      if (ticket) {
+        completedTicketLatchRef.current = { ticket, until: Date.now() + 120_000 };
+      }
     }
   }, []);
 
