@@ -144,22 +144,16 @@ async function resolveBuyerRide(
   const accountOpts = { authPhone: args.authPhone };
   const pool = await expandUserAccountIdPool(supabase, args.sessionUserId, accountOpts);
 
-  const ticketParam = String(args.ticketCode ?? "").trim();
-  if (ticketParam) {
-    const canonical = await resolveCanonicalRideByTicketForBuyer(
-      supabase,
-      args.sessionUserId,
-      ticketParam,
-      accountOpts,
-    );
-    if (
-      canonical?.id &&
-      canonical.buyer_id &&
-      pool.some((uid) => isSameUserId(uid, canonical.buyer_id))
-    ) {
+  // When an explicit ride_id is provided (e.g. from a WhatsApp deep link), go
+  // directly to that row first — it's a precise lookup and avoids the broader
+  // ticket-scan which is more susceptible to read-replica lag.
+  const explicitId = String(args.rideId ?? "").trim();
+  if (explicitId) {
+    const ride = await getRideById(supabase, explicitId);
+    if (ride && pool.some((uid) => isSameUserId(uid, ride.buyer_id))) {
       const resolved = await resolveBuyerRideCanonical(
         supabase,
-        canonical,
+        ride,
         args.sessionUserId,
         accountOpts,
       );
@@ -174,14 +168,24 @@ async function resolveBuyerRide(
     }
   }
 
-  const explicitId = String(args.rideId ?? "").trim();
-  if (explicitId) {
-    const ride = await getRideById(supabase, explicitId);
-    if (ride && pool.some((uid) => isSameUserId(uid, ride.buyer_id))) {
-      let resolved = (await getRideById(supabase, explicitId)) ?? ride;
-      resolved = await resolveBuyerRideCanonical(
+  // Ticket-only path (no ride_id): scan all rows for this ticket and pick the
+  // highest lifecycle row. Used when only a ticket hint is available.
+  const ticketParam = String(args.ticketCode ?? "").trim();
+  if (ticketParam && !explicitId) {
+    const canonical = await resolveCanonicalRideByTicketForBuyer(
+      supabase,
+      args.sessionUserId,
+      ticketParam,
+      accountOpts,
+    );
+    if (
+      canonical?.id &&
+      canonical.buyer_id &&
+      pool.some((uid) => isSameUserId(uid, canonical.buyer_id))
+    ) {
+      const resolved = await resolveBuyerRideCanonical(
         supabase,
-        resolved,
+        canonical,
         args.sessionUserId,
         accountOpts,
       );
