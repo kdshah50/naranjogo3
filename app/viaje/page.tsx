@@ -232,6 +232,8 @@ function ViajePageInner() {
   const completedTicketLatchRef = useRef<{ ticket: string; until: number } | null>(null);
   /** True when page was opened from a WhatsApp link (?ride= or ?ticket= in URL). */
   const hadUrlRideParamsRef = useRef(false);
+  /** Set when user explicitly clears the ride screen — prevents completed ride from reappearing via poll. */
+  const userClearedUntilRef = useRef(0);
 
   const [pickupColonia, setPickupColonia] = useState("centro");
   const [dropoffColonia, setDropoffColonia] = useState("guadalupe");
@@ -287,6 +289,11 @@ function ViajePageInner() {
 
   const applyServerRide = useCallback(
     (row: RideRow | null, source: string, note?: string, dropReason?: string | null) => {
+    // User explicitly cleared — don't let a completed ride resurface via poll.
+    if (row && isTerminalRideStatus(row.status) && Date.now() < userClearedUntilRef.current) {
+      setSyncDebug(syncDebugForRow(null, source, note ?? "user-cleared", dropReason));
+      return;
+    }
     if (row && isTerminalRideStatus(row.status)) {
       statusFloorByRideRef.current.delete(row.id);
       requestLatchUntilRef.current = 0;
@@ -368,6 +375,8 @@ function ViajePageInner() {
     setRide(null);
     setTerminalBanner(null);
     setSyncDebug(syncDebugForRow(null, "clear"));
+    // Block completed ride from resurfacing via poll for 10 minutes.
+    userClearedUntilRef.current = Date.now() + 600_000;
   }, []);
 
   /** Server wins via GET /api/rides/sync — single source of truth. */
@@ -757,6 +766,7 @@ function ViajePageInner() {
       }
       clearPinnedRideId();
       if (rideRow?.id) {
+        userClearedUntilRef.current = 0; // new ride request — allow completed rides to show again if needed
         requestLatchUntilRef.current = Date.now() + 120_000;
         refreshSeqRef.current += 1;
         statusFloorByRideRef.current.set(rideRow.id, rideStatusRank(rideRow.status));
