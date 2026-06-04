@@ -315,6 +315,12 @@ function ViajePageInner() {
     }
 
     if (row && isBuyerActiveStatus(row.status)) {
+      // If this ticket was recently completed, a stale active-status row from the
+      // replica must not clear the terminal UI — bail out entirely.
+      if (isTicketLatched(row.ticket_code, completedTicketLatchRef.current)) {
+        setSyncDebug(syncDebugForRow(row, source, note ?? "stale-active:completed-latch", dropReason));
+        return;
+      }
       clearTerminalRideId();
       setTerminalBanner(null);
       setRide((prev) => {
