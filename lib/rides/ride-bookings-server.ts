@@ -298,14 +298,23 @@ async function latestStatusFromEvents(
     .eq("ride_id", rideId)
     .not("to_status", "is", null)
     .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(8);
   if (error) {
     console.error("[ride-bookings] latestStatusFromEvents", error);
     return null;
   }
-  const status = String(data?.to_status ?? "").trim();
-  return status || null;
+  let best: string | null = null;
+  let bestRank = -2;
+  for (const row of data ?? []) {
+    const status = String(row.to_status ?? "").trim();
+    if (!status) continue;
+    const rank = rideStatusRank(status);
+    if (rank > bestRank) {
+      best = status;
+      bestRank = rank;
+    }
+  }
+  return best;
 }
 
 export async function hydrateRideFromEvents(

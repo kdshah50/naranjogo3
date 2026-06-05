@@ -47,6 +47,7 @@ const COLONIAS_LIST = COLONIA_KEYS.map((key) => ({
 }));
 
 const VIAJE_PINNED_RIDE_KEY = "ng_viaje_pinned_ride_id";
+const VIAJE_ACTIVE_TICKET_KEY = "ng_viaje_active_ticket";
 const VIAJE_TERMINAL_RIDE_KEY = "ng_viaje_terminal_ride_id";
 const VIAJE_USER_CLEARED_UNTIL_KEY = "ng_viaje_user_cleared_until";
 const VIAJE_DISMISSED_TICKET_KEY = "ng_viaje_dismissed_ticket";
@@ -127,6 +128,23 @@ function pinRideId(rideId: string) {
 function clearPinnedRideId() {
   if (typeof sessionStorage === "undefined") return;
   sessionStorage.removeItem(VIAJE_PINNED_RIDE_KEY);
+}
+
+function readPinnedTicket(): string | null {
+  if (typeof sessionStorage === "undefined") return null;
+  const t = sessionStorage.getItem(VIAJE_ACTIVE_TICKET_KEY)?.trim();
+  return t ? normalizeTicketKey(t) : null;
+}
+
+function pinActiveTicket(ticket: string | null | undefined) {
+  if (typeof sessionStorage === "undefined") return;
+  const key = normalizeTicketKey(ticket);
+  if (key) sessionStorage.setItem(VIAJE_ACTIVE_TICKET_KEY, key);
+  else sessionStorage.removeItem(VIAJE_ACTIVE_TICKET_KEY);
+}
+
+function clearPinnedTicket() {
+  pinActiveTicket(null);
 }
 
 function pinTerminalRideId(rideId: string) {
@@ -231,7 +249,10 @@ function repinCanonicalRideId(
   pinRideId(row.id);
   rideIdRef.current = row.id;
   const ticket = normalizeTicketKey(row.ticket_code);
-  if (ticket) activeTicketRef.current = ticket;
+  if (ticket) {
+    activeTicketRef.current = ticket;
+    pinActiveTicket(ticket);
+  }
 }
 
 export default function ViajePage() {
@@ -338,6 +359,8 @@ function ViajePageInner() {
       setRide(row);
       setTerminalBanner(row);
       pinTerminalRideId(row.id);
+      clearPinnedTicket();
+      activeTicketRef.current = null;
       stripRideIdFromBrowserUrl();
       rideIdRef.current = null;
       setDriverPublic(null);
@@ -427,7 +450,8 @@ function ViajePageInner() {
     const isStale = () => seq !== refreshSeqRef.current;
 
     const pinnedId = rideIdRef.current ?? readPinnedRideId();
-    const ticketHint = urlTicketRef.current || activeTicketRef.current || undefined;
+    const ticketHint =
+      urlTicketRef.current || activeTicketRef.current || readPinnedTicket() || undefined;
     // WhatsApp deep links pin a ride id; ongoing polls use ticket-canonical sync so
     // accept/arrive/start from the driver are not stuck on stale "matched" reads.
     const ticketOnlyPoll =
@@ -645,7 +669,7 @@ function ViajePageInner() {
     }
 
     if (!isStale()) {
-      if (blockTerminalResurface && POLL_SOURCES.has(source)) {
+      if (blockTerminalResurface && POLL_SOURCES.has(source) && !ticketHint) {
         setSyncDebug(syncDebugForRow(null, source, `0 open (dismissed)${debugSuffix}`, debugMeta?.drop_reason ?? null));
         return;
       }
@@ -700,6 +724,15 @@ function ViajePageInner() {
     if (rideParam) {
       pinRideId(rideParam);
       rideIdRef.current = rideParam;
+    }
+    const storedTicket = readPinnedTicket();
+    const storedRideId = readPinnedRideId();
+    if (!ticketParam && storedTicket) {
+      urlTicketRef.current = storedTicket;
+      activeTicketRef.current = storedTicket;
+    }
+    if (!rideParam && storedRideId) {
+      rideIdRef.current = storedRideId;
     }
     stripRideIdFromBrowserUrl();
   }, []);
@@ -826,6 +859,7 @@ function ViajePageInner() {
     completedTicketLatchRef.current = null;
     urlTicketRef.current = null;
     activeTicketRef.current = null;
+    clearPinnedTicket();
     setTerminalBanner(null);
     setRide(null);
     try {

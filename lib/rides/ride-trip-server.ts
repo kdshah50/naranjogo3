@@ -3,7 +3,12 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isSameUserId } from "@/lib/auth-server";
 import { normalizeNgTicketQuery } from "@/lib/ng-ticket-normalize";
-import { appendRideEvent, getRideById, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
+import {
+  appendRideEvent,
+  getRideById,
+  getRideByIdFresh,
+  type RideBookingRow,
+} from "@/lib/rides/ride-bookings-server";
 import { emitRidePhaseNotifications } from "@/lib/rides/ride-notify";
 import {
   canTransitionRideStatus,
@@ -723,7 +728,7 @@ async function refreshOpenBuyerRows(
   const openSet = new Set<string>(ACTIVE_BUYER_TRIP_STATUSES);
   const freshRows: RideBookingRow[] = [];
   for (const row of rows) {
-    const fresh = await getRideById(supabase, row.id);
+    const fresh = await getRideByIdFresh(supabase, row.id);
     if (fresh && openSet.has(fresh.status)) freshRows.push(fresh);
   }
   freshRows.sort((a, b) => {
@@ -761,24 +766,47 @@ export async function listActiveTripsForBuyer(
   const buyerPool = [...new Set(pool.flatMap((id) => idMatchVariantsForIn(id)))];
   const statuses = [...ACTIVE_BUYER_TRIP_STATUSES];
 
-  const { data, error } = await supabase
+  const byId = new Map<string, RideBookingRow>();
+
+  // Buyer-scoped recent rows (no status filter) — replica status column often lags minutes.
+  const { data: byBuyer, error: byBuyerErr } = await supabase
     .from("ride_bookings")
     .select("*")
     .in("buyer_id", buyerPool)
-    .in("status", [...statuses])
-    .order("created_at", { ascending: false })
-    .limit(5);
+    .order("updated_at", { ascending: false })
+    .limit(12);
 
-  if (error) {
-    console.error("[ride-trip] listActiveTripsForBuyer", error);
+  if (byBuyerErr) {
+    console.error("[ride-trip] listActiveTripsForBuyer by buyer", byBuyerErr);
+  } else {
+    for (const row of ((byBuyer ?? []) as RideBookingRow[]).filter((r) =>
+      tripMatchesBuyerPool(r, pool),
+    )) {
+      byId.set(row.id, row);
+    }
   }
 
-  const byId = new Map<string, RideBookingRow>();
-  for (const row of ((data ?? []) as RideBookingRow[]).filter((r) => tripMatchesBuyerPool(r, pool))) {
-    byId.set(row.id, row);
+  // Secondary: status-filtered query when buyer pool is empty on replica.
+  if (byId.size === 0) {
+    const { data, error } = await supabase
+      .from("ride_bookings")
+      .select("*")
+      .in("buyer_id", buyerPool)
+      .in("status", [...statuses])
+      .order("created_at", { ascending: false })
+      .limit(5);
+
+    if (error) {
+      console.error("[ride-trip] listActiveTripsForBuyer", error);
+    } else {
+      for (const row of ((data ?? []) as RideBookingRow[]).filter((r) =>
+        tripMatchesBuyerPool(r, pool),
+      )) {
+        byId.set(row.id, row);
+      }
+    }
   }
 
-  // Fallback scan only when the targeted query returned nothing — avoids stale rows from other buyers racing in.
   if (byId.size === 0) {
     const { data: recent, error: recentErr } = await supabase
       .from("ride_bookings")
