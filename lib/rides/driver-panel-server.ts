@@ -22,6 +22,18 @@ import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 import { idMatchVariantsForIn, driverProfileUserIdVariants } from "@/lib/user-id-variants";
 
 const DRIVER_ACTIVE_STATUSES = new Set(["matched", "accepted", "arrived", "in_trip"]);
+const DRIVER_ACTIVE_STATUS_LIST = ["matched", "accepted", "arrived", "in_trip"] as const;
+
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function tripMatchesDriverPool(ride: RideBookingRow, pool: string[]): boolean {
+  if (!ride.driver_id || pool.length === 0) return false;
+  const driverNorm = String(ride.driver_id).trim().toLowerCase();
+  const poolNorm = new Set(pool.map((id) => id.trim().toLowerCase()));
+  return poolNorm.has(driverNorm) || pool.some((id) => isSameUserId(id, ride.driver_id!));
+}
 
 /** Finished tickets in the last 7 days — never show as active ghosts on poll. */
 async function recentCompletedTicketsForDriver(
@@ -84,7 +96,7 @@ async function fallbackTripsByDriverUserId(
     .from("ride_bookings")
     .select("*")
     .in("driver_id", ids)
-    .in("status", ["matched", "accepted", "arrived", "in_trip"])
+    .in("status", [...DRIVER_ACTIVE_STATUS_LIST])
     .order("updated_at", { ascending: false })
     .limit(8);
 
@@ -93,6 +105,63 @@ async function fallbackTripsByDriverUserId(
     return [];
   }
   return verifyDriverPanelTrips(supabase, (data ?? []) as RideBookingRow[]);
+}
+
+async function fallbackTripsByDriverUserIdWithRetry(
+  supabase: SupabaseClient,
+  driverUserId: string,
+): Promise<RideBookingRow[]> {
+  for (let i = 0; i < 6; i++) {
+    const rows = await fallbackTripsByDriverUserId(supabase, driverUserId);
+    if (rows.length > 0) return rows;
+    if (i < 5) await sleepMs(500);
+  }
+  return [];
+}
+
+/**
+ * When ride_bookings list scans lag on replica, ride_events still has fresh lifecycle rows.
+ */
+async function fallbackTripsFromDriverEvents(
+  supabase: SupabaseClient,
+  driverPool: string[],
+): Promise<RideBookingRow[]> {
+  if (driverPool.length === 0) return [];
+
+  const since = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+  const { data: events, error } = await supabase
+    .from("ride_events")
+    .select("ride_id, to_status, created_at")
+    .in("to_status", [...DRIVER_ACTIVE_STATUS_LIST])
+    .gte("created_at", since)
+    .order("created_at", { ascending: false })
+    .limit(48);
+
+  if (error) {
+    console.error("[driver-panel] fallbackTripsFromDriverEvents", error);
+    return [];
+  }
+
+  const rideIds = [
+    ...new Set(
+      (events ?? [])
+        .map((evt) => String((evt as { ride_id: string }).ride_id ?? "").trim())
+        .filter(Boolean),
+    ),
+  ];
+
+  const out: RideBookingRow[] = [];
+  const seen = new Set<string>();
+  for (const rideId of rideIds.slice(0, 16)) {
+    if (seen.has(rideId)) continue;
+    seen.add(rideId);
+    const fresh = await getRideByIdFresh(supabase, rideId, { attempts: 4, delayMs: 400 });
+    if (!fresh || !DRIVER_ACTIVE_STATUSES.has(fresh.status)) continue;
+    if (!tripMatchesDriverPool(fresh, driverPool)) continue;
+    out.push(fresh);
+  }
+
+  return verifyDriverPanelTrips(supabase, out);
 }
 
 export type DriverPanelState = {
@@ -201,19 +270,31 @@ export async function loadDriverPanel(
       : [];
   let verified = await verifyDriverPanelTrips(supabase, rawTrips);
 
+  const driverPool: string[] = [];
+  if (driver?.user_id) {
+    driverPool.push(driver.user_id);
+    driverPool.push(...(await expandUserAccountIdPool(supabase, driver.user_id, accountOpts)));
+  }
+  driverPool.push(...(await expandUserAccountIdPool(supabase, args.sessionUserId, accountOpts)));
+  const uniqueDriverPool = [...new Set(driverPool.flatMap((id) => idMatchVariantsForIn(id)))];
+
   if (verified.length === 0 && driver?.user_id) {
-    verified = await fallbackTripsByDriverUserId(supabase, driver.user_id);
+    verified = await fallbackTripsByDriverUserIdWithRetry(supabase, driver.user_id);
   }
 
   if (verified.length === 0 && args.authPhone) {
     const phoneIds = await userIdsForAuthPhone(supabase, args.authPhone);
     for (const uid of phoneIds) {
-      const byPhone = await fallbackTripsByDriverUserId(supabase, uid);
+      const byPhone = await fallbackTripsByDriverUserIdWithRetry(supabase, uid);
       if (byPhone.length > 0) {
         verified = byPhone;
         break;
       }
     }
+  }
+
+  if (verified.length === 0 && uniqueDriverPool.length > 0) {
+    verified = await fallbackTripsFromDriverEvents(supabase, uniqueDriverPool);
   }
 
   let { trips, hideTickets } = await dropActiveRowsWithCompletedTicket(supabase, verified);
@@ -224,11 +305,7 @@ export async function loadDriverPanel(
   trips = await verifyDriverPanelTrips(supabase, trips);
   trips = await mergeExplicitDriverRide(supabase, args, trips);
 
-  const driverPool: string[] = [];
-  if (driver?.user_id) driverPool.push(driver.user_id);
-  const accountPool = await expandUserAccountIdPool(supabase, args.sessionUserId, accountOpts);
-  driverPool.push(...accountPool);
-  const completedHide = await recentCompletedTicketsForDriver(supabase, driverPool);
+  const completedHide = await recentCompletedTicketsForDriver(supabase, uniqueDriverPool);
   const allHideTickets = [...new Set([...hideTickets, ...completedHide])];
 
   return {

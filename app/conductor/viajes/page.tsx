@@ -25,6 +25,7 @@ import {
 const DRIVER_ACTIVE_STATUSES = new Set(["matched", "accepted", "arrived", "in_trip"]);
 const CONDUCTOR_TERMINAL_RIDE_KEY = "ng_conductor_terminal_ride_id";
 const CONDUCTOR_ACTIVE_RIDE_KEY = "ng_conductor_active_ride_id";
+const CONDUCTOR_ACTIVE_TICKET_KEY = "ng_conductor_active_ticket";
 const CONDUCTOR_COMPLETED_TICKET_KEY = "ng_conductor_completed_ticket";
 
 function readDriverActiveRideId(): string | null {
@@ -43,6 +44,24 @@ function rememberDriverActiveRideId(rideId: string) {
 function clearDriverActiveRideId() {
   if (typeof sessionStorage === "undefined") return;
   sessionStorage.removeItem(CONDUCTOR_ACTIVE_RIDE_KEY);
+  clearDriverActiveTicket();
+}
+
+function readDriverActiveTicket(): string | null {
+  if (typeof sessionStorage === "undefined") return null;
+  const ticket = sessionStorage.getItem(CONDUCTOR_ACTIVE_TICKET_KEY)?.trim();
+  return ticket ? normalizeTicketKey(ticket) : null;
+}
+
+function rememberDriverActiveTicket(ticketCode: string | null | undefined) {
+  if (typeof sessionStorage === "undefined") return;
+  const ticket = normalizeTicketKey(ticketCode);
+  if (ticket) sessionStorage.setItem(CONDUCTOR_ACTIVE_TICKET_KEY, ticket);
+}
+
+function clearDriverActiveTicket() {
+  if (typeof sessionStorage === "undefined") return;
+  sessionStorage.removeItem(CONDUCTOR_ACTIVE_TICKET_KEY);
 }
 
 function readDriverTerminalRideId(): string | null {
@@ -459,11 +478,9 @@ function ConductorViajesInner() {
     const syncRideId = skipExplicitRide
       ? undefined
       : pinnedRideIdRef.current ?? readDriverActiveRideId() ?? undefined;
-    const panelResult = await fetchDriverPanel(
-      syncRideId,
-      urlTicketRef.current || undefined,
-    );
-    if (panelResult.ok) urlTicketRef.current = null;
+    const panelTicket =
+      urlTicketRef.current || readDriverActiveTicket() || undefined;
+    const panelResult = await fetchDriverPanel(syncRideId, panelTicket);
     if (gen !== syncGenRef.current) return;
     if (!panelResult.ok) {
       if (panelResult.status === 404) {
@@ -496,6 +513,13 @@ function ConductorViajesInner() {
         completedTicketLatchRef.current,
       );
       if (activeFallback.length > 0) candidates = activeFallback;
+    }
+
+    if (candidates.length > 0) {
+      const top = candidates[0];
+      if (top?.id) rememberDriverActiveRideId(top.id);
+      if (top?.ticket_code) rememberDriverActiveTicket(top.ticket_code);
+      if (urlTicketRef.current) urlTicketRef.current = null;
     }
 
     if (panel.driver) {
