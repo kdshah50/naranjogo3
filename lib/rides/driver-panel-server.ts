@@ -110,11 +110,13 @@ async function fallbackTripsByDriverUserId(
 async function fallbackTripsByDriverUserIdWithRetry(
   supabase: SupabaseClient,
   driverUserId: string,
+  opts?: { maxAttempts?: number },
 ): Promise<RideBookingRow[]> {
-  for (let i = 0; i < 6; i++) {
+  const maxAttempts = Math.min(Math.max(opts?.maxAttempts ?? 3, 1), 4);
+  for (let i = 0; i < maxAttempts; i++) {
     const rows = await fallbackTripsByDriverUserId(supabase, driverUserId);
     if (rows.length > 0) return rows;
-    if (i < 5) await sleepMs(500);
+    if (i < maxAttempts - 1) await sleepMs(400);
   }
   return [];
 }
@@ -152,16 +154,16 @@ async function fallbackTripsFromDriverEvents(
 
   const out: RideBookingRow[] = [];
   const seen = new Set<string>();
-  for (const rideId of rideIds.slice(0, 16)) {
+  for (const rideId of rideIds.slice(0, 6)) {
     if (seen.has(rideId)) continue;
     seen.add(rideId);
-    const fresh = await getRideByIdFresh(supabase, rideId, { attempts: 4, delayMs: 400 });
+    const fresh = await getRideByIdFresh(supabase, rideId, { attempts: 2, delayMs: 300 });
     if (!fresh || !DRIVER_ACTIVE_STATUSES.has(fresh.status)) continue;
     if (!tripMatchesDriverPool(fresh, driverPool)) continue;
     out.push(fresh);
   }
 
-  return verifyDriverPanelTrips(supabase, out);
+  return out;
 }
 
 export type DriverPanelState = {
@@ -264,11 +266,9 @@ export async function loadDriverPanel(
     ? await enrichDriverOnlineFromAccountPool(supabase, resolved, accountOpts)
     : null;
 
-  const rawTrips =
-    driver?.is_active_driver && driver.user_id
-      ? await listActiveTripsForDriverProfile(supabase, driver.user_id, accountOpts)
-      : [];
-  let verified = await verifyDriverPanelTrips(supabase, rawTrips);
+  const explicitTicket = String(args.explicitTicketCode ?? "").trim();
+  const explicitRideId = String(args.explicitRideId ?? "").trim();
+  const hasExplicitPin = Boolean(explicitTicket || explicitRideId);
 
   const driverPool: string[] = [];
   if (driver?.user_id) {
@@ -278,14 +278,29 @@ export async function loadDriverPanel(
   driverPool.push(...(await expandUserAccountIdPool(supabase, args.sessionUserId, accountOpts)));
   const uniqueDriverPool = [...new Set(driverPool.flatMap((id) => idMatchVariantsForIn(id)))];
 
+  // Fast path: WhatsApp / URL ticket — avoid slow replica fallbacks that timeout on Vercel.
+  let verified: RideBookingRow[] = hasExplicitPin
+    ? await mergeExplicitDriverRide(supabase, args, [])
+    : [];
+
+  if (verified.length === 0) {
+    const rawTrips =
+      driver?.is_active_driver && driver.user_id
+        ? await listActiveTripsForDriverProfile(supabase, driver.user_id, accountOpts)
+        : [];
+    verified = await verifyDriverPanelTrips(supabase, rawTrips);
+  }
+
   if (verified.length === 0 && driver?.user_id) {
-    verified = await fallbackTripsByDriverUserIdWithRetry(supabase, driver.user_id);
+    verified = await fallbackTripsByDriverUserIdWithRetry(supabase, driver.user_id, {
+      maxAttempts: hasExplicitPin ? 1 : 3,
+    });
   }
 
   if (verified.length === 0 && args.authPhone) {
     const phoneIds = await userIdsForAuthPhone(supabase, args.authPhone);
     for (const uid of phoneIds) {
-      const byPhone = await fallbackTripsByDriverUserIdWithRetry(supabase, uid);
+      const byPhone = await fallbackTripsByDriverUserIdWithRetry(supabase, uid, { maxAttempts: 2 });
       if (byPhone.length > 0) {
         verified = byPhone;
         break;
@@ -293,7 +308,7 @@ export async function loadDriverPanel(
     }
   }
 
-  if (verified.length === 0 && uniqueDriverPool.length > 0) {
+  if (verified.length === 0 && !hasExplicitPin && uniqueDriverPool.length > 0) {
     verified = await fallbackTripsFromDriverEvents(supabase, uniqueDriverPool);
   }
 
@@ -303,7 +318,9 @@ export async function loadDriverPanel(
     authPhone: args.authPhone,
   });
   trips = await verifyDriverPanelTrips(supabase, trips);
-  trips = await mergeExplicitDriverRide(supabase, args, trips);
+  if (!hasExplicitPin) {
+    trips = await mergeExplicitDriverRide(supabase, args, trips);
+  }
 
   const completedHide = await recentCompletedTicketsForDriver(supabase, uniqueDriverPool);
   const allHideTickets = [...new Set([...hideTickets, ...completedHide])];

@@ -15,14 +15,22 @@ export async function GET(req: NextRequest) {
   const rideId = req.nextUrl.searchParams.get("ride_id")?.trim() || null;
   const ticketCode = req.nextUrl.searchParams.get("ticket_code")?.trim() || null;
 
-  const panel = await loadDriverPanel(guard.supabase, {
-    sessionUserId: guard.userId,
-    authPhone: guard.authPhone,
-    explicitRideId: rideId,
-    explicitTicketCode: ticketCode,
-  });
+  try {
+    const panel = await loadDriverPanel(guard.supabase, {
+      sessionUserId: guard.userId,
+      authPhone: guard.authPhone,
+      explicitRideId: rideId,
+      explicitTicketCode: ticketCode,
+    });
 
-  return NextResponse.json(panel, {
-    headers: { "Cache-Control": "no-store, max-age=0" },
-  });
+    return NextResponse.json(panel, {
+      headers: { "Cache-Control": "no-store, max-age=0" },
+    });
+  } catch (e) {
+    console.error("[rides/drivers/me/panel] GET", e);
+    return NextResponse.json(
+      { error: "No se pudo cargar el panel de conductor", code: "panel_failed" },
+      { status: 500 },
+    );
+  }
 }

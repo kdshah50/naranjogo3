@@ -269,6 +269,8 @@ function ConductorViajesInner() {
   const statusFloorByRideRef = useRef<Map<string, number>>(new Map());
   /** After complete, ignore ghost duplicate rows for this ticket briefly. */
   const completedTicketLatchRef = useRef<{ ticket: string; until: number } | null>(null);
+  /** Keep trips visible when a later slow/timed-out panel poll fails. */
+  const tripsRef = useRef<RideRow[]>([]);
 
   /** Never downgrade lifecycle after POST accept/arrive/start (GET/panel can lag). */
   const mergeIncomingDriverTrip = useCallback((prev: RideRow[], incoming: RideRow): RideRow[] => {
@@ -334,7 +336,9 @@ function ConductorViajesInner() {
           }
         }
       }
-      return dedupeDriverTrips(merged);
+      const next = dedupeDriverTrips(merged);
+      tripsRef.current = next;
+      return next;
     });
     const apiSummary =
       incoming.length === 0
@@ -483,6 +487,13 @@ function ConductorViajesInner() {
     const panelResult = await fetchDriverPanel(syncRideId, panelTicket);
     if (gen !== syncGenRef.current) return;
     if (!panelResult.ok) {
+      if (
+        tripsRef.current.length > 0 &&
+        panelResult.status !== 401 &&
+        panelResult.status !== 404
+      ) {
+        return;
+      }
       if (panelResult.status === 404) {
         setPanelError(t.ridesDisabled);
         setDriverApproved(false);
@@ -543,6 +554,9 @@ function ConductorViajesInner() {
       setPanelError(t.noDriverProfile);
       if (!driverApprovedRef.current) setDriverApproved(false);
     } else {
+      setPanelError(null);
+    }
+    if (candidates.length === 0 && tripsRef.current.length > 0) {
       setPanelError(null);
     }
   }, [
