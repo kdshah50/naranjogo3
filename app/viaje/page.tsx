@@ -306,8 +306,11 @@ function ViajePageInner() {
   const [tipMxn, setTipMxn] = useState(20);
 
   const [authError, setAuthError] = useState<string | null>(null);
+  const [sessionPhone, setSessionPhone] = useState<string | null>(null);
   const [syncDebug, setSyncDebug] = useState<SyncDebug | null>(null);
   const [driverPublic, setDriverPublic] = useState<RideDriverPublic | null>(null);
+  /** Mirrors ride state — polls must not wipe an active trip on transient empty sync. */
+  const uiRideRef = useRef<RideRow | null>(null);
 
   const mergeIncomingBuyerRide = useCallback(
     (prev: RideRow | null, incoming: RideRow): RideRow => {
@@ -356,6 +359,7 @@ function ViajePageInner() {
           until: Date.now() + 120_000,
         };
       }
+      uiRideRef.current = row;
       setRide(row);
       setTerminalBanner(row);
       pinTerminalRideId(row.id);
@@ -395,6 +399,7 @@ function ViajePageInner() {
         }
         const next = mergeIncomingBuyerRide(prev, row);
         repinCanonicalRideId(next, rideIdRef, activeTicketRef);
+        uiRideRef.current = next;
         return next;
       });
       setTerminalBanner(null);
@@ -410,6 +415,7 @@ function ViajePageInner() {
       clearTerminalRideId();
     }
 
+    uiRideRef.current = null;
     setRide(null);
     setTerminalBanner(null);
     clearPinnedRideId();
@@ -472,10 +478,25 @@ function ViajePageInner() {
       ticketHint || undefined,
       dismissedForSync,
     );
-    if (syncResult.ok && syncResult.payload.ride?.id) {
-      urlTicketRef.current = null;
+
+    // Fast path — paint sync row immediately (races were dropping active trips).
+    if (syncResult.ok) {
+      const fastRow = syncResult.payload.ride as RideRow | null;
+      if (fastRow?.id && (isBuyerActiveStatus(fastRow.status) || isTerminalRideStatus(fastRow.status))) {
+        clearDismissedTicket();
+        userClearedUntilRef.current = 0;
+        writeUserClearedUntil(0);
+        repinCanonicalRideId(fastRow, rideIdRef, activeTicketRef);
+        setDriverPublic(syncResult.payload.driver_public ?? null);
+        applyServerRide(
+          fastRow,
+          `${source}+fast`,
+          `${fastRow.status}${fastRow.ticket_code ? ` · ${fastRow.ticket_code}` : ""}`,
+          syncResult.payload.debug?.drop_reason ?? null,
+        );
+        urlTicketRef.current = null;
+      }
     }
-    if (isStale()) return;
 
     const applyResolvedRide = async (
       row: RideRow,
@@ -509,12 +530,14 @@ function ViajePageInner() {
           return;
         }
       }
-      if (!isStale()) clearStaleRideUi();
+      if (!isStale()) {
+        setSyncDebug(syncDebugForRow(uiRideRef.current, source, `sync error ${syncResult.status}`));
+      }
       return;
     }
 
     const sync = syncResult.payload;
-    setDriverPublic(sync.driver_public ?? null);
+    if (!uiRideRef.current) setDriverPublic(sync.driver_public ?? null);
 
     const debugMeta = sync.debug;
     const debugSuffix = debugMeta
@@ -673,9 +696,40 @@ function ViajePageInner() {
         setSyncDebug(syncDebugForRow(null, source, `0 open (dismissed)${debugSuffix}`, debugMeta?.drop_reason ?? null));
         return;
       }
-      applyServerRide(null, source, `0 open${debugSuffix}`, debugMeta?.drop_reason ?? null);
+      const drop = debugMeta?.drop_reason ?? null;
+      const mayClear =
+        source === "clear" ||
+        source === "cancel" ||
+        source === "request" ||
+        drop?.startsWith("verify:completed") ||
+        drop === "dismissed:completed";
+      const keepingActive =
+        POLL_SOURCES.has(source) &&
+        uiRideRef.current?.id &&
+        isBuyerActiveStatus(uiRideRef.current.status) &&
+        !mayClear;
+      if (keepingActive) {
+        setSyncDebug(
+          syncDebugForRow(
+            uiRideRef.current,
+            source,
+            `0 open (keeping active trip)${debugSuffix}`,
+            drop,
+          ),
+        );
+        return;
+      }
+      applyServerRide(null, source, `0 open${debugSuffix}`, drop);
     }
-  }, [applyServerRide, clearStaleRideUi]);
+  }, [applyServerRide]);
+
+  const recoverActiveTrip = useCallback(() => {
+    clearDismissedTicket();
+    userClearedUntilRef.current = 0;
+    writeUserClearedUntil(0);
+    completedTicketLatchRef.current = null;
+    void refreshActiveRide("manual");
+  }, [refreshActiveRide]);
 
   // Keep SSE through in_trip so we receive the completed event.
   const liveRideId =
@@ -743,12 +797,10 @@ function ViajePageInner() {
       .then((d) => {
         if (!d?.user?.id) setAuthError(t.loginRequired);
         else {
+          setSessionPhone(String(d.user.phone ?? "").trim() || null);
           void refreshActiveRide("mount");
-          // WhatsApp links open in a fresh tab — do a follow-up sync after 1.5s
-          // to catch any Supabase replica lag on the initial load.
-          if (hadUrlRideParamsRef.current) {
-            setTimeout(() => void refreshActiveRide("mount-retry"), 1500);
-          }
+          window.setTimeout(() => void refreshActiveRide("mount-retry"), 800);
+          window.setTimeout(() => void refreshActiveRide("mount-retry"), 2500);
         }
       })
       .catch(() => setAuthError(t.sessionError));
@@ -980,6 +1032,11 @@ function ViajePageInner() {
   const durationMin = estimate ? Math.round(estimate.duration_s / 60) : null;
   const distanceKm = estimate ? (estimate.distance_m / 1000).toFixed(1) : null;
 
+  const sessionTail = sessionPhone && sessionPhone.length >= 4 ? sessionPhone.slice(-4) : "";
+  const loggedInAsDriver =
+    Boolean(sessionPhone) &&
+    (sessionPhone!.endsWith("6902") || sessionPhone!.includes("4151816902"));
+
   return (
     <main className="min-h-screen bg-[#F8F4ED] text-[#1B4332]">
       <div className="mx-auto max-w-lg px-4 py-8">
@@ -1000,6 +1057,44 @@ function ViajePageInner() {
             <Link href={withLang("/auth/login", lang)} className="font-medium underline">
               {t.login}
             </Link>
+          </div>
+        )}
+
+        {sessionTail && !authError && (
+          <p className="mb-3 text-xs text-[#1B4332]/60">
+            {lang === "es" ? "Sesión" : "Session"}: …{sessionTail}
+          </p>
+        )}
+
+        {loggedInAsDriver && !authError && (
+          <div className="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
+            {lang === "es"
+              ? "Estás con la cuenta del conductor (415…6902). Cierra sesión en /unete e inicia con el WhatsApp del pasajero (Kay · …8527)."
+              : "You are logged in as the driver (415…6902). Log out at /unete and sign in with the rider WhatsApp (Kay · …8527)."}
+            {" "}
+            <Link href={withLang("/unete", lang)} className="font-medium underline">
+              /unete
+            </Link>
+          </div>
+        )}
+
+        {!ride && !authError && !loggedInAsDriver && (
+          <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            <p className="font-medium">
+              {lang === "es" ? "¿Tienes un viaje activo?" : "Have an active trip?"}
+            </p>
+            <p className="mt-1">
+              {lang === "es"
+                ? "Si pediste un taxi y no ves tu ticket, pulsa abajo — no pidas otro viaje todavía."
+                : "If you requested a taxi but do not see your ticket, tap below — do not request another ride yet."}
+            </p>
+            <button
+              type="button"
+              className="mt-2 rounded-full bg-[#1B4332] px-4 py-2 text-sm font-medium text-white"
+              onClick={recoverActiveTrip}
+            >
+              {lang === "es" ? "Buscar mi viaje activo" : "Find my active trip"}
+            </button>
           </div>
         )}
 
