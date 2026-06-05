@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isSameUserId } from "@/lib/auth-server";
 import { ridesRouteGuard } from "@/lib/rides/ride-route-guard";
-import { getRideById, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
+import { getRideById, getRideByIdFresh, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 import { dropActiveRowsWithCompletedTicket } from "@/lib/rides/ride-ghost-filter";
 import { resolveCanonicalRideByTicketForBuyer } from "@/lib/rides/resolve-ride-by-ticket";
@@ -41,7 +41,7 @@ async function verifyBuyerActiveTrips(
   if (rows.length === 0) return [];
   const verified = await Promise.all(
     rows.map(async (row) => {
-      const fresh = await getRideById(supabase, row.id);
+      const fresh = await getRideByIdFresh(supabase, row.id);
       if (!fresh || !BUYER_OPEN_STATUSES.has(fresh.status)) return null;
       return fresh;
     }),

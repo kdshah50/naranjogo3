@@ -284,6 +284,41 @@ export async function getRideById(
   return (data as RideBookingRow) ?? null;
 }
 
+/**
+ * ride_bookings reads on Vercel can lag minutes behind primary; ride_events
+ * append-only log is fresher — use highest lifecycle status for client reads.
+ */
+async function latestStatusFromEvents(
+  supabase: SupabaseClient,
+  rideId: string,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("ride_events")
+    .select("to_status")
+    .eq("ride_id", rideId)
+    .not("to_status", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.error("[ride-bookings] latestStatusFromEvents", error);
+    return null;
+  }
+  const status = String(data?.to_status ?? "").trim();
+  return status || null;
+}
+
+export async function hydrateRideFromEvents(
+  supabase: SupabaseClient,
+  row: RideBookingRow,
+): Promise<RideBookingRow> {
+  const fromEvents = await latestStatusFromEvents(supabase, row.id);
+  if (!fromEvents || rideStatusRank(fromEvents) <= rideStatusRank(row.status)) {
+    return row;
+  }
+  return { ...row, status: fromEvents as RideBookingRow["status"] };
+}
+
 function sleepMs(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -317,7 +352,7 @@ export async function getRideByIdFresh(
     }
     if (i < attempts - 1) await sleepMs(delayMs);
   }
-  return best;
+  return best ? await hydrateRideFromEvents(supabase, best) : null;
 }
 
 export type MatchRideResult =
