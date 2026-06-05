@@ -707,6 +707,7 @@ function ViajePageInner() {
         POLL_SOURCES.has(source) &&
         uiRideRef.current?.id &&
         isBuyerActiveStatus(uiRideRef.current.status) &&
+        uiRideRef.current.status !== "in_trip" &&
         !mayClear;
       if (keepingActive) {
         setSyncDebug(
@@ -809,8 +810,17 @@ function ViajePageInner() {
   useEffect(() => {
     if (authError) return;
     const terminal = ride?.status === "completed" || ride?.status === "cancelled";
+    const awaitingComplete = ride?.status === "in_trip";
     const fromWhatsApp = hadUrlRideParamsRef.current;
-    const ms = terminal ? 8_000 : ride ? (fromWhatsApp ? 1_500 : 2_000) : 5_000;
+    const ms = terminal
+      ? 8_000
+      : awaitingComplete
+        ? 1_000
+        : ride
+          ? fromWhatsApp
+            ? 1_500
+            : 2_000
+          : 5_000;
     const timer = setInterval(() => void refreshActiveRide("poll"), ms);
     return () => clearInterval(timer);
   }, [authError, ride?.status, refreshActiveRide]);

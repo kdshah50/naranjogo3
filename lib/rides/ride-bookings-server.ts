@@ -291,28 +291,48 @@ export async function getRideById(
 async function latestStatusFromEvents(
   supabase: SupabaseClient,
   rideId: string,
+  opts?: { attempts?: number; delayMs?: number },
 ): Promise<string | null> {
-  const { data, error } = await supabase
-    .from("ride_events")
-    .select("to_status")
-    .eq("ride_id", rideId)
-    .not("to_status", "is", null)
-    .order("created_at", { ascending: false })
-    .limit(8);
-  if (error) {
-    console.error("[ride-bookings] latestStatusFromEvents", error);
-    return null;
-  }
+  const attempts = Math.min(Math.max(opts?.attempts ?? 6, 1), 10);
+  const delayMs = opts?.delayMs ?? 500;
   let best: string | null = null;
   let bestRank = -2;
-  for (const row of data ?? []) {
-    const status = String(row.to_status ?? "").trim();
-    if (!status) continue;
-    const rank = rideStatusRank(status);
-    if (rank > bestRank) {
-      best = status;
-      bestRank = rank;
+
+  for (let i = 0; i < attempts; i++) {
+    const { data: completedEvt } = await supabase
+      .from("ride_events")
+      .select("id")
+      .eq("ride_id", rideId)
+      .eq("event_type", "trip_completed")
+      .limit(1)
+      .maybeSingle();
+    if (completedEvt?.id) {
+      return "completed";
     }
+
+    const { data, error } = await supabase
+      .from("ride_events")
+      .select("to_status")
+      .eq("ride_id", rideId)
+      .not("to_status", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(12);
+    if (error) {
+      console.error("[ride-bookings] latestStatusFromEvents", error);
+    } else {
+      for (const evt of data ?? []) {
+        const status = String(evt.to_status ?? "").trim();
+        if (!status) continue;
+        const rank = rideStatusRank(status);
+        if (rank > bestRank) {
+          best = status;
+          bestRank = rank;
+        }
+      }
+    }
+
+    if (bestRank >= rideStatusRank("completed")) return best;
+    if (i < attempts - 1) await sleepMs(delayMs);
   }
   return best;
 }
@@ -325,6 +345,19 @@ export async function hydrateRideFromEvents(
   if (!fromEvents || rideStatusRank(fromEvents) <= rideStatusRank(row.status)) {
     return row;
   }
+
+  // Terminal status from events — re-read booking row for final_total / trip_ended_at.
+  if (fromEvents === "completed" || fromEvents === "cancelled") {
+    for (let i = 0; i < 6; i++) {
+      const fresh = await getRideById(supabase, row.id);
+      if (fresh && rideStatusRank(fresh.status) >= rideStatusRank(fromEvents)) {
+        return fresh;
+      }
+      if (i < 5) await sleepMs(500);
+    }
+    return { ...row, status: fromEvents as RideBookingRow["status"] };
+  }
+
   return { ...row, status: fromEvents as RideBookingRow["status"] };
 }
 
@@ -342,8 +375,8 @@ export async function getRideByIdFresh(
   rideId: string,
   opts?: { attempts?: number; delayMs?: number },
 ): Promise<RideBookingRow | null> {
-  const attempts = Math.min(Math.max(opts?.attempts ?? 4, 1), 6);
-  const delayMs = opts?.delayMs ?? 450;
+  const attempts = Math.min(Math.max(opts?.attempts ?? 6, 1), 10);
+  const delayMs = opts?.delayMs ?? 500;
   let best: RideBookingRow | null = null;
   let bestRank = -2;
 
