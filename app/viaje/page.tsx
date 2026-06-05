@@ -31,6 +31,7 @@ type FareEstimate = {
 type RideRow = {
   id: string;
   status: string;
+  status_code?: number;
   pickup_address: string;
   dropoff_address: string;
   estimated_total_mxn_cents: number;
@@ -198,9 +199,10 @@ function syncDebugForRow(
 ): SyncDebug {
   let apiSummary = note ?? "0 open";
   if (row) {
+    const code = row.status_code != null ? ` #${row.status_code}` : "";
     apiSummary = isBuyerActiveStatus(row.status)
-      ? `1 open · ${row.status}${row.ticket_code ? ` · ${row.ticket_code}` : ""}`
-      : `not open · ${row.status}${row.ticket_code ? ` · ${row.ticket_code}` : ""}`;
+      ? `1 open · ${row.status}${code}${row.ticket_code ? ` · ${row.ticket_code}` : ""}`
+      : `not open · ${row.status}${code}${row.ticket_code ? ` · ${row.ticket_code}` : ""}`;
   }
   return {
     source,
@@ -541,7 +543,7 @@ function ViajePageInner() {
 
     const debugMeta = sync.debug;
     const debugSuffix = debugMeta
-      ? ` · pool ${debugMeta.pool_size} · raw ${debugMeta.raw_buyer_count} · verified ${debugMeta.verified_buyer_count}${debugMeta.drop_reason ? ` · ${debugMeta.drop_reason}` : ""}`
+      ? ` · #${debugMeta.status_code ?? "?"} · pool ${debugMeta.pool_size} · raw ${debugMeta.raw_buyer_count} · verified ${debugMeta.verified_buyer_count}${debugMeta.drop_reason ? ` · ${debugMeta.drop_reason}` : ""}`
       : "";
 
     const row = sync.ride as RideRow | null;

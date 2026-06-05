@@ -22,7 +22,12 @@ export function isTerminalRideStatus(status: string): boolean {
   return status === "cancelled" || status === "completed" || status === "disputed";
 }
 
-export type RideStatusRow = { id: string; status: string; updated_at?: string | null };
+export type RideStatusRow = {
+  id: string;
+  status: string;
+  status_code?: number;
+  updated_at?: string | null;
+};
 
 /** Merge two rows for the same ride id; keeps the ahead status (never downgrade in-trip). */
 export function mergeRideStatusRow<T extends RideStatusRow>(prev: T, next: T): T {

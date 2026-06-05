@@ -10,6 +10,8 @@ import {
 } from "@/lib/rides/ride-ghost-filter";
 import { resolveCanonicalRideByTicketForBuyer } from "@/lib/rides/resolve-ride-by-ticket";
 import { rideStatusRank } from "@/lib/rides/ride-status-merge";
+import { withStatusCode } from "@/lib/rides/ride-transition-pipeline";
+import { rideStatusToCode } from "@/lib/rides/ride-status-codes";
 import {
   listActiveTripsForBuyer,
   pickBestOpenBuyerRideRow,
@@ -48,6 +50,7 @@ export type RideSyncState = {
     source_ride_id: string | null;
     raw_buyer_count: number;
     verified_buyer_count: number;
+    status_code: number | null;
   };
 };
 
@@ -348,8 +351,8 @@ export async function loadRideSyncState(
   const hideTickets = [...new Set([...panel.hide_tickets])];
 
   return {
-    ride,
-    trips: panel.trips,
+    ride: ride ? withStatusCode(ride) : null,
+    trips: panel.trips.map((t) => withStatusCode(t)),
     driver: panel.driver,
     driver_public: driverPublic,
     canonical_user_id: panel.canonical_user_id,
@@ -362,6 +365,7 @@ export async function loadRideSyncState(
       source_ride_id: args.rideId ? String(args.rideId).slice(0, 8) : null,
       raw_buyer_count: buyer.rawBuyerCount,
       verified_buyer_count: buyer.verifiedBuyerCount,
+      status_code: ride ? rideStatusToCode(ride.status) : null,
     },
   };
 }

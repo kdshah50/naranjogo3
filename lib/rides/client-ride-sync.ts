@@ -36,8 +36,10 @@ export type RideSyncPayload = {
   debug: {
     pool_size: number;
     drop_reason: string | null;
+    source_ride_id?: string | null;
     raw_buyer_count: number;
     verified_buyer_count: number;
+    status_code: number | null;
   };
 };
 

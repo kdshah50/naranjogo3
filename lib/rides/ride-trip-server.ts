@@ -9,7 +9,7 @@ import {
   getRideByIdFresh,
   type RideBookingRow,
 } from "@/lib/rides/ride-bookings-server";
-import { emitRidePhaseNotifications } from "@/lib/rides/ride-notify";
+import { commitRidePhaseTransition } from "@/lib/rides/ride-transition-pipeline";
 import {
   canTransitionRideStatus,
   cancelFeeApplies,
@@ -322,21 +322,17 @@ export async function acceptRide(
   const freshAfter = await getRideById(supabase, updated.id);
   if (freshAfter) updated = freshAfter;
 
-  await appendRideEvent(supabase, {
-    rideId: ride.id,
+  const pipeline = await commitRidePhaseTransition(supabase, {
+    ride: updated,
+    phase: "accepted",
+    driverUserId: args.driverUserId,
     actorId: args.driverUserId,
     eventType: "driver_accepted",
     fromStatus: "matched",
     toStatus: "accepted",
   });
 
-  await emitRidePhaseNotifications(supabase, {
-    ride: updated,
-    phase: "accepted",
-    driverUserId: args.driverUserId,
-  });
-
-  return { ok: true, ride: updated };
+  return { ok: true, ride: pipeline.ok ? pipeline.ride : updated };
 }
 
 export async function arriveAtPickup(
@@ -364,21 +360,17 @@ export async function arriveAtPickup(
     });
   }
 
-  await appendRideEvent(supabase, {
-    rideId: ride.id,
+  const pipeline = await commitRidePhaseTransition(supabase, {
+    ride: updated,
+    phase: "arrived",
+    driverUserId: args.driverUserId,
     actorId: args.driverUserId,
     eventType: "driver_arrived",
     fromStatus: "accepted",
     toStatus: "arrived",
   });
 
-  await emitRidePhaseNotifications(supabase, {
-    ride: updated,
-    phase: "arrived",
-    driverUserId: args.driverUserId,
-  });
-
-  return { ok: true, ride: updated };
+  return { ok: true, ride: pipeline.ok ? pipeline.ride : updated };
 }
 
 export async function startTrip(
@@ -416,22 +408,18 @@ export async function startTrip(
     });
   }
 
-  await appendRideEvent(supabase, {
-    rideId: ride.id,
+  const pipeline = await commitRidePhaseTransition(supabase, {
+    ride: updated,
+    phase: "in_trip",
+    driverUserId: args.driverUserId,
     actorId: args.driverUserId,
     eventType: "trip_started",
     fromStatus: "arrived",
     toStatus: "in_trip",
-    meta: { ticket_verified: true },
+    eventMeta: { ticket_verified: true },
   });
 
-  await emitRidePhaseNotifications(supabase, {
-    ride: updated,
-    phase: "in_trip",
-    driverUserId: args.driverUserId,
-  });
-
-  return { ok: true, ride: updated };
+  return { ok: true, ride: pipeline.ok ? pipeline.ride : updated };
 }
 
 export async function completeTrip(
@@ -511,15 +499,6 @@ export async function completeTrip(
     return { ok: false, error: "No se pudo completar el viaje" };
   }
 
-  await appendRideEvent(supabase, {
-    rideId: ride.id,
-    actorId: args.driverUserId,
-    eventType: "trip_completed",
-    fromStatus: "in_trip",
-    toStatus: "completed",
-    meta: { final_total_mxn_cents: finalTotal, commission_mxn_cents: commission, driver_payout: driverPay },
-  });
-
   const completed = updated as RideBookingRow;
 
   if (completed.driver_id) {
@@ -538,15 +517,24 @@ export async function completeTrip(
     });
   }
 
-  await emitRidePhaseNotifications(supabase, {
+  const pipeline = await commitRidePhaseTransition(supabase, {
     ride: completed,
     phase: "completed",
     driverUserId: driverId,
+    actorId: args.driverUserId,
+    eventType: "trip_completed",
+    fromStatus: "in_trip",
+    toStatus: "completed",
+    eventMeta: {
+      final_total_mxn_cents: finalTotal,
+      commission_mxn_cents: commission,
+      driver_payout: driverPay,
+    },
     finalTotalMxnCents: finalTotal,
     driverPayoutMxnCents: driverPay,
   });
 
-  return { ok: true, ride: completed };
+  return { ok: true, ride: pipeline.ok ? pipeline.ride : completed };
 }
 
 export async function cancelRide(
