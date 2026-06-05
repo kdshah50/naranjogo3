@@ -78,6 +78,32 @@ export async function fetchDriverPanel(
   return { ok: true, payload };
 }
 
+/** Fast ticket lookup for driver recover button (skips slow panel fallbacks). */
+export async function fetchDriverRecoverByTicket(
+  ticketCode: string,
+): Promise<
+  | { ok: true; trips: RideStatusRow[]; ride: RideStatusRow | null }
+  | { ok: false; status: number }
+> {
+  const ticket = String(ticketCode ?? "").trim();
+  if (!ticket) return { ok: false, status: 400 };
+  const r = await fetch(
+    `/api/rides/drivers/me/recover?ticket_code=${encodeURIComponent(ticket)}&_=${Date.now()}`,
+    {
+      credentials: "include",
+      cache: "no-store",
+      headers: { Accept: "application/json", "Cache-Control": "no-cache" },
+    },
+  );
+  if (!r.ok) return { ok: false, status: r.status };
+  const payload = (await r.json().catch(() => null)) as {
+    trips?: RideStatusRow[];
+    ride?: RideStatusRow | null;
+  } | null;
+  const trips = Array.isArray(payload?.trips) ? payload.trips : [];
+  return { ok: true, trips, ride: payload?.ride ?? trips[0] ?? null };
+}
+
 /** Active rides fallback — as_driver array when panel list is empty. */
 export async function fetchActiveDriverTrips(): Promise<RideStatusRow[]> {
   const r = await fetch(`/api/rides/active?_=${Date.now()}`, {

@@ -11,6 +11,7 @@ import { useRideLiveStream } from "@/hooks/use-ride-live-stream";
 import {
   fetchActiveDriverTrips,
   fetchDriverPanel,
+  fetchDriverRecoverByTicket,
   fetchRideRowById,
 } from "@/lib/rides/client-ride-sync";
 import { mergeRideStatusRow, rideStatusRank } from "@/lib/rides/ride-status-merge";
@@ -257,6 +258,9 @@ function ConductorViajesInner() {
   const [wrongHost, setWrongHost] = useState(false);
   const [debugChecks, setDebugChecks] = useState<string[] | null>(null);
   const [debugBusy, setDebugBusy] = useState(false);
+  const [recoverTicketInput, setRecoverTicketInput] = useState(() =>
+    normalizeTicketKey(String(searchParams.get("ticket") ?? "").trim()),
+  );
 
   /** After Conectar succeeds, ignore stale panel polls that still say offline. */
   const onlineLatchUntilRef = useRef(0);
@@ -271,6 +275,8 @@ function ConductorViajesInner() {
   const completedTicketLatchRef = useRef<{ ticket: string; until: number } | null>(null);
   /** Keep trips visible when a later slow/timed-out panel poll fails. */
   const tripsRef = useRef<RideRow[]>([]);
+  /** After recover/URL ticket load, ignore empty verify wipes briefly. */
+  const recoverLatchUntilRef = useRef(0);
 
   /** Never downgrade lifecycle after POST accept/arrive/start (GET/panel can lag). */
   const mergeIncomingDriverTrip = useCallback((prev: RideRow[], incoming: RideRow): RideRow[] => {
@@ -446,6 +452,8 @@ function ConductorViajesInner() {
         applyServerTrips([bestFiltered], source, false);
       } else if (bestCandidate) {
         applyServerTrips([bestCandidate], source, false);
+      } else if (tripsRef.current.some(isDriverActiveTrip)) {
+        return;
       } else {
         applyServerTrips([], source, true);
       }
@@ -546,6 +554,25 @@ function ConductorViajesInner() {
       if (activeFallback.length > 0) candidates = activeFallback;
     }
 
+    const isBackgroundPoll =
+      source === "poll" ||
+      source === "poll-backup" ||
+      source === "SSE" ||
+      source === "focus" ||
+      source === "visibility";
+    if (candidates.length === 0 && tripsRef.current.length > 0) {
+      if (panel.driver) {
+        rememberApprovedDriver(panel.driver as DriverOnline);
+        setOnline(mergeDriverOnline(panel.driver as DriverOnline));
+      }
+      setCanonicalUserId(panel.canonical_user_id ?? panel.driver?.user_id ?? null);
+      setSessionUserId(panel.session_user_id ?? null);
+      if (isBackgroundPoll || Date.now() < recoverLatchUntilRef.current) {
+        setPanelError(null);
+        return;
+      }
+    }
+
     if (candidates.length > 0) {
       const top = candidates[0];
       if (top?.id) rememberDriverActiveRideId(top.id);
@@ -593,6 +620,22 @@ function ConductorViajesInner() {
     t.ridesDisabled,
   ]);
 
+  const applyRecoveredTrip = useCallback(
+    (row: RideRow, ticketHint?: string) => {
+      rememberDriverActiveRideId(row.id);
+      const ticket = normalizeTicketKey(row.ticket_code ?? ticketHint);
+      if (ticket) rememberDriverActiveTicket(ticket);
+      pinnedRideIdRef.current = row.id;
+      syncGenRef.current += 1;
+      recoverLatchUntilRef.current = Date.now() + 45_000;
+      applyServerTrips([row], "recover");
+      setCompletedNotice(null);
+      setPanelError(null);
+      setActionError(null);
+    },
+    [applyServerTrips],
+  );
+
   const recoverAssignedRide = useCallback(async () => {
     setBusy("recover");
     setPanelError(null);
@@ -602,29 +645,71 @@ function ConductorViajesInner() {
     completedTicketLatchRef.current = null;
     setCompletedNotice(null);
 
-    const ticket = readDriverActiveTicket() || urlTicketRef.current;
+    const ticket = normalizeTicketKey(
+      recoverTicketInput || readDriverActiveTicket() || urlTicketRef.current || "",
+    );
     if (ticket) {
       urlTicketRef.current = ticket;
       rememberDriverActiveTicket(ticket);
     }
 
-    const rideId = readDriverActiveRideId() || pinnedRideIdRef.current;
-    if (rideId) {
-      const direct = await fetchRideRowById<RideRow>(rideId);
-      if (direct?.id && isDriverActiveTrip(direct)) {
-        rememberDriverActiveRideId(direct.id);
-        if (direct.ticket_code) rememberDriverActiveTicket(direct.ticket_code);
-        applyServerTrips([direct], "recover");
-        setPanelError(null);
+    if (ticket) {
+      const fast = await fetchDriverRecoverByTicket(ticket);
+      if (fast.ok && fast.trips.length > 0) {
+        applyRecoveredTrip(fast.trips[0] as RideRow, ticket);
+        setBusy(null);
+        return;
+      }
+      if (!fast.ok && fast.status === 401) {
+        setPanelError(t.panelLoadFailed);
         setBusy(null);
         return;
       }
     }
 
-    syncGenRef.current += 1;
-    await load("recover");
+    const rideId =
+      readDriverActiveRideId() ||
+      pinnedRideIdRef.current ||
+      String(searchParams.get("ride") ?? "").trim() ||
+      null;
+    if (rideId) {
+      const direct = await fetchRideRowById<RideRow>(rideId);
+      if (direct?.id && isDriverActiveTrip(direct)) {
+        applyRecoveredTrip(direct, ticket || direct.ticket_code || undefined);
+        setBusy(null);
+        return;
+      }
+    }
+
+    if (ticket) {
+      const panelResult = await fetchDriverPanel(rideId ?? undefined, ticket);
+      if (panelResult.ok) {
+        const raw = (panelResult.payload.trips ?? []) as RideRow[];
+        const row = raw.find((r) => r?.id && isDriverActiveTrip(r)) ?? raw[0];
+        if (row?.id && isDriverActiveTrip(row)) {
+          applyRecoveredTrip(row, ticket);
+          setBusy(null);
+          return;
+        }
+      }
+    }
+
+    setActionError(t.recoverFailed);
     setBusy(null);
-  }, [applyServerTrips, load]);
+  }, [
+    applyRecoveredTrip,
+    recoverTicketInput,
+    searchParams,
+    t.panelLoadFailed,
+    t.recoverFailed,
+  ]);
+
+  useEffect(() => {
+    const sessionTicket = readDriverActiveTicket();
+    if (sessionTicket && !recoverTicketInput) {
+      setRecoverTicketInput(sessionTicket);
+    }
+  }, [recoverTicketInput]);
 
   useEffect(() => {
     if (!readDriverActiveRideId() && !readDriverTerminalRideId()) {
@@ -647,16 +732,18 @@ function ConductorViajesInner() {
     if (ticket) {
       urlTicketRef.current = ticket;
       rememberDriverActiveTicket(ticket);
+      setRecoverTicketInput(ticket);
       // New assignment link — do not let a prior completed trip hide this ticket.
       clearDriverTerminalRideId();
       clearDriverCompletedTicketLatch();
       completedTicketLatchRef.current = null;
       setCompletedNotice(null);
+      void recoverAssignedRide();
     }
     stripRideFromBrowserUrl();
 
     if (!id) {
-      void load("url-pin");
+      if (!ticket) void load("url-pin");
       return;
     }
 
@@ -690,7 +777,7 @@ function ConductorViajesInner() {
       clearDriverCompletedTicketLatch();
       void load("url-pin");
     })();
-  }, [searchParams, load]);
+  }, [searchParams, load, recoverAssignedRide]);
 
   const displayError = actionError ?? panelError;
   const isOnline = Boolean(online?.is_online);
@@ -1163,6 +1250,12 @@ function ConductorViajesInner() {
         ) : trips.length === 0 ? (
           <div className="mb-6 space-y-2">
             <p className="text-sm text-[#1B4332]/70">{t.noActiveTrips}</p>
+            <input
+              className="w-full rounded-lg border border-[#1B4332]/20 px-3 py-2 text-sm font-mono"
+              placeholder={t.recoverTicketPlaceholder}
+              value={recoverTicketInput}
+              onChange={(e) => setRecoverTicketInput(e.target.value.toUpperCase())}
+            />
             <button
               type="button"
               disabled={busy === "recover"}
@@ -1171,11 +1264,6 @@ function ConductorViajesInner() {
             >
               {busy === "recover" ? t.loadingAssignedRide : t.loadAssignedRide}
             </button>
-            {readDriverActiveTicket() && (
-              <p className="text-xs text-[#1B4332]/60 font-mono">
-                Ticket: {readDriverActiveTicket()}
-              </p>
-            )}
             {canonicalUserId && (
               <p className="text-xs text-[#1B4332]/50 leading-relaxed">
                 {t.staleTripHint}{" "}

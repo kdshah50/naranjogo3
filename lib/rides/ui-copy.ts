@@ -285,6 +285,9 @@ const DRIVER_TRIPS = {
       "Sesión 415 181 6902 — espera unos segundos o toca refresh abajo. Si Conectar sigue bloqueado, cierra sesión en /unete y vuelve a entrar con el mismo número.",
     loadAssignedRide: "Buscar viaje asignado",
     loadingAssignedRide: "Buscando viaje asignado…",
+    recoverFailed:
+      "No se encontró el viaje. Pega el código NG-… del WhatsApp abajo y vuelve a tocar Buscar.",
+    recoverTicketPlaceholder: "NG-30964A96",
     profileLoadFailed: "No se pudo cargar el perfil de conductor",
     panelLoadFailed: "No se pudo cargar el panel de conductor",
     ridesDisabled:
@@ -357,6 +360,9 @@ const DRIVER_TRIPS = {
       "415 181 6902 session — wait a few seconds or tap refresh below. If Go online stays disabled, log out at /unete and sign in again with the same number.",
     loadAssignedRide: "Find my assigned ride",
     loadingAssignedRide: "Loading assigned ride…",
+    recoverFailed:
+      "Ride not found. Paste the NG-… code from WhatsApp below and tap Find again.",
+    recoverTicketPlaceholder: "NG-30964A96",
     profileLoadFailed: "Could not load driver profile",
     panelLoadFailed: "Could not load driver panel",
     ridesDisabled:
