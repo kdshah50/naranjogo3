@@ -484,6 +484,7 @@ function ConductorViajesInner() {
     }
 
     if (panel.driver) setOnline(mergeDriverOnline(panel.driver as DriverOnline));
+    else setOnline(null);
     await verifyAndSetTrips(candidates, source, gen);
 
     setCanonicalUserId(panel.canonical_user_id ?? panel.driver?.user_id ?? null);
@@ -600,6 +601,12 @@ function ConductorViajesInner() {
   const isDriverTestSession =
     Boolean(sessionPhone) &&
     (sessionPhone!.endsWith("6902") || sessionPhone!.includes("4151816902"));
+
+  const connectBlockedMessage = isRiderTestSession
+    ? t.connectBlockedRiderSession
+    : isDriverTestSession
+      ? t.connectBlockedDriverSession
+      : t.connectBlockedHint;
 
   const runTripsDebug = async () => {
     setDebugBusy(true);
@@ -1131,8 +1138,8 @@ function ConductorViajesInner() {
               {busy === "online" ? "…" : isOnline ? t.disconnect : t.connect}
             </button>
           </div>
-          {!canGoOnline && (
-            <p className="mt-3 text-xs text-amber-800 leading-relaxed">{t.connectBlockedHint}</p>
+          {!canGoOnline && sessionUserId && (
+            <p className="mt-3 text-xs text-amber-800 leading-relaxed">{connectBlockedMessage}</p>
           )}
         </section>
 

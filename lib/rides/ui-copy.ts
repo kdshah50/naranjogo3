@@ -279,6 +279,10 @@ const DRIVER_TRIPS = {
     connect: "Conectar",
     connectBlockedHint:
       "No hay conductor aprobado para esta sesión OTP. Cierra sesión en /unete, ejecuta rides-restore-driver-profile.sql en Supabase, y vuelve a entrar con 415 181 6902.",
+    connectBlockedRiderSession:
+      "Estás en la cuenta del pasajero (Kay · …8527). Cierra sesión en /unete e inicia con 415 181 6902 (Carme · …6902). No necesitas SQL — el perfil del conductor ya existe.",
+    connectBlockedDriverSession:
+      "Sesión 415 181 6902 sin perfil de conductor. Cierra sesión en /unete, vuelve a entrar con el mismo número, y si sigue fallando ejecuta rides-restore-driver-profile.sql en Supabase.",
     profileLoadFailed: "No se pudo cargar el perfil de conductor",
     panelLoadFailed: "No se pudo cargar el panel de conductor",
     ridesDisabled:
@@ -345,6 +349,10 @@ const DRIVER_TRIPS = {
     connect: "Go online",
     connectBlockedHint:
       "No approved driver for this OTP session. Log out at /unete, run rides-restore-driver-profile.sql in Supabase, then sign in again with 415 181 6902.",
+    connectBlockedRiderSession:
+      "You are logged in as the passenger (Kay · …8527). Log out at /unete and sign in with 415 181 6902 (Carme · …6902). No SQL needed — the driver profile already exists in the database.",
+    connectBlockedDriverSession:
+      "415 181 6902 session has no driver profile. Log out at /unete, sign in again with the same number, and only if it still fails run rides-restore-driver-profile.sql in Supabase.",
     profileLoadFailed: "Could not load driver profile",
     panelLoadFailed: "Could not load driver panel",
     ridesDisabled:
