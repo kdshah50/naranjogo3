@@ -428,12 +428,23 @@ function ViajePageInner() {
 
     const pinnedId = rideIdRef.current ?? readPinnedRideId();
     const ticketHint = urlTicketRef.current || activeTicketRef.current || undefined;
+    // WhatsApp deep links pin a ride id; ongoing polls use ticket-canonical sync so
+    // accept/arrive/start from the driver are not stuck on stale "matched" reads.
+    const ticketOnlyPoll =
+      Boolean(ticketHint) &&
+      (source === "poll" ||
+        source === "poll-backup" ||
+        source === "visibility" ||
+        source === "focus" ||
+        source === "pageshow" ||
+        source === "manual");
+    const syncRideId = ticketOnlyPoll ? undefined : pinnedId ?? undefined;
     const skipDismissed =
       hadUrlRideParamsRef.current &&
       (source === "mount" || source === "mount-retry");
     const dismissedForSync = skipDismissed ? undefined : readDismissedTicket() || undefined;
     const syncResult = await fetchRideSync(
-      pinnedId ?? undefined,
+      syncRideId,
       ticketHint || undefined,
       dismissedForSync,
     );
@@ -666,7 +677,7 @@ function ViajePageInner() {
         if (driverPub) setDriverPublic(driverPub);
       })();
     },
-    fallbackPollMs: 8_000,
+    fallbackPollMs: liveRideId ? 4_000 : 8_000,
     onFallbackPoll: () => void refreshActiveRide("poll-backup"),
   });
 
@@ -713,7 +724,8 @@ function ViajePageInner() {
   useEffect(() => {
     if (authError) return;
     const terminal = ride?.status === "completed" || ride?.status === "cancelled";
-    const ms = terminal ? 8_000 : ride ? 2_000 : 5_000;
+    const fromWhatsApp = hadUrlRideParamsRef.current;
+    const ms = terminal ? 8_000 : ride ? (fromWhatsApp ? 1_500 : 2_000) : 5_000;
     const timer = setInterval(() => void refreshActiveRide("poll"), ms);
     return () => clearInterval(timer);
   }, [authError, ride?.status, refreshActiveRide]);
@@ -734,10 +746,15 @@ function ViajePageInner() {
 
   // visibilitychange fires reliably on mobile (WhatsApp in-app browser, iOS Safari)
   // when the user switches back to this tab after checking WhatsApp messages.
-  // The polling timers are throttled/paused in background — this re-syncs on return.
+  // The polling timers are throttled/paused in background — burst re-sync on return.
   useEffect(() => {
+    const burst = () => {
+      void refreshActiveRide("visibility");
+      window.setTimeout(() => void refreshActiveRide("visibility"), 600);
+      window.setTimeout(() => void refreshActiveRide("visibility"), 1800);
+    };
     const onVisibility = () => {
-      if (document.visibilityState === "visible") void refreshActiveRide("visibility");
+      if (document.visibilityState === "visible") burst();
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);

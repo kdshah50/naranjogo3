@@ -154,13 +154,19 @@ async function resolveBuyerRide(
   if (explicitId) {
     const ride = await getRideByIdFresh(supabase, explicitId);
     if (ride && pool.some((uid) => isSameUserId(uid, ride.buyer_id))) {
+      const resolved = await resolveBuyerRideCanonical(
+        supabase,
+        ride,
+        args.sessionUserId,
+        accountOpts,
+      );
       const dismissed = normalizeRideTicketCode(args.dismissedTicket);
-      const rideTicket = normalizeRideTicketCode(ride.ticket_code);
+      const rideTicket = normalizeRideTicketCode(resolved.ticket_code);
       if (
         dismissed &&
         rideTicket &&
         dismissed === rideTicket &&
-        (ride.status === "completed" || ride.status === "cancelled")
+        (resolved.status === "completed" || resolved.status === "cancelled")
       ) {
         return {
           ride: null,
@@ -170,10 +176,10 @@ async function resolveBuyerRide(
         };
       }
       return {
-        ride,
-        dropReason: BUYER_OPEN_STATUSES.has(ride.status)
+        ride: resolved,
+        dropReason: BUYER_OPEN_STATUSES.has(resolved.status)
           ? null
-          : `verify:${ride.status}`,
+          : `verify:${resolved.status}`,
         rawBuyerCount: 1,
         verifiedBuyerCount: 1,
       };
