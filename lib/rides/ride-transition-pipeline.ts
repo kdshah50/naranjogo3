@@ -135,10 +135,15 @@ export async function commitRidePhaseTransition(
   if (verified && dbCode !== null && dbCode >= targetCode) passed.push("R-DB");
   else failed.push("R-DB");
 
+  // Notify buyer + driver even when replica verify lags — POST already committed the row.
+  const notifyRow =
+    verified ??
+    (rideStatusToCode(args.ride.status) >= targetCode ? args.ride : null);
+
   let notifyOk = false;
-  if (verified && eventOk) {
+  if (notifyRow && eventOk) {
     await emitRidePhaseNotifications(supabase, {
-      ride: verified,
+      ride: notifyRow,
       phase: args.phase,
       driverUserId: args.driverUserId,
       finalTotalMxnCents: args.finalTotalMxnCents,
@@ -156,8 +161,9 @@ export async function commitRidePhaseTransition(
   }
 
   const audit = buildAudit(args, { dbCode, eventOk, notifyOk, passed, failed });
-  if (!verified) return { ok: false, audit };
-  return { ok: true, ride: verified, audit };
+  const resultRow = verified ?? notifyRow;
+  if (!resultRow) return { ok: false, audit };
+  return { ok: true, ride: resultRow, audit };
 }
 
 /** Attach status_code for sync API / UI monitoring. */

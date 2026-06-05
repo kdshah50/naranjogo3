@@ -284,6 +284,16 @@ export async function getRideById(
   return (data as RideBookingRow) ?? null;
 }
 
+/** Lifecycle steps logged in ride_events — probed directly when booking rows lag on replica. */
+const RIDE_EVENT_TYPE_STATUS: ReadonlyArray<readonly [string, RideBookingStatus]> = [
+  ["trip_completed", "completed"],
+  ["trip_started", "in_trip"],
+  ["driver_arrived", "arrived"],
+  ["driver_accepted", "accepted"],
+  ["driver_matched", "matched"],
+  ["ride_requested", "requested"],
+];
+
 /**
  * ride_bookings reads on Vercel can lag minutes behind primary; ride_events
  * append-only log is fresher — use highest lifecycle status for client reads.
@@ -293,40 +303,47 @@ async function latestStatusFromEvents(
   rideId: string,
   opts?: { attempts?: number; delayMs?: number },
 ): Promise<string | null> {
-  const attempts = Math.min(Math.max(opts?.attempts ?? 6, 1), 10);
-  const delayMs = opts?.delayMs ?? 500;
+  const attempts = Math.min(Math.max(opts?.attempts ?? 8, 1), 12);
+  const delayMs = opts?.delayMs ?? 400;
   let best: string | null = null;
   let bestRank = -2;
 
   for (let i = 0; i < attempts; i++) {
-    const { data: completedEvt } = await supabase
-      .from("ride_events")
-      .select("id")
-      .eq("ride_id", rideId)
-      .eq("event_type", "trip_completed")
-      .limit(1)
-      .maybeSingle();
-    if (completedEvt?.id) {
-      return "completed";
+    for (const [eventType, status] of RIDE_EVENT_TYPE_STATUS) {
+      const { data } = await supabase
+        .from("ride_events")
+        .select("id")
+        .eq("ride_id", rideId)
+        .eq("event_type", eventType)
+        .limit(1)
+        .maybeSingle();
+      if (!data?.id) continue;
+      const rank = rideStatusRank(status);
+      if (rank > bestRank) {
+        best = status;
+        bestRank = rank;
+      }
     }
 
-    const { data, error } = await supabase
-      .from("ride_events")
-      .select("to_status")
-      .eq("ride_id", rideId)
-      .not("to_status", "is", null)
-      .order("created_at", { ascending: false })
-      .limit(12);
-    if (error) {
-      console.error("[ride-bookings] latestStatusFromEvents", error);
-    } else {
-      for (const evt of data ?? []) {
-        const status = String(evt.to_status ?? "").trim();
-        if (!status) continue;
-        const rank = rideStatusRank(status);
-        if (rank > bestRank) {
-          best = status;
-          bestRank = rank;
+    if (bestRank < rideStatusRank("completed")) {
+      const { data, error } = await supabase
+        .from("ride_events")
+        .select("to_status")
+        .eq("ride_id", rideId)
+        .not("to_status", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(12);
+      if (error) {
+        console.error("[ride-bookings] latestStatusFromEvents", error);
+      } else {
+        for (const evt of data ?? []) {
+          const status = String(evt.to_status ?? "").trim();
+          if (!status) continue;
+          const rank = rideStatusRank(status);
+          if (rank > bestRank) {
+            best = status;
+            bestRank = rank;
+          }
         }
       }
     }
@@ -337,6 +354,7 @@ async function latestStatusFromEvents(
   return best;
 }
 
+/** Upgrade a booking row using ride_events when ride_bookings replica reads lag. */
 export async function hydrateRideFromEvents(
   supabase: SupabaseClient,
   row: RideBookingRow,
@@ -383,18 +401,19 @@ export async function getRideByIdFresh(
   for (let i = 0; i < attempts; i++) {
     const row = await getRideById(supabase, rideId);
     if (row) {
-      const rank = rideStatusRank(row.status);
+      const hydrated = await hydrateRideFromEvents(supabase, row);
+      const rank = rideStatusRank(hydrated.status);
       if (rank > bestRank) {
-        best = row;
+        best = hydrated;
         bestRank = rank;
       }
-      if (row.status === "completed" || row.status === "cancelled") {
-        return row;
+      if (hydrated.status === "completed" || hydrated.status === "cancelled") {
+        return hydrated;
       }
     }
     if (i < attempts - 1) await sleepMs(delayMs);
   }
-  return best ? await hydrateRideFromEvents(supabase, best) : null;
+  return best;
 }
 
 export type MatchRideResult =

@@ -12,6 +12,7 @@ import {
   applyMonotonicRideRow,
   fetchActiveBuyerRide,
   fetchBuyerCompletedDisplayRide,
+  fetchBuyerRecoverByTicket,
   fetchCanonicalRideByTicket,
   fetchRideRowById,
   fetchRideSync,
@@ -311,6 +312,8 @@ function ViajePageInner() {
   const [sessionPhone, setSessionPhone] = useState<string | null>(null);
   const [syncDebug, setSyncDebug] = useState<SyncDebug | null>(null);
   const [driverPublic, setDriverPublic] = useState<RideDriverPublic | null>(null);
+  const [recoverTicketInput, setRecoverTicketInput] = useState("");
+  const [recoverBusy, setRecoverBusy] = useState(false);
   /** Mirrors ride state — polls must not wipe an active trip on transient empty sync. */
   const uiRideRef = useRef<RideRow | null>(null);
 
@@ -460,17 +463,8 @@ function ViajePageInner() {
     const pinnedId = rideIdRef.current ?? readPinnedRideId();
     const ticketHint =
       urlTicketRef.current || activeTicketRef.current || readPinnedTicket() || undefined;
-    // WhatsApp deep links pin a ride id; ongoing polls use ticket-canonical sync so
-    // accept/arrive/start from the driver are not stuck on stale "matched" reads.
-    const ticketOnlyPoll =
-      Boolean(ticketHint) &&
-      (source === "poll" ||
-        source === "poll-backup" ||
-        source === "visibility" ||
-        source === "focus" ||
-        source === "pageshow" ||
-        source === "manual");
-    const syncRideId = ticketOnlyPoll ? undefined : pinnedId ?? undefined;
+    // Ticket + event hydration beats stale ride_id pins from WhatsApp deep links.
+    const syncRideId = ticketHint ? undefined : pinnedId ?? undefined;
     const skipDismissed =
       hadUrlRideParamsRef.current &&
       (source === "mount" || source === "mount-retry");
@@ -726,13 +720,37 @@ function ViajePageInner() {
     }
   }, [applyServerRide]);
 
-  const recoverActiveTrip = useCallback(() => {
+  const recoverActiveTrip = useCallback(async () => {
+    setRecoverBusy(true);
     clearDismissedTicket();
     userClearedUntilRef.current = 0;
     writeUserClearedUntil(0);
     completedTicketLatchRef.current = null;
-    void refreshActiveRide("manual");
-  }, [refreshActiveRide]);
+
+    const ticket = normalizeTicketKey(
+      recoverTicketInput ||
+        urlTicketRef.current ||
+        activeTicketRef.current ||
+        readPinnedTicket() ||
+        ride?.ticket_code ||
+        "",
+    );
+    if (ticket) {
+      urlTicketRef.current = ticket;
+      activeTicketRef.current = ticket;
+      pinActiveTicket(ticket);
+      const fast = await fetchBuyerRecoverByTicket(ticket);
+      if (fast.ok && fast.ride?.id) {
+        repinCanonicalRideId(fast.ride as RideRow, rideIdRef, activeTicketRef);
+        applyServerRide(fast.ride as RideRow, "recover");
+        setRecoverBusy(false);
+        return;
+      }
+    }
+
+    await refreshActiveRide("manual");
+    setRecoverBusy(false);
+  }, [applyServerRide, recoverTicketInput, refreshActiveRide, ride?.ticket_code]);
 
   // Keep SSE through in_trip so we receive the completed event.
   const liveRideId =
@@ -767,7 +785,11 @@ function ViajePageInner() {
     const url = new URL(window.location.href);
     const rideParam = url.searchParams.get("ride")?.trim();
     const ticketParam = url.searchParams.get("ticket")?.trim();
-    if (ticketParam) urlTicketRef.current = normalizeTicketKey(ticketParam);
+    if (ticketParam) {
+      const ticket = normalizeTicketKey(ticketParam);
+      urlTicketRef.current = ticket;
+      setRecoverTicketInput(ticket);
+    }
     if (rideParam || ticketParam) {
       clearTerminalRideId();
       clearDismissedTicket();
@@ -793,6 +815,13 @@ function ViajePageInner() {
     }
     stripRideIdFromBrowserUrl();
   }, []);
+
+  useEffect(() => {
+    const sessionTicket = readPinnedTicket();
+    if (sessionTicket && !recoverTicketInput) {
+      setRecoverTicketInput(sessionTicket);
+    }
+  }, [recoverTicketInput]);
 
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
@@ -1090,22 +1119,41 @@ function ViajePageInner() {
           </div>
         )}
 
-        {!ride && !authError && !loggedInAsDriver && (
-          <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+        {!authError && !loggedInAsDriver && (
+          <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 space-y-2">
             <p className="font-medium">
-              {lang === "es" ? "¿Tienes un viaje activo?" : "Have an active trip?"}
-            </p>
-            <p className="mt-1">
               {lang === "es"
-                ? "Si pediste un taxi y no ves tu ticket, pulsa abajo — no pidas otro viaje todavía."
-                : "If you requested a taxi but do not see your ticket, tap below — do not request another ride yet."}
+                ? ride
+                  ? "¿El estado no se actualiza?"
+                  : "¿Tienes un viaje activo?"
+                : ride
+                  ? "Status not updating?"
+                  : "Have an active trip?"}
             </p>
+            <p className="text-xs opacity-90">
+              {lang === "es"
+                ? "Pega tu ticket NG-… y pulsa buscar — no pidas otro viaje todavía."
+                : "Paste your NG-… ticket and tap find — do not request another ride yet."}
+            </p>
+            <input
+              className="w-full rounded-lg border border-amber-400/40 px-3 py-2 text-sm font-mono bg-white"
+              placeholder="NG-30964A96"
+              value={recoverTicketInput}
+              onChange={(e) => setRecoverTicketInput(e.target.value.toUpperCase())}
+            />
             <button
               type="button"
-              className="mt-2 rounded-full bg-[#1B4332] px-4 py-2 text-sm font-medium text-white"
-              onClick={recoverActiveTrip}
+              disabled={recoverBusy}
+              className="rounded-full bg-[#1B4332] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              onClick={() => void recoverActiveTrip()}
             >
-              {lang === "es" ? "Buscar mi viaje activo" : "Find my active trip"}
+              {recoverBusy
+                ? lang === "es"
+                  ? "Cargando…"
+                  : "Loading…"
+                : lang === "es"
+                  ? "Buscar mi viaje activo"
+                  : "Find my active trip"}
             </button>
           </div>
         )}

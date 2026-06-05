@@ -3,7 +3,12 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isSameUserId } from "@/lib/auth-server";
 import { loadDriverPanel } from "@/lib/rides/driver-panel-server";
-import { getRideById, getRideByIdFresh, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
+import {
+  getRideById,
+  getRideByIdFresh,
+  hydrateRideFromEvents,
+  type RideBookingRow,
+} from "@/lib/rides/ride-bookings-server";
 import {
   dropActiveRowsWithCompletedTicket,
   normalizeRideTicketCode,
@@ -92,7 +97,8 @@ async function resolveBuyerRideCanonical(
   if (!canonical?.id) return row;
 
   const fresh = await getRideByIdFresh(supabase, canonical.id);
-  const resolved = fresh ?? canonical;
+  let resolved = fresh ?? canonical;
+  resolved = await hydrateRideFromEvents(supabase, resolved);
   if (rideStatusRank(resolved.status) >= rideStatusRank(row.status)) {
     return resolved;
   }
