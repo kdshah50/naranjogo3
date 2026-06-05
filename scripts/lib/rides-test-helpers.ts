@@ -9,11 +9,22 @@ export const CANONICAL_DRIVER_ID =
   process.env.RIDES_STAGING_DRIVER_USER_ID?.trim() ||
   "3d5522b3-aedf-4625-80a1-8a79708bb893";
 
+/** Separate rider for E2E — never use driver phone as buyer (avoids WhatsApp spam). */
+export const CANONICAL_BUYER_ID =
+  process.env.RIDES_STAGING_BUYER_USER_ID?.trim() ||
+  "8ce0201b-da82-46ce-8af3-3432a2f66b79";
+
+export const CANONICAL_BUYER_PHONE =
+  process.env.RIDES_STAGING_BUYER_PHONE?.trim() || "17326908527";
+
+export const CANONICAL_DRIVER_PHONE =
+  process.env.RIDES_STAGING_DRIVER_PHONE?.trim() || "524151816902";
+
 export const DUPLICATE_TEST_IDS = [
   CANONICAL_DRIVER_ID,
+  CANONICAL_BUYER_ID,
   "94a74ff0-d2f4-46a7-b43e-85fb8f2cf524",
   "7003532b-1bba-4bbe-8b7e-b89e86051169",
-  "8ce0201b-da82-46ce-8af3-3432a2f66b79",
 ];
 
 const OPEN_STATUSES = ["requested", "matched", "accepted", "arrived", "in_trip"] as const;

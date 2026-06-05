@@ -37,6 +37,16 @@ export function rideDriverPanelUrl(
   return suffix ? `${base}?${suffix}` : base;
 }
 
+/** Same user as buyer and driver (E2E shortcut) — skip buyer WhatsApp to avoid duplicate spam. */
+export function isSelfRide(
+  ride: Pick<RideBookingRow, "buyer_id" | "driver_id">,
+  driverUserId?: string | null,
+): boolean {
+  const buyer = String(ride.buyer_id ?? "").trim().toLowerCase();
+  const driver = String(driverUserId ?? ride.driver_id ?? "").trim().toLowerCase();
+  return Boolean(buyer && driver && buyer === driver);
+}
+
 export async function findUserPhoneById(
   supabase: SupabaseClient,
   userId: string,
@@ -96,6 +106,7 @@ export async function notifyBuyerTripStarted(
   args: { ride: RideBookingRow }
 ): Promise<void> {
   if (!isTwilioWhatsAppConfigured()) return;
+  if (isSelfRide(args.ride)) return;
 
   const phone = await findUserPhoneById(supabase, args.ride.buyer_id);
   if (!phone) return;
@@ -116,6 +127,7 @@ export async function notifyBuyerRideArrived(
   args: { ride: RideBookingRow }
 ): Promise<void> {
   if (!isTwilioWhatsAppConfigured()) return;
+  if (isSelfRide(args.ride)) return;
 
   const phone = await findUserPhoneById(supabase, args.ride.buyer_id);
   if (!phone) return;
@@ -158,6 +170,7 @@ export async function notifyBuyerRideCompleted(
   args: { ride: RideBookingRow; finalTotalMxnCents: number }
 ): Promise<void> {
   if (!isTwilioWhatsAppConfigured()) return;
+  if (isSelfRide(args.ride)) return;
 
   const phone = await findUserPhoneById(supabase, args.ride.buyer_id);
   if (!phone) return;
@@ -201,6 +214,7 @@ export async function notifyBuyerRideAccepted(
   args: { ride: RideBookingRow }
 ): Promise<void> {
   if (!isTwilioWhatsAppConfigured()) return;
+  if (isSelfRide(args.ride)) return;
 
   const phone = await findUserPhoneById(supabase, args.ride.buyer_id);
   if (!phone) return;
@@ -287,20 +301,21 @@ export async function emitRidePhaseNotifications(
 ): Promise<void> {
   const { ride, phase, driverUserId } = args;
   const fresh = (await getRideById(supabase, ride.id)) ?? ride;
+  const selfRide = isSelfRide(fresh, driverUserId);
   try {
     if (phase === "accepted") {
-      await notifyBuyerRideAccepted(supabase, { ride: fresh });
+      if (!selfRide) await notifyBuyerRideAccepted(supabase, { ride: fresh });
       await notifyDriverRideAccepted(supabase, { ride: fresh, driverUserId });
     } else if (phase === "arrived") {
-      await notifyBuyerRideArrived(supabase, { ride: fresh });
+      if (!selfRide) await notifyBuyerRideArrived(supabase, { ride: fresh });
       await notifyDriverRideArrived(supabase, { ride: fresh, driverUserId });
     } else if (phase === "in_trip") {
-      await notifyBuyerTripStarted(supabase, { ride: fresh });
+      if (!selfRide) await notifyBuyerTripStarted(supabase, { ride: fresh });
       await notifyDriverTripStarted(supabase, { ride: fresh, driverUserId });
     } else if (phase === "completed") {
       const fare =
         args.finalTotalMxnCents ?? fresh.final_total_mxn_cents ?? fresh.estimated_total_mxn_cents;
-      await notifyBuyerRideCompleted(supabase, { ride: fresh, finalTotalMxnCents: fare });
+      if (!selfRide) await notifyBuyerRideCompleted(supabase, { ride: fresh, finalTotalMxnCents: fare });
       await notifyDriverRideCompleted(supabase, {
         ride: fresh,
         driverUserId,

@@ -16,14 +16,14 @@ type WalletBalanceRow = {
 import { SignJWT } from "jose";
 import { internalSecretHeaders } from "../lib/rides/internal-auth";
 import {
+  CANONICAL_BUYER_ID,
+  CANONICAL_BUYER_PHONE,
   CANONICAL_DRIVER_ID,
+  CANONICAL_DRIVER_PHONE,
   cancelOpenTestRides,
   discoverBase,
   loadDotenv,
 } from "./lib/rides-test-helpers";
-
-const CANONICAL_ID = CANONICAL_DRIVER_ID;
-const TEST_PHONE = "524151816902";
 
 let failed = 0;
 
@@ -133,28 +133,30 @@ async function main() {
   const base = await discoverBase();
   console.log(`Base: ${base}\n`);
 
-  const token = await jwtFor(CANONICAL_ID, TEST_PHONE);
-  const cookie = `tianguis_token=${token}`;
+  const buyerToken = await jwtFor(CANONICAL_BUYER_ID, CANONICAL_BUYER_PHONE);
+  const driverToken = await jwtFor(CANONICAL_DRIVER_ID, CANONICAL_DRIVER_PHONE);
+  const buyerCookie = `tianguis_token=${buyerToken}`;
+  const driverCookie = `tianguis_token=${driverToken}`;
 
   const supabase = createClient(url, key, { auth: { persistSession: false } });
 
-  await ensureTestBalance(supabase, CANONICAL_ID, 10000);
+  await ensureTestBalance(supabase, CANONICAL_BUYER_ID, 10000);
 
   // Cancel leftover E2E rides (as buyer or driver)
   const OPEN = ["requested", "matched", "accepted", "arrived", "in_trip"] as const;
   await supabase
     .from("ride_bookings")
     .update({ status: "cancelled", cancel_reason: "e2e_test_cleanup", updated_at: new Date().toISOString() })
-    .eq("buyer_id", CANONICAL_ID)
+    .eq("buyer_id", CANONICAL_BUYER_ID)
     .in("status", OPEN);
   await supabase
     .from("ride_bookings")
     .update({ status: "cancelled", cancel_reason: "e2e_test_cleanup", updated_at: new Date().toISOString() })
-    .eq("driver_id", CANONICAL_ID)
+    .eq("driver_id", CANONICAL_DRIVER_ID)
     .in("status", OPEN);
 
-  // 1) Wallet
-  const wallet = await api(base, "/api/rides/wallet", { cookie });
+  // 1) Wallet (buyer)
+  const wallet = await api(base, "/api/rides/wallet", { cookie: buyerCookie });
   if (wallet.status === 404) {
     fail("GET /api/rides/wallet → 404 (RIDES_ENABLED=false on this deployment)");
     process.exit(1);
@@ -162,7 +164,7 @@ async function main() {
   const { data: wRow } = (await supabase
     .from("wallets")
     .select("balance_mxn_cents,held_mxn_cents")
-    .eq("user_id", CANONICAL_ID)
+    .eq("user_id", CANONICAL_BUYER_ID)
     .maybeSingle()) as { data: WalletBalanceRow | null };
   const dbBal = Number(wRow?.balance_mxn_cents ?? 0);
   const dbHeld = Number(wRow?.held_mxn_cents ?? 0);
@@ -173,7 +175,7 @@ async function main() {
   // 2) Driver online
   const on = await api(base, "/api/rides/drivers/me/online", {
     method: "POST",
-    cookie,
+    cookie: driverCookie,
     body: { online: true, lat: 20.915, lng: -100.745 },
   });
   if (!on.ok) {
@@ -182,10 +184,10 @@ async function main() {
   }
   ok("driver online + GPS ping");
 
-  // 3) Fare estimate
+  // 3) Fare estimate (buyer)
   const est = await api(base, "/api/rides/pricing/estimate", {
     method: "POST",
-    cookie,
+    cookie: buyerCookie,
     body: {
       pickup_colonia: "centro",
       dropoff_colonia: "guadalupe",
@@ -201,10 +203,10 @@ async function main() {
     ok(`estimate fare=$${(total / 100).toFixed(2)}`);
   }
 
-  // 4) Request ride
+  // 4) Request ride (buyer)
   const req = await api(base, "/api/rides/request", {
     method: "POST",
-    cookie,
+    cookie: buyerCookie,
     body: {
       pickup_colonia: "centro",
       dropoff_colonia: "guadalupe",
@@ -263,7 +265,7 @@ async function main() {
 
   // 5) Driver sync sees trip — brief pause for replica lag
   await new Promise((r) => setTimeout(r, 1200));
-  const panel = await api(base, "/api/rides/sync", { cookie });
+  const panel = await api(base, "/api/rides/sync", { cookie: driverCookie });
   if (!panel.ok) {
     fail(`GET sync → ${panel.status}`);
   } else {
@@ -279,7 +281,7 @@ async function main() {
   if (status === "matched") {
     const acc = await api(base, `/api/rides/${rideId}/accept`, {
       method: "POST",
-      cookie,
+      cookie: driverCookie,
     });
     if (!acc.ok) {
       fail(`POST accept → ${acc.status} ${JSON.stringify(acc.data)}`);
@@ -293,7 +295,7 @@ async function main() {
   if (status === "accepted") {
     const arr = await api(base, `/api/rides/${rideId}/arrive`, {
       method: "POST",
-      cookie,
+      cookie: driverCookie,
     });
     if (!arr.ok) {
       fail(`POST arrive → ${arr.status} ${JSON.stringify(arr.data)}`);
@@ -314,7 +316,7 @@ async function main() {
     }
     const st = await api(base, `/api/rides/${rideId}/start`, {
       method: "POST",
-      cookie,
+      cookie: driverCookie,
       body: { ticket_code: ticketCode },
     });
     if (!st.ok) {
@@ -328,7 +330,7 @@ async function main() {
   if (status === "in_trip") {
     const done = await api(base, `/api/rides/${rideId}/complete`, {
       method: "POST",
-      cookie,
+      cookie: driverCookie,
     });
     if (!done.ok) {
       fail(`POST complete → ${done.status} ${JSON.stringify(done.data)}`);
@@ -352,7 +354,9 @@ async function main() {
 
   // 7b) Sync API — allow brief replica lag with one retry
   await new Promise((r) => setTimeout(r, 1200));
-  const sync = await api(base, `/api/rides/sync?ride_id=${encodeURIComponent(rideId)}`, { cookie });
+  const sync = await api(base, `/api/rides/sync?ride_id=${encodeURIComponent(rideId)}`, {
+    cookie: buyerCookie,
+  });
   if (!sync.ok) {
     fail(`GET sync → ${sync.status}`);
   } else {
@@ -368,7 +372,7 @@ async function main() {
   // 8) Cleanup — driver offline
   await api(base, "/api/rides/drivers/me/online", {
     method: "POST",
-    cookie,
+    cookie: driverCookie,
     body: { online: false },
   });
   ok("driver offline (cleanup)");
