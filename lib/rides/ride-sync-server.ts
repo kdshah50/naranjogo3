@@ -4,11 +4,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { isSameUserId } from "@/lib/auth-server";
 import { loadDriverPanel } from "@/lib/rides/driver-panel-server";
 import { getRideById, getRideByIdFresh, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
-import { dropActiveRowsWithCompletedTicket } from "@/lib/rides/ride-ghost-filter";
+import {
+  dropActiveRowsWithCompletedTicket,
+  normalizeRideTicketCode,
+} from "@/lib/rides/ride-ghost-filter";
 import { resolveCanonicalRideByTicketForBuyer } from "@/lib/rides/resolve-ride-by-ticket";
 import { rideStatusRank } from "@/lib/rides/ride-status-merge";
 import {
-  latestBuyerRideForDisplay,
   listActiveTripsForBuyer,
   pickBestOpenBuyerRideRow,
 } from "@/lib/rides/ride-trip-server";
@@ -134,6 +136,7 @@ async function resolveBuyerRide(
     authPhone: string | null;
     rideId?: string | null;
     ticketCode?: string | null;
+    dismissedTicket?: string | null;
   },
 ): Promise<{
   ride: RideBookingRow | null;
@@ -151,9 +154,21 @@ async function resolveBuyerRide(
   if (explicitId) {
     const ride = await getRideByIdFresh(supabase, explicitId);
     if (ride && pool.some((uid) => isSameUserId(uid, ride.buyer_id))) {
-      // We have the exact row — skip the ticket scan entirely.
-      // resolveBuyerRideCanonical would do another ilike ticket scan which is
-      // more susceptible to replica lag and could return a stale lower-rank row.
+      const dismissed = normalizeRideTicketCode(args.dismissedTicket);
+      const rideTicket = normalizeRideTicketCode(ride.ticket_code);
+      if (
+        dismissed &&
+        rideTicket &&
+        dismissed === rideTicket &&
+        (ride.status === "completed" || ride.status === "cancelled")
+      ) {
+        return {
+          ride: null,
+          dropReason: "dismissed:completed",
+          rawBuyerCount: 0,
+          verifiedBuyerCount: 0,
+        };
+      }
       return {
         ride,
         dropReason: BUYER_OPEN_STATUSES.has(ride.status)
@@ -186,6 +201,21 @@ async function resolveBuyerRide(
         args.sessionUserId,
         accountOpts,
       );
+      const dismissed = normalizeRideTicketCode(args.dismissedTicket);
+      const rideTicket = normalizeRideTicketCode(resolved.ticket_code);
+      if (
+        dismissed &&
+        rideTicket &&
+        dismissed === rideTicket &&
+        (resolved.status === "completed" || resolved.status === "cancelled")
+      ) {
+        return {
+          ride: null,
+          dropReason: "dismissed:completed",
+          rawBuyerCount: 0,
+          verifiedBuyerCount: 0,
+        };
+      }
       return {
         ride: resolved,
         dropReason: BUYER_OPEN_STATUSES.has(resolved.status)
@@ -259,22 +289,9 @@ async function resolveBuyerRide(
     dropReason = `verify:${fresh?.status ?? "missing"}`;
   }
 
-  const display = await latestBuyerRideForDisplay(
-    supabase,
-    args.sessionUserId,
-    accountOpts,
-  );
-  // Surface completed trips without session pins (refresh / new tab after driver completes).
-  // Skip cancelled rows — stale cleanup cancellations must not block a new request.
-  if (display?.status === "completed") {
-    return {
-      ride: display,
-      dropReason: dropReason ?? "display:completed",
-      rawBuyerCount: buyerTripsRaw.length,
-      verifiedBuyerCount: 0,
-    };
-  }
-
+  // Do not auto-surface last completed ride on poll — it makes finished tickets
+  // (e.g. NG-52CD22E5) keep reappearing. Completed is only returned via explicit
+  // ride_id / ticket deep links above.
   return {
     ride: null,
     dropReason,
@@ -291,6 +308,7 @@ export async function loadRideSyncState(
     authPhone: string | null;
     rideId?: string | null;
     ticketCode?: string | null;
+    dismissedTicket?: string | null;
   },
 ): Promise<RideSyncState> {
   const accountOpts = { authPhone: args.authPhone };
@@ -303,7 +321,7 @@ export async function loadRideSyncState(
   }
 
   const [buyer, panel] = await Promise.all([
-    resolveBuyerRide(supabase, { ...args, ticketCode }),
+    resolveBuyerRide(supabase, { ...args, ticketCode, dismissedTicket: args.dismissedTicket }),
     loadDriverPanel(supabase, {
       sessionUserId: args.sessionUserId,
       authPhone: args.authPhone,

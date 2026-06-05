@@ -14,12 +14,14 @@ export async function GET(req: NextRequest) {
 
   const rideId = req.nextUrl.searchParams.get("ride_id")?.trim() || null;
   const ticketCode = req.nextUrl.searchParams.get("ticket_code")?.trim() || null;
+  const dismissedTicket = req.nextUrl.searchParams.get("dismissed_ticket")?.trim() || null;
 
   const state = await loadRideSyncState(guard.supabase, {
     sessionUserId: guard.userId,
     authPhone: guard.authPhone,
     rideId,
     ticketCode,
+    dismissedTicket,
   });
 
   return NextResponse.json(state, {

@@ -9,7 +9,10 @@ import {
 import { resolveDriverProfileForSession } from "@/lib/rides/resolve-driver-session";
 import { getRideById, getRideByIdFresh, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
 import { userIdsForAuthPhone } from "@/lib/resolve-login-user";
-import { dropActiveRowsWithCompletedTicket } from "@/lib/rides/ride-ghost-filter";
+import {
+  dropActiveRowsWithCompletedTicket,
+  normalizeRideTicketCode,
+} from "@/lib/rides/ride-ghost-filter";
 import {
   collapseDriverPanelTripsByTicket,
   resolveCanonicalRideByTicketForDriver,
@@ -19,6 +22,39 @@ import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 import { idMatchVariantsForIn, driverProfileUserIdVariants } from "@/lib/user-id-variants";
 
 const DRIVER_ACTIVE_STATUSES = new Set(["matched", "accepted", "arrived", "in_trip"]);
+
+/** Finished tickets in the last 7 days — never show as active ghosts on poll. */
+async function recentCompletedTicketsForDriver(
+  supabase: SupabaseClient,
+  driverUserIds: string[],
+): Promise<string[]> {
+  const ids = [
+    ...new Set(driverUserIds.flatMap((uid) => idMatchVariantsForIn(uid))),
+  ];
+  if (ids.length === 0) return [];
+
+  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from("ride_bookings")
+    .select("ticket_code")
+    .in("driver_id", ids)
+    .eq("status", "completed")
+    .gte("updated_at", since)
+    .not("ticket_code", "is", null);
+
+  if (error) {
+    console.error("[driver-panel] recentCompletedTicketsForDriver", error);
+    return [];
+  }
+
+  return [
+    ...new Set(
+      (data ?? [])
+        .map((row) => normalizeRideTicketCode((row as { ticket_code: string }).ticket_code))
+        .filter(Boolean),
+    ),
+  ];
+}
 
 /** Re-read each row by id so completed/cancelled trips never leak from stale list scans. */
 async function verifyDriverPanelTrips(
@@ -188,12 +224,19 @@ export async function loadDriverPanel(
   trips = await verifyDriverPanelTrips(supabase, trips);
   trips = await mergeExplicitDriverRide(supabase, args, trips);
 
+  const driverPool: string[] = [];
+  if (driver?.user_id) driverPool.push(driver.user_id);
+  const accountPool = await expandUserAccountIdPool(supabase, args.sessionUserId, accountOpts);
+  driverPool.push(...accountPool);
+  const completedHide = await recentCompletedTicketsForDriver(supabase, driverPool);
+  const allHideTickets = [...new Set([...hideTickets, ...completedHide])];
+
   return {
     driver,
     trips,
     canonical_user_id: driver?.user_id ?? null,
     session_user_id: args.sessionUserId,
     auth_phone_set: Boolean(args.authPhone),
-    hide_tickets: hideTickets,
+    hide_tickets: allHideTickets,
   };
 }

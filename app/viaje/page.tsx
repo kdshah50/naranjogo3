@@ -49,6 +49,24 @@ const COLONIAS_LIST = COLONIA_KEYS.map((key) => ({
 const VIAJE_PINNED_RIDE_KEY = "ng_viaje_pinned_ride_id";
 const VIAJE_TERMINAL_RIDE_KEY = "ng_viaje_terminal_ride_id";
 const VIAJE_USER_CLEARED_UNTIL_KEY = "ng_viaje_user_cleared_until";
+const VIAJE_DISMISSED_TICKET_KEY = "ng_viaje_dismissed_ticket";
+
+function readDismissedTicket(): string | null {
+  if (typeof sessionStorage === "undefined") return null;
+  const t = sessionStorage.getItem(VIAJE_DISMISSED_TICKET_KEY)?.trim();
+  return t ? normalizeTicketKey(t) : null;
+}
+
+function writeDismissedTicket(ticket: string | null) {
+  if (typeof sessionStorage === "undefined") return;
+  const key = normalizeTicketKey(ticket);
+  if (key) sessionStorage.setItem(VIAJE_DISMISSED_TICKET_KEY, key);
+  else sessionStorage.removeItem(VIAJE_DISMISSED_TICKET_KEY);
+}
+
+function clearDismissedTicket() {
+  writeDismissedTicket(null);
+}
 
 function readUserClearedUntil(): number {
   if (typeof sessionStorage === "undefined") return 0;
@@ -382,10 +400,18 @@ function ViajePageInner() {
 );
 
   const clearStaleRideUi = useCallback(() => {
+    const ticketToDismiss =
+      normalizeTicketKey(ride?.ticket_code) ||
+      normalizeTicketKey(terminalBanner?.ticket_code) ||
+      activeTicketRef.current ||
+      urlTicketRef.current;
+    if (ticketToDismiss) writeDismissedTicket(ticketToDismiss);
     clearPinnedRideId();
     clearTerminalRideId();
     stripRideIdFromBrowserUrl();
     rideIdRef.current = null;
+    urlTicketRef.current = null;
+    activeTicketRef.current = null;
     setRide(null);
     setTerminalBanner(null);
     setSyncDebug(syncDebugForRow(null, "clear"));
@@ -393,7 +419,7 @@ function ViajePageInner() {
     // to sessionStorage so a page refresh also respects the clear.
     userClearedUntilRef.current = Date.now() + 600_000;
     writeUserClearedUntil(userClearedUntilRef.current);
-  }, []);
+  }, [ride?.ticket_code, terminalBanner?.ticket_code]);
 
   /** Server wins via GET /api/rides/sync — single source of truth. */
   const refreshActiveRide = useCallback(async (source = "poll") => {
@@ -402,7 +428,15 @@ function ViajePageInner() {
 
     const pinnedId = rideIdRef.current ?? readPinnedRideId();
     const ticketHint = urlTicketRef.current || activeTicketRef.current || undefined;
-    const syncResult = await fetchRideSync(pinnedId ?? undefined, ticketHint || undefined);
+    const skipDismissed =
+      hadUrlRideParamsRef.current &&
+      (source === "mount" || source === "mount-retry");
+    const dismissedForSync = skipDismissed ? undefined : readDismissedTicket() || undefined;
+    const syncResult = await fetchRideSync(
+      pinnedId ?? undefined,
+      ticketHint || undefined,
+      dismissedForSync,
+    );
     if (syncResult.ok && syncResult.payload.ride?.id) {
       urlTicketRef.current = null;
     }
@@ -507,7 +541,15 @@ function ViajePageInner() {
       return;
     }
 
-    const terminalId = readTerminalRideId() ?? pinnedId;
+    const dismissedTicket = readDismissedTicket();
+    const blockTerminalResurface =
+      Boolean(dismissedTicket) ||
+      Date.now() < userClearedUntilRef.current;
+
+    const terminalId =
+      blockTerminalResurface && POLL_SOURCES.has(source)
+        ? null
+        : readTerminalRideId() ?? pinnedId;
     if (terminalId) {
       const terminalRow = await fetchRideRowById<RideRow>(terminalId);
       if (isStale()) return;
@@ -558,32 +600,46 @@ function ViajePageInner() {
       }
     }
 
-    const heldTerminalId = readTerminalRideId();
-    if (heldTerminalId) {
-      const held = await fetchRideRowById<RideRow>(heldTerminalId);
-      if (!isStale() && held?.id && isTerminalRideStatus(held.status)) {
-        applyServerRide(
-          held,
-          `${source}+terminal-hold`,
-          `${held.status}${debugSuffix}`,
-          debugMeta?.drop_reason ?? null,
-        );
-        return;
+    if (!blockTerminalResurface) {
+      const heldTerminalId = readTerminalRideId();
+      if (heldTerminalId) {
+        const held = await fetchRideRowById<RideRow>(heldTerminalId);
+        if (!isStale() && held?.id && isTerminalRideStatus(held.status)) {
+          applyServerRide(
+            held,
+            `${source}+terminal-hold`,
+            `${held.status}${debugSuffix}`,
+            debugMeta?.drop_reason ?? null,
+          );
+          return;
+        }
+      }
+
+      if (!POLL_SOURCES.has(source)) {
+        const completedDisplay = (await fetchBuyerCompletedDisplayRide()) as RideRow | null;
+        if (
+          !isStale() &&
+          completedDisplay?.id &&
+          completedDisplay.status === "completed"
+        ) {
+          applyServerRide(
+            completedDisplay,
+            `${source}+display`,
+            `completed${completedDisplay.ticket_code ? ` · ${completedDisplay.ticket_code}` : ""}${debugSuffix}`,
+            debugMeta?.drop_reason ?? null,
+          );
+          return;
+        }
       }
     }
 
-    const completedDisplay = (await fetchBuyerCompletedDisplayRide()) as RideRow | null;
-    if (!isStale() && completedDisplay?.id && completedDisplay.status === "completed") {
-      applyServerRide(
-        completedDisplay,
-        `${source}+display`,
-        `completed${completedDisplay.ticket_code ? ` · ${completedDisplay.ticket_code}` : ""}${debugSuffix}`,
-        debugMeta?.drop_reason ?? null,
-      );
-      return;
+    if (!isStale()) {
+      if (blockTerminalResurface && POLL_SOURCES.has(source)) {
+        setSyncDebug(syncDebugForRow(null, source, `0 open (dismissed)${debugSuffix}`, debugMeta?.drop_reason ?? null));
+        return;
+      }
+      applyServerRide(null, source, `0 open${debugSuffix}`, debugMeta?.drop_reason ?? null);
     }
-
-    if (!isStale()) applyServerRide(null, source, `0 open${debugSuffix}`, debugMeta?.drop_reason ?? null);
   }, [applyServerRide, clearStaleRideUi]);
 
   // Keep SSE through in_trip so we receive the completed event.
@@ -622,6 +678,9 @@ function ViajePageInner() {
     if (ticketParam) urlTicketRef.current = normalizeTicketKey(ticketParam);
     if (rideParam || ticketParam) {
       clearTerminalRideId();
+      clearDismissedTicket();
+      userClearedUntilRef.current = 0;
+      writeUserClearedUntil(0);
       completedTicketLatchRef.current = null;
       // WhatsApp links open in a fresh context — replica lag can make the first
       // sync return a stale status. Schedule a re-sync to catch up.
@@ -794,7 +853,8 @@ function ViajePageInner() {
       clearPinnedRideId();
       if (rideRow?.id) {
         userClearedUntilRef.current = 0;
-        writeUserClearedUntil(0); // new ride request — clear the sessionStorage flag too
+        writeUserClearedUntil(0);
+        clearDismissedTicket();
         requestLatchUntilRef.current = Date.now() + 120_000;
         refreshSeqRef.current += 1;
         statusFloorByRideRef.current.set(rideRow.id, rideStatusRank(rideRow.status));

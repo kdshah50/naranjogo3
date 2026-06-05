@@ -124,12 +124,15 @@ export async function fetchBuyerCompletedDisplayRide(): Promise<RideStatusRow | 
 export async function fetchRideSync(
   rideId?: string | null,
   ticketCode?: string | null,
+  dismissedTicket?: string | null,
 ): Promise<RideSyncFetchResult> {
   const qs = new URLSearchParams();
   const id = String(rideId ?? "").trim();
   const ticket = String(ticketCode ?? "").trim();
+  const dismissed = String(dismissedTicket ?? "").trim();
   if (id) qs.set("ride_id", id);
   if (ticket) qs.set("ticket_code", ticket);
+  if (dismissed) qs.set("dismissed_ticket", dismissed);
   const suffix = qs.toString() ? `?${qs}&` : "?";
   const r = await fetch(`/api/rides/sync${suffix}_=${Date.now()}`, {
     credentials: "include",
