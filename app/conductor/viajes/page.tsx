@@ -397,8 +397,13 @@ function ConductorViajesInner() {
         latch && Date.now() < latch.until
           ? normalizeTicketKey(latch.ticket)
           : "";
+      const pinnedTicket = readDriverActiveTicket();
       const filtered = latchedTicket
-        ? verified.filter((row) => normalizeTicketKey(row.ticket_code) !== latchedTicket)
+        ? verified.filter((row) => {
+            const ticket = normalizeTicketKey(row.ticket_code);
+            if (pinnedTicket && ticket === pinnedTicket) return true;
+            return ticket !== latchedTicket;
+          })
         : verified;
 
       if (gen !== syncGenRef.current) return;
@@ -435,7 +440,15 @@ function ConductorViajesInner() {
       }
 
       const bestFiltered = sortDriverTrips(filtered)[0] ?? null;
-      applyServerTrips(bestFiltered ? [bestFiltered] : [], source, filtered.length === 0);
+      const bestCandidate =
+        sortDriverTrips(candidates.filter((row) => row?.id && isDriverActiveTrip(row)))[0] ?? null;
+      if (bestFiltered) {
+        applyServerTrips([bestFiltered], source, false);
+      } else if (bestCandidate) {
+        applyServerTrips([bestCandidate], source, false);
+      } else {
+        applyServerTrips([], source, true);
+      }
       if (filtered.length === 0 && terminalPin) {
         setCompletedNotice(terminalPin);
         rememberDriverTerminalRideId(terminalPin.id, terminalPin.ticket_code);
@@ -473,11 +486,12 @@ function ConductorViajesInner() {
   }, []);
 
   const load = useCallback(async (source = "poll") => {
-    if (
-      Date.now() < actionLatchUntilRef.current &&
-      source !== "mount" &&
-      source !== "url-pin"
-    ) {
+    const bypassLatch =
+      source === "mount" ||
+      source === "url-pin" ||
+      source === "recover" ||
+      source === "manual";
+    if (Date.now() < actionLatchUntilRef.current && !bypassLatch) {
       return;
     }
     const gen = ++syncGenRef.current;
@@ -578,6 +592,39 @@ function ConductorViajesInner() {
     t.noDriverProfile,
     t.ridesDisabled,
   ]);
+
+  const recoverAssignedRide = useCallback(async () => {
+    setBusy("recover");
+    setPanelError(null);
+    setActionError(null);
+    clearDriverTerminalRideId();
+    clearDriverCompletedTicketLatch();
+    completedTicketLatchRef.current = null;
+    setCompletedNotice(null);
+
+    const ticket = readDriverActiveTicket() || urlTicketRef.current;
+    if (ticket) {
+      urlTicketRef.current = ticket;
+      rememberDriverActiveTicket(ticket);
+    }
+
+    const rideId = readDriverActiveRideId() || pinnedRideIdRef.current;
+    if (rideId) {
+      const direct = await fetchRideRowById<RideRow>(rideId);
+      if (direct?.id && isDriverActiveTrip(direct)) {
+        rememberDriverActiveRideId(direct.id);
+        if (direct.ticket_code) rememberDriverActiveTicket(direct.ticket_code);
+        applyServerTrips([direct], "recover");
+        setPanelError(null);
+        setBusy(null);
+        return;
+      }
+    }
+
+    syncGenRef.current += 1;
+    await load("recover");
+    setBusy(null);
+  }, [applyServerTrips, load]);
 
   useEffect(() => {
     if (!readDriverActiveRideId() && !readDriverTerminalRideId()) {
@@ -1119,10 +1166,7 @@ function ConductorViajesInner() {
             <button
               type="button"
               disabled={busy === "recover"}
-              onClick={() => {
-                setBusy("recover");
-                void load("recover").finally(() => setBusy(null));
-              }}
+              onClick={() => void recoverAssignedRide()}
               className="rounded-full bg-[#1B4332] px-4 py-2 text-sm text-white disabled:opacity-50"
             >
               {busy === "recover" ? t.loadingAssignedRide : t.loadAssignedRide}
