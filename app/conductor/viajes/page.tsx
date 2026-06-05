@@ -234,12 +234,16 @@ function ConductorViajesInner() {
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
   const [sessionLabel, setSessionLabel] = useState<string | null>(null);
   const [sessionPhone, setSessionPhone] = useState<string | null>(null);
+  const [driverApproved, setDriverApproved] = useState(false);
   const [wrongHost, setWrongHost] = useState(false);
   const [debugChecks, setDebugChecks] = useState<string[] | null>(null);
   const [debugBusy, setDebugBusy] = useState(false);
 
   /** After Conectar succeeds, ignore stale panel polls that still say offline. */
   const onlineLatchUntilRef = useRef(0);
+  /** Last panel/online response with is_active_driver — survives online latch merges. */
+  const lastApprovedDriverRef = useRef<DriverOnline | null>(null);
+  const driverApprovedRef = useRef(false);
   /** Ignore out-of-order load() results when a newer load started. */
   const syncGenRef = useRef(0);
   /** After POST accept/arrive/start, polls must not downgrade this ride's status. */
@@ -420,12 +424,21 @@ function ConductorViajesInner() {
     [applyServerTrips],
   );
 
+  const rememberApprovedDriver = useCallback((driver: DriverOnline | null | undefined) => {
+    if (driver?.is_active_driver) {
+      lastApprovedDriverRef.current = driver;
+      driverApprovedRef.current = true;
+      setDriverApproved(true);
+    }
+  }, []);
+
   const mergeDriverOnline = useCallback((incoming: DriverOnline | null | undefined): DriverOnline | null => {
+    if (incoming?.is_active_driver) lastApprovedDriverRef.current = incoming;
     const latchActive = onlineLatchUntilRef.current > Date.now();
-    // While latch is active, protect against both is_online=false AND null
-    // (null means the server couldn't resolve the driver profile for this session).
+    // While latch is active, protect against stale offline/null polls without dropping approval.
     if (latchActive && (!incoming || incoming.is_online === false)) {
-      return incoming ? { ...incoming, is_online: true } : { is_online: true };
+      const base = incoming ?? lastApprovedDriverRef.current;
+      return base ? { ...base, is_online: true } : null;
     }
     return incoming ?? null;
   }, []);
@@ -455,6 +468,8 @@ function ConductorViajesInner() {
     if (!panelResult.ok) {
       if (panelResult.status === 404) {
         setPanelError(t.ridesDisabled);
+        setDriverApproved(false);
+        driverApprovedRef.current = false;
       } else if (panelResult.status === 401) {
         setPanelError(t.panelLoadFailed);
       } else {
@@ -483,22 +498,33 @@ function ConductorViajesInner() {
       if (activeFallback.length > 0) candidates = activeFallback;
     }
 
-    if (panel.driver) setOnline(mergeDriverOnline(panel.driver as DriverOnline));
-    else setOnline(null);
+    if (panel.driver) {
+      rememberApprovedDriver(panel.driver as DriverOnline);
+      setOnline(mergeDriverOnline(panel.driver as DriverOnline));
+    } else {
+      setOnline(null);
+      if (!driverApprovedRef.current) {
+        setDriverApproved(false);
+      }
+    }
     await verifyAndSetTrips(candidates, source, gen);
 
     setCanonicalUserId(panel.canonical_user_id ?? panel.driver?.user_id ?? null);
     setSessionUserId(panel.session_user_id ?? null);
     if (!panel.driver?.is_active_driver && panel.driver !== null) {
       setPanelError(t.inactiveDriverShort);
+      setDriverApproved(false);
+      driverApprovedRef.current = false;
     } else if (!panel.driver && !panel.canonical_user_id) {
       setPanelError(t.noDriverProfile);
+      if (!driverApprovedRef.current) setDriverApproved(false);
     } else {
       setPanelError(null);
     }
   }, [
     verifyAndSetTrips,
     mergeDriverOnline,
+    rememberApprovedDriver,
     t.panelLoadFailed,
     t.inactiveDriverShort,
     t.noDriverProfile,
@@ -565,7 +591,7 @@ function ConductorViajesInner() {
 
   const displayError = actionError ?? panelError;
   const isOnline = Boolean(online?.is_online);
-  const canGoOnline = Boolean(online?.is_active_driver);
+  const canGoOnline = driverApproved || Boolean(online?.is_active_driver);
   const panelStreamEnabled = !panelError && Boolean(canonicalUserId ?? online?.user_id);
 
   useEffect(() => {
@@ -628,6 +654,19 @@ function ConductorViajesInner() {
     }
   };
 
+  const refreshOnlineStatus = useCallback(async () => {
+    const r = await fetch("/api/rides/drivers/me/online", {
+      credentials: "include",
+      cache: "no-store",
+    });
+    const data = await r.json().catch(() => ({}));
+    if (data.driver) {
+      rememberApprovedDriver(data.driver as DriverOnline);
+      setOnline(mergeDriverOnline(data.driver as DriverOnline));
+    }
+    return data.driver as DriverOnline | undefined;
+  }, [mergeDriverOnline, rememberApprovedDriver]);
+
   useRideLiveStream({
     streamUrl: panelStreamEnabled ? "/api/rides/drivers/me/stream" : null,
     enabled: panelStreamEnabled,
@@ -637,7 +676,10 @@ function ConductorViajesInner() {
         trips?: RideRow[];
         canonical_user_id?: string | null;
       };
-      if (data.driver) setOnline(mergeDriverOnline(data.driver));
+      if (data.driver) {
+        rememberApprovedDriver(data.driver);
+        setOnline(mergeDriverOnline(data.driver));
+      }
       void load("SSE");
       if (data.canonical_user_id) setCanonicalUserId(data.canonical_user_id);
     },
@@ -647,10 +689,20 @@ function ConductorViajesInner() {
 
   useEffect(() => {
     void load("mount");
+    void refreshOnlineStatus();
+    const retry = setTimeout(() => {
+      if (!driverApprovedRef.current) {
+        void load("mount-retry");
+        void refreshOnlineStatus();
+      }
+    }, 2_500);
     const ms = trips.length > 0 ? 3_000 : isOnline ? 2_000 : 8_000;
     const timer = setInterval(() => void load("poll"), ms);
-    return () => clearInterval(timer);
-  }, [load, isOnline, trips.length]);
+    return () => {
+      clearTimeout(retry);
+      clearInterval(timer);
+    };
+  }, [load, refreshOnlineStatus, isOnline, trips.length]);
 
   useEffect(() => {
     const onFocus = () => void load("focus");
@@ -681,16 +733,6 @@ function ConductorViajesInner() {
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, [load]);
-
-  const refreshOnlineStatus = useCallback(async () => {
-    const r = await fetch("/api/rides/drivers/me/online", {
-      credentials: "include",
-      cache: "no-store",
-    });
-    const data = await r.json().catch(() => ({}));
-    if (data.driver) setOnline(mergeDriverOnline(data.driver as DriverOnline));
-    return data.driver as DriverOnline | undefined;
-  }, [mergeDriverOnline]);
 
   const toggleOnline = async (next: boolean) => {
     setBusy("online");
@@ -1138,7 +1180,10 @@ function ConductorViajesInner() {
               {busy === "online" ? "…" : isOnline ? t.disconnect : t.connect}
             </button>
           </div>
-          {!canGoOnline && sessionUserId && (
+          {!canGoOnline && wrongHost && (
+            <p className="mt-3 text-xs text-amber-800 leading-relaxed">{t.ridesDisabled}</p>
+          )}
+          {!canGoOnline && !wrongHost && sessionUserId && (
             <p className="mt-3 text-xs text-amber-800 leading-relaxed">{connectBlockedMessage}</p>
           )}
         </section>
