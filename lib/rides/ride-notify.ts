@@ -67,6 +67,13 @@ export async function notifyBuyerRideCreated(
   args: { ride: RideBookingRow; matched: boolean }
 ): Promise<void> {
   if (!isTwilioWhatsAppConfigured()) return;
+  if (isSelfRide(args.ride)) {
+    console.warn("[ride-notify] buyer WhatsApp skipped — self-ride (buyer is driver)", {
+      rideId: args.ride.id.slice(0, 8),
+      step: "created",
+    });
+    return;
+  }
 
   const phone = await findUserPhoneById(supabase, args.ride.buyer_id);
   if (!phone) {
