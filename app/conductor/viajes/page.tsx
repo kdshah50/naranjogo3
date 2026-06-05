@@ -403,8 +403,14 @@ function ConductorViajesInner() {
 
       if (gen !== syncGenRef.current) return;
 
+      const activeTicketPin = readDriverActiveTicket();
       const terminalSessionId = readDriverTerminalRideId();
-      if (terminalSessionId && filtered.length === 0) {
+      if (
+        terminalSessionId &&
+        filtered.length === 0 &&
+        !activeTicketPin &&
+        !urlTicketRef.current
+      ) {
         const terminalFresh = await fetchRideRowById<RideRow>(terminalSessionId);
         if (gen !== syncGenRef.current) return;
         if (terminalFresh?.id && isTerminalDriverTrip(terminalFresh.status)) {
@@ -531,6 +537,9 @@ function ConductorViajesInner() {
       if (top?.id) rememberDriverActiveRideId(top.id);
       if (top?.ticket_code) rememberDriverActiveTicket(top.ticket_code);
       if (urlTicketRef.current) urlTicketRef.current = null;
+      setCompletedNotice(null);
+      setPanelError(null);
+      applyServerTrips(candidates, source);
     }
 
     if (panel.driver) {
@@ -561,6 +570,7 @@ function ConductorViajesInner() {
     }
   }, [
     verifyAndSetTrips,
+    applyServerTrips,
     mergeDriverOnline,
     rememberApprovedDriver,
     t.panelLoadFailed,
@@ -587,7 +597,15 @@ function ConductorViajesInner() {
   useEffect(() => {
     const id = searchParams.get("ride")?.trim();
     const ticket = normalizeTicketKey(String(searchParams.get("ticket") ?? "").trim());
-    if (ticket) urlTicketRef.current = ticket;
+    if (ticket) {
+      urlTicketRef.current = ticket;
+      rememberDriverActiveTicket(ticket);
+      // New assignment link — do not let a prior completed trip hide this ticket.
+      clearDriverTerminalRideId();
+      clearDriverCompletedTicketLatch();
+      completedTicketLatchRef.current = null;
+      setCompletedNotice(null);
+    }
     stripRideFromBrowserUrl();
 
     if (!id) {
@@ -750,7 +768,7 @@ function ConductorViajesInner() {
 
   useEffect(() => {
     if (trips.length > 0 || debugChecks !== null || debugBusy) return;
-    const timer = setTimeout(() => void runTripsDebug(), 1500);
+    const timer = setTimeout(() => void runTripsDebug(), 12_000);
     return () => clearTimeout(timer);
   }, [trips.length, debugChecks, debugBusy]);
 
@@ -1098,6 +1116,22 @@ function ConductorViajesInner() {
         ) : trips.length === 0 ? (
           <div className="mb-6 space-y-2">
             <p className="text-sm text-[#1B4332]/70">{t.noActiveTrips}</p>
+            <button
+              type="button"
+              disabled={busy === "recover"}
+              onClick={() => {
+                setBusy("recover");
+                void load("recover").finally(() => setBusy(null));
+              }}
+              className="rounded-full bg-[#1B4332] px-4 py-2 text-sm text-white disabled:opacity-50"
+            >
+              {busy === "recover" ? t.loadingAssignedRide : t.loadAssignedRide}
+            </button>
+            {readDriverActiveTicket() && (
+              <p className="text-xs text-[#1B4332]/60 font-mono">
+                Ticket: {readDriverActiveTicket()}
+              </p>
+            )}
             {canonicalUserId && (
               <p className="text-xs text-[#1B4332]/50 leading-relaxed">
                 {t.staleTripHint}{" "}

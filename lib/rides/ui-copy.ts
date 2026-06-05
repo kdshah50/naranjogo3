@@ -282,7 +282,9 @@ const DRIVER_TRIPS = {
     connectBlockedRiderSession:
       "Estás en la cuenta del pasajero (Kay · …8527). Cierra sesión en /unete e inicia con 415 181 6902 (Carme · …6902). No necesitas SQL — el perfil del conductor ya existe.",
     connectBlockedDriverSession:
-      "Sesión 415 181 6902 sin perfil de conductor. Cierra sesión en /unete, vuelve a entrar con el mismo número, y si sigue fallando ejecuta rides-restore-driver-profile.sql en Supabase.",
+      "Sesión 415 181 6902 — espera unos segundos o toca refresh abajo. Si Conectar sigue bloqueado, cierra sesión en /unete y vuelve a entrar con el mismo número.",
+    loadAssignedRide: "Buscar viaje asignado",
+    loadingAssignedRide: "Buscando viaje asignado…",
     profileLoadFailed: "No se pudo cargar el perfil de conductor",
     panelLoadFailed: "No se pudo cargar el panel de conductor",
     ridesDisabled:
@@ -352,7 +354,9 @@ const DRIVER_TRIPS = {
     connectBlockedRiderSession:
       "You are logged in as the passenger (Kay · …8527). Log out at /unete and sign in with 415 181 6902 (Carme · …6902). No SQL needed — the driver profile already exists in the database.",
     connectBlockedDriverSession:
-      "415 181 6902 session has no driver profile. Log out at /unete, sign in again with the same number, and only if it still fails run rides-restore-driver-profile.sql in Supabase.",
+      "415 181 6902 session — wait a few seconds or tap refresh below. If Go online stays disabled, log out at /unete and sign in again with the same number.",
+    loadAssignedRide: "Find my assigned ride",
+    loadingAssignedRide: "Loading assigned ride…",
     profileLoadFailed: "Could not load driver profile",
     panelLoadFailed: "Could not load driver panel",
     ridesDisabled:

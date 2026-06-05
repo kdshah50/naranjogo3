@@ -121,6 +121,40 @@ async function fallbackTripsByDriverUserIdWithRetry(
   return [];
 }
 
+/** One fast read from recent events — avoids multi-second retry loops on Vercel. */
+async function quickActiveTripFromRecentEvents(
+  supabase: SupabaseClient,
+  driverPool: string[],
+): Promise<RideBookingRow[]> {
+  if (driverPool.length === 0) return [];
+
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const { data: events, error } = await supabase
+    .from("ride_events")
+    .select("ride_id")
+    .in("to_status", [...DRIVER_ACTIVE_STATUS_LIST])
+    .gte("created_at", since)
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  if (error) {
+    console.error("[driver-panel] quickActiveTripFromRecentEvents", error);
+    return [];
+  }
+
+  const seen = new Set<string>();
+  for (const evt of events ?? []) {
+    const rideId = String((evt as { ride_id: string }).ride_id ?? "").trim();
+    if (!rideId || seen.has(rideId)) continue;
+    seen.add(rideId);
+    const row = await getRideById(supabase, rideId);
+    if (!row || !DRIVER_ACTIVE_STATUSES.has(row.status)) continue;
+    if (!tripMatchesDriverPool(row, driverPool)) continue;
+    return [row];
+  }
+  return [];
+}
+
 /**
  * When ride_bookings list scans lag on replica, ride_events still has fresh lifecycle rows.
  */
@@ -289,6 +323,10 @@ export async function loadDriverPanel(
         ? await listActiveTripsForDriverProfile(supabase, driver.user_id, accountOpts)
         : [];
     verified = await verifyDriverPanelTrips(supabase, rawTrips);
+  }
+
+  if (verified.length === 0 && uniqueDriverPool.length > 0) {
+    verified = await quickActiveTripFromRecentEvents(supabase, uniqueDriverPool);
   }
 
   if (verified.length === 0 && driver?.user_id) {

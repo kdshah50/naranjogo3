@@ -37,7 +37,7 @@ export async function buildDriverTripsDebugReport(
 
   if (!profile?.user_id) {
     checks.push(
-      "No active driver profile — log out at /unete and sign in with 415 181 6902, then run rides-fix-driver-test-session.sql.",
+      "No active driver profile for this session — log out at /unete and sign in with 415 181 6902.",
     );
   }
   if (!args.authPhone) {
@@ -69,19 +69,17 @@ export async function buildDriverTripsDebugReport(
     );
     if (assignedToProfile.length > 0) {
       checks.push(
-        `DB has ride(s) for ${profile.user_id.slice(0, 8)}… but panel API returned 0 — run rides-fix-driver-test-session.sql and redeploy preview.`,
+        `DB has ride(s) for ${profile.user_id.slice(0, 8)}… but panel returned 0 — tap refresh or open the WhatsApp link with ?ticket= again.`,
       );
     } else {
-      checks.push(
-        `Rides assigned to wrong driver_id — run supabase/scripts/rides-fix-driver-test-session.sql.`,
-      );
+      checks.push("Rides assigned to a different driver_id — confirm you are logged in as Carme (415 181 6902).");
     }
   }
   if (trips.length > 0) {
     checks.push("Panel API OK — Accept ride on /conductor/viajes.");
   }
   if (dbRows.length === 0) {
-    checks.push("No active rides in DB — request one trip after SQL reset.");
+    checks.push("No active rides in DB — rider should request a new trip on /viaje.");
   }
 
   return {
