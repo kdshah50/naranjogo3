@@ -2,8 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isSameUserId } from "@/lib/auth-server";
-import { getRideById, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
-import { hydrateRideRowFromEvents } from "@/lib/rides/ride-event-truth";
+import { getRideById, getRideByIdFresh, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
 import { resolveCanonicalRideByTicketForBuyer } from "@/lib/rides/resolve-ride-by-ticket";
 import { withStatusCode } from "@/lib/rides/ride-transition-pipeline";
 import type { RideDriverPublic } from "@/lib/rides/ride-sync-server";
@@ -92,7 +91,9 @@ export async function getBuyerRideTruthState(
 
   if (!base?.id) return null;
 
-  const ride = withStatusCode(await hydrateRideRowFromEvents(supabase, base)) as RideBookingRow & {
+  const fresh =
+    (await getRideByIdFresh(supabase, base.id, { attempts: 5, delayMs: 200 })) ?? base;
+  const ride = withStatusCode(fresh) as RideBookingRow & {
     status_code: number;
   };
 

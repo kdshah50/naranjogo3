@@ -465,11 +465,11 @@ export async function applyEventTruthToRide(
   let bestStatus: RideBookingStatus = row.status;
   let bestRank = rideStatusRank(row.status);
 
-  const fromLog = await getRideLifecycleStatusFromEvents(supabase, row.id);
+  const fromLog = await latestStatusFromEvents(supabase, row.id, { attempts: 5, delayMs: 200 });
   if (fromLog) {
-    const rank = rideStatusRank(fromLog);
+    const rank = rideStatusRank(fromLog as RideBookingStatus);
     if (rank >= bestRank) {
-      bestStatus = fromLog;
+      bestStatus = fromLog as RideBookingStatus;
       bestRank = rank;
     }
   }

@@ -569,11 +569,16 @@ function ViajePageInner() {
       }
     }
 
-    if (truthApplied && !SYNC_DISCOVERY_SOURCES.has(source)) {
+    if (truthApplied) {
       return;
     }
 
-    if (!SYNC_DISCOVERY_SOURCES.has(source) && !truthApplied) {
+    // Ticket / ride pin from WhatsApp — never fall back to /sync (replica lag).
+    if (ticketHint || rideRef) {
+      return;
+    }
+
+    if (!SYNC_DISCOVERY_SOURCES.has(source)) {
       return;
     }
 

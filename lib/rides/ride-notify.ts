@@ -14,13 +14,13 @@ export function rideBuyerViajeUrl(
   ticketCode?: string | null,
 ): string {
   const base = `${getPublicAppUrl()}/viaje`;
-  const qs = new URLSearchParams();
-  const id = String(rideId ?? "").trim();
   const ticket = String(ticketCode ?? "").trim();
-  if (id) qs.set("ride", id);
-  if (ticket) qs.set("ticket", ticket);
-  const suffix = qs.toString();
-  return suffix ? `${base}?${suffix}` : base;
+  if (ticket) {
+    return `${base}?ticket=${encodeURIComponent(ticket)}`;
+  }
+  const id = String(rideId ?? "").trim();
+  if (id) return `${base}?ride=${encodeURIComponent(id)}`;
+  return base;
 }
 
 export function rideDriverPanelUrl(

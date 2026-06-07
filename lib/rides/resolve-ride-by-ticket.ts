@@ -2,7 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isSameUserId } from "@/lib/auth-server";
-import { applyEventTruthToRide, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
+import { applyEventTruthToRide, getRideByIdFresh, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
 import { normalizeRideTicketCode } from "@/lib/rides/ride-ghost-filter";
 import { rideStatusRank } from "@/lib/rides/ride-status-merge";
 import type { RideAccountOptions } from "@/lib/rides/ride-trip-server";
@@ -120,14 +120,20 @@ export async function resolveCanonicalRideByTicket(
   const rows = await listRideBookingsByTicket(supabase, ticketCode, buyerPool);
   if (rows.length === 0) return null;
 
-  const sorted = [...rows].sort((a, b) => {
-    const rankDiff = rideStatusRank(b.status) - rideStatusRank(a.status);
-    if (rankDiff !== 0) return rankDiff;
-    return rowTimeMs(b) - rowTimeMs(a);
-  });
-
-  const pick = sorted[0];
-  return applyEventTruthToRide(supabase, pick);
+  let best: RideBookingRow | null = null;
+  let bestRank = -1;
+  for (const row of rows) {
+    const fresh = (await getRideByIdFresh(supabase, row.id, { attempts: 4, delayMs: 150 })) ?? row;
+    const rank = rideStatusRank(fresh.status);
+    if (
+      rank > bestRank ||
+      (rank === bestRank && best && rowTimeMs(fresh) > rowTimeMs(best))
+    ) {
+      best = fresh;
+      bestRank = rank;
+    }
+  }
+  return best ? applyEventTruthToRide(supabase, best) : null;
 }
 
 export async function resolveCanonicalRideByTicketForBuyer(
