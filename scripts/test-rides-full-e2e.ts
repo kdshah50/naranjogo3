@@ -237,7 +237,7 @@ async function main() {
       const m = await api(base, `/api/rides/${rideId}/match`, {
         method: "POST",
         internal: true,
-        body: { pickup_colonia: "centro", driver_user_id: CANONICAL_ID },
+        body: { pickup_colonia: "centro", driver_user_id: CANONICAL_DRIVER_ID },
       });
       if (m.ok) {
         status = String((m.data as { ride?: { status?: string } }).ride?.status ?? "matched");
@@ -263,6 +263,22 @@ async function main() {
     ok("ride matched to driver");
   }
 
+  let ticketCode = String(ride?.ticket_code ?? "");
+  if (!ticketCode) {
+    const { data: trow } = await supabase
+      .from("ride_bookings")
+      .select("ticket_code")
+      .eq("id", rideId)
+      .maybeSingle();
+    ticketCode = String(trow?.ticket_code ?? "");
+  }
+
+  if (ticketCode) {
+    await assertBuyerStatus(base, buyerCookie, supabase, rideId, ticketCode, "matched");
+  } else {
+    fail("no ticket_code on matched ride — buyer/status gate skipped");
+  }
+
   // 5) Driver sync sees trip — brief pause for replica lag
   await new Promise((r) => setTimeout(r, 1200));
   const panel = await api(base, "/api/rides/sync", { cookie: driverCookie });
@@ -276,7 +292,6 @@ async function main() {
   }
 
   // 6) Accept → arrive → start → complete (full Uber-style lifecycle)
-  let ticketCode = String(ride?.ticket_code ?? "");
 
   if (status === "matched") {
     const acc = await api(base, `/api/rides/${rideId}/accept`, {
@@ -290,6 +305,7 @@ async function main() {
     status = String((acc.data as { ride?: { status?: string } }).ride?.status ?? "accepted");
     ticketCode = String((acc.data as { ride?: { ticket_code?: string } }).ride?.ticket_code ?? ticketCode);
     ok(`accept → ${status}`);
+    if (ticketCode) await assertBuyerStatus(base, buyerCookie, supabase, rideId, ticketCode, "accepted");
   }
 
   if (status === "accepted") {
@@ -303,6 +319,7 @@ async function main() {
     }
     status = String((arr.data as { ride?: { status?: string } }).ride?.status ?? "arrived");
     ok(`arrive → ${status}`);
+    if (ticketCode) await assertBuyerStatus(base, buyerCookie, supabase, rideId, ticketCode, "arrived");
   }
 
   if (status === "arrived") {
@@ -325,6 +342,7 @@ async function main() {
     }
     status = String((st.data as { ride?: { status?: string } }).ride?.status ?? "in_trip");
     ok(`start → ${status}`);
+    if (ticketCode) await assertBuyerStatus(base, buyerCookie, supabase, rideId, ticketCode, "in_trip");
   }
 
   if (status === "in_trip") {
@@ -338,6 +356,7 @@ async function main() {
     }
     status = String((done.data as { ride?: { status?: string } }).ride?.status ?? "completed");
     ok(`complete → ${status}`);
+    if (ticketCode) await assertBuyerStatus(base, buyerCookie, supabase, rideId, ticketCode, "completed");
   }
 
   // 7a) DB ground truth — verify completed status directly (bypasses replica lag)
@@ -387,6 +406,96 @@ async function main() {
 
 function warn(msg: string) {
   console.warn("WARN:", msg);
+}
+
+const STATUS_RANK: Record<string, number> = {
+  requested: 0,
+  matched: 1,
+  accepted: 2,
+  arrived: 3,
+  in_trip: 4,
+  completed: 5,
+  cancelled: 5,
+  disputed: 6,
+};
+
+const EVENT_TO_STATUS: Record<string, string> = {
+  trip_completed: "completed",
+  trip_started: "in_trip",
+  driver_arrived: "arrived",
+  driver_accepted: "accepted",
+  driver_matched: "matched",
+  ride_requested: "requested",
+};
+
+async function groundTruthStatusFromEvents(
+  supabase: SupabaseClient,
+  rideId: string,
+): Promise<string> {
+  const { data } = await supabase
+    .from("ride_events")
+    .select("event_type,to_status")
+    .eq("ride_id", rideId)
+    .order("created_at", { ascending: false })
+    .limit(32);
+  let best = "requested";
+  let bestRank = -1;
+  for (const evt of data ?? []) {
+    const st =
+      String(evt.to_status ?? "").trim() ||
+      EVENT_TO_STATUS[String(evt.event_type ?? "").trim()] ||
+      "";
+    if (!st) continue;
+    const rank = STATUS_RANK[st] ?? -1;
+    if (rank > bestRank) {
+      best = st;
+      bestRank = rank;
+    }
+  }
+  return best;
+}
+
+/** Merge gate: rider /api/rides/buyer/status must match ride_events ground truth. */
+async function assertBuyerStatus(
+  base: string,
+  buyerCookie: string,
+  supabase: SupabaseClient,
+  rideId: string,
+  ticketCode: string,
+  expectedMin: string,
+) {
+  const eventStatus = await groundTruthStatusFromEvents(supabase, rideId);
+  const qs = new URLSearchParams({ ticket_code: ticketCode });
+  const res = await api(base, `/api/rides/buyer/status?${qs}`, { cookie: buyerCookie });
+  if (res.status === 404) {
+    fail("GET /api/rides/buyer/status → 404 (RIDES_ENABLED=false on deployment)");
+    return;
+  }
+  if (!res.ok) {
+    fail(`GET buyer/status → ${res.status} ${JSON.stringify(res.data)}`);
+    return;
+  }
+  const riderStatus = String(
+    (res.data as { ride?: { status?: string } }).ride?.status ?? "",
+  );
+  if (!riderStatus) {
+    fail(`buyer/status returned no ride at step ${expectedMin} (events=${eventStatus})`);
+    return;
+  }
+  const riderRank = STATUS_RANK[riderStatus] ?? -1;
+  const eventRank = STATUS_RANK[eventStatus] ?? -1;
+  const minRank = STATUS_RANK[expectedMin] ?? -1;
+  if (riderRank < minRank) {
+    fail(
+      `buyer/status=${riderStatus} behind driver step ${expectedMin} (events=${eventStatus})`,
+    );
+    return;
+  }
+  if (riderRank < eventRank) {
+    fail(`buyer/status=${riderStatus} behind ride_events=${eventStatus}`);
+    return;
+  }
+  ok(`buyer/status=${riderStatus} (events=${eventStatus}, min=${expectedMin})`);
 }
 
 main().catch((e) => {
