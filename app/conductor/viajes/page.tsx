@@ -507,6 +507,41 @@ function ConductorViajesInner() {
       completedTicketLatchRef.current &&
         Date.now() < completedTicketLatchRef.current.until,
     );
+    const ticketHint =
+      urlTicketRef.current || readDriverActiveTicket() || undefined;
+    const pollLike =
+      source === "poll" ||
+      source === "poll-backup" ||
+      source === "SSE" ||
+      source === "focus" ||
+      source === "visibility";
+    if (ticketHint && pollLike) {
+      const fast = await fetchDriverRecoverByTicket(ticketHint);
+      if (gen !== syncGenRef.current) return;
+      if (fast.ok && fast.trips.length > 0) {
+        const incoming = fast.trips[0] as RideRow;
+        const cur = tripsRef.current[0];
+        if (
+          !cur?.id ||
+          cur.id === incoming.id ||
+          (cur.ticket_code &&
+            incoming.ticket_code &&
+            normalizeTicketKey(cur.ticket_code) === normalizeTicketKey(incoming.ticket_code))
+        ) {
+          if (!cur || rideStatusRank(incoming.status) >= rideStatusRank(cur.status)) {
+            rememberDriverActiveRideId(incoming.id);
+            const ticket = normalizeTicketKey(incoming.ticket_code ?? ticketHint);
+            if (ticket) rememberDriverActiveTicket(ticket);
+            pinnedRideIdRef.current = incoming.id;
+            recoverLatchUntilRef.current = Date.now() + 45_000;
+            applyServerTrips([incoming], `${source}+recover-first`);
+            if (incoming.status === "completed" || incoming.status === "cancelled") {
+              return;
+            }
+          }
+        }
+      }
+    }
     const syncRideId = skipExplicitRide
       ? undefined
       : pinnedRideIdRef.current ?? readDriverActiveRideId() ?? undefined;

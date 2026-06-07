@@ -465,6 +465,40 @@ function ViajePageInner() {
       urlTicketRef.current || activeTicketRef.current || readPinnedTicket() || undefined;
     // Ticket + event hydration beats stale ride_id pins from WhatsApp deep links.
     const syncRideId = ticketHint ? undefined : pinnedId ?? undefined;
+    const pollLike =
+      source === "poll" ||
+      source === "poll-backup" ||
+      source === "focus" ||
+      source === "visibility" ||
+      source === "pageshow" ||
+      source === "SSE" ||
+      source === "manual" ||
+      source === "mount" ||
+      source === "mount-retry";
+    if (ticketHint && pollLike) {
+      const fast = await fetchBuyerRecoverByTicket(ticketHint);
+      if (fast.ok && fast.ride?.id && !isStale()) {
+        const cur = uiRideRef.current;
+        const incoming = fast.ride as RideRow;
+        if (
+          !cur?.id ||
+          cur.id === incoming.id ||
+          (cur.ticket_code &&
+            incoming.ticket_code &&
+            normalizeTicketKey(cur.ticket_code) === normalizeTicketKey(incoming.ticket_code))
+        ) {
+          if (!cur || rideStatusRank(incoming.status) >= rideStatusRank(cur.status)) {
+            repinCanonicalRideId(incoming, rideIdRef, activeTicketRef);
+            applyServerRide(
+              incoming,
+              `${source}+recover-first`,
+              `${incoming.status}${incoming.ticket_code ? ` · ${incoming.ticket_code}` : ""}`,
+            );
+            if (isTerminalRideStatus(incoming.status)) return;
+          }
+        }
+      }
+    }
     const awaitingComplete = uiRideRef.current?.status === "in_trip";
     if (awaitingComplete && ticketHint && (source === "poll" || source === "poll-backup")) {
       const fast = await fetchBuyerRecoverByTicket(ticketHint);
@@ -877,16 +911,21 @@ function ViajePageInner() {
     if (authError) return;
     const terminal = ride?.status === "completed" || ride?.status === "cancelled";
     const awaitingComplete = ride?.status === "in_trip";
+    const activeTrip =
+      ride?.status &&
+      isBuyerActiveStatus(ride.status);
     const fromWhatsApp = hadUrlRideParamsRef.current;
     const ms = terminal
       ? 8_000
       : awaitingComplete
         ? 1_000
-        : ride
-          ? fromWhatsApp
-            ? 1_500
-            : 2_000
-          : 5_000;
+        : activeTrip
+          ? 1_500
+          : ride
+            ? fromWhatsApp
+              ? 1_500
+              : 2_000
+            : 5_000;
     const timer = setInterval(() => void refreshActiveRide("poll"), ms);
     return () => clearInterval(timer);
   }, [authError, ride?.status, refreshActiveRide]);

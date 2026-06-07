@@ -408,22 +408,48 @@ async function resolveCompletedRideRow(
 }
 
 /**
- * Fast read truth: one ride_events probe, then optional hydrate — avoids 10s+ retry loops on Vercel.
+ * Fast read truth: parallel ride_events probes (one round) — booking rows lag on replica.
  */
 export async function applyEventTruthToRide(
   supabase: SupabaseClient,
   row: RideBookingRow,
 ): Promise<RideBookingRow> {
-  const { data: completedEvt } = await supabase
-    .from("ride_events")
-    .select("id")
-    .eq("ride_id", row.id)
-    .eq("event_type", "trip_completed")
-    .limit(1)
-    .maybeSingle();
-  if (completedEvt?.id) {
-    return resolveCompletedRideRow(supabase, row);
+  const eventStatuses = await Promise.all(
+    RIDE_EVENT_TYPE_STATUS.map(async ([eventType, status]) => {
+      const { data } = await supabase
+        .from("ride_events")
+        .select("id")
+        .eq("ride_id", row.id)
+        .eq("event_type", eventType)
+        .limit(1)
+        .maybeSingle();
+      return data?.id ? status : null;
+    }),
+  );
+
+  let bestStatus: RideBookingStatus = row.status;
+  let bestRank = rideStatusRank(row.status);
+  for (const status of eventStatuses) {
+    if (!status) continue;
+    const rank = rideStatusRank(status);
+    if (rank > bestRank) {
+      bestStatus = status;
+      bestRank = rank;
+    }
   }
+
+  if (bestRank > rideStatusRank(row.status)) {
+    if (bestStatus === "completed" || bestStatus === "cancelled") {
+      return resolveCompletedRideRow(supabase, {
+        ...row,
+        status: bestStatus,
+      });
+    }
+    const fresh = await getRideById(supabase, row.id);
+    if (fresh && rideStatusRank(fresh.status) >= bestRank) return fresh;
+    return { ...row, status: bestStatus };
+  }
+
   if (row.status === "completed" || row.status === "cancelled") {
     return row;
   }
@@ -443,7 +469,11 @@ export async function getRideByIdFresh(
   const initial = await getRideById(supabase, rideId);
   if (initial) {
     const truth = await applyEventTruthToRide(supabase, initial);
-    if (truth.status === "completed" || truth.status === "cancelled") {
+    if (
+      rideStatusRank(truth.status) > rideStatusRank(initial.status) ||
+      truth.status === "completed" ||
+      truth.status === "cancelled"
+    ) {
       return truth;
     }
   }
