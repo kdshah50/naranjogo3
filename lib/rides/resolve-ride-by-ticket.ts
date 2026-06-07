@@ -2,7 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isSameUserId } from "@/lib/auth-server";
-import { getRideByIdFresh, applyEventTruthToRide, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
+import { applyEventTruthToRide, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
 import { normalizeRideTicketCode } from "@/lib/rides/ride-ghost-filter";
 import { rideStatusRank } from "@/lib/rides/ride-status-merge";
 import type { RideAccountOptions } from "@/lib/rides/ride-trip-server";
@@ -48,12 +48,75 @@ export async function listRideBookingsByTicket(
   );
 }
 
+/** Completed/cancelled rows lag differently on replica — query terminal status explicitly first. */
+async function findTerminalRideByTicket(
+  supabase: SupabaseClient,
+  ticketCode: string,
+  buyerPool: string[],
+): Promise<RideBookingRow | null> {
+  const ticket = normalizeRideTicketCode(ticketCode);
+  if (!ticket || buyerPool.length === 0) return null;
+
+  for (const status of ["completed", "cancelled"] as const) {
+    const { data, error } = await supabase
+      .from("ride_bookings")
+      .select("*")
+      .ilike("ticket_code", ticket)
+      .eq("status", status)
+      .order("updated_at", { ascending: false })
+      .limit(4);
+    if (error) {
+      console.error("[resolve-ride-by-ticket] terminal status", status, error);
+      continue;
+    }
+    const row = ((data ?? []) as RideBookingRow[]).find((r) =>
+      tripMatchesBuyerPool(r, buyerPool),
+    );
+    if (row) return row;
+  }
+
+  const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+  const { data: events, error: evtErr } = await supabase
+    .from("ride_events")
+    .select("ride_id")
+    .eq("event_type", "trip_completed")
+    .gte("created_at", since)
+    .order("created_at", { ascending: false })
+    .limit(48);
+  if (evtErr) {
+    console.error("[resolve-ride-by-ticket] trip_completed scan", evtErr);
+    return null;
+  }
+
+  const seen = new Set<string>();
+  for (const evt of events ?? []) {
+    const rideId = String((evt as { ride_id: string }).ride_id ?? "").trim();
+    if (!rideId || seen.has(rideId)) continue;
+    seen.add(rideId);
+    const { data: row } = await supabase
+      .from("ride_bookings")
+      .select("*")
+      .eq("id", rideId)
+      .maybeSingle();
+    if (!row) continue;
+    const ride = row as RideBookingRow;
+    if (normalizeRideTicketCode(ride.ticket_code) !== ticket) continue;
+    if (!tripMatchesBuyerPool(ride, buyerPool)) continue;
+    return ride.status === "completed" ? ride : { ...ride, status: "completed" };
+  }
+
+  return null;
+}
+
 /** Canonical row for a ticket — freshest DB update, re-fetched by id. */
 export async function resolveCanonicalRideByTicket(
   supabase: SupabaseClient,
   ticketCode: string,
   buyerPool: string[],
 ): Promise<RideBookingRow | null> {
+  const terminal = await findTerminalRideByTicket(supabase, ticketCode, buyerPool);
+  if (terminal) return terminal;
+
   const rows = await listRideBookingsByTicket(supabase, ticketCode, buyerPool);
   if (rows.length === 0) return null;
 
