@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ridesRouteGuard } from "@/lib/rides/ride-route-guard";
 import type { RideBookingRow } from "@/lib/rides/ride-bookings-server";
+import { getRideByIdFresh } from "@/lib/rides/ride-bookings-server";
 import { resolveCanonicalRideByTicketForBuyer } from "@/lib/rides/resolve-ride-by-ticket";
 import { withStatusCode } from "@/lib/rides/ride-transition-pipeline";
 
@@ -37,7 +38,12 @@ export async function GET(req: NextRequest) {
       { authPhone: guard.authPhone },
     );
 
-    if (!ride?.id) {
+    const resolved =
+      ride?.id != null
+        ? (await getRideByIdFresh(guard.supabase, ride.id, { attempts: 2, delayMs: 150 })) ?? ride
+        : null;
+
+    if (!resolved?.id) {
       return NextResponse.json({
         ride: null,
         ticket_code: ticketCode,
@@ -45,15 +51,15 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    if (!BUYER_VISIBLE.has(ride.status)) {
+    if (!BUYER_VISIBLE.has(resolved.status)) {
       return NextResponse.json({
         ride: null,
         ticket_code: ticketCode,
-        reason: `status_${ride.status}`,
+        reason: `status_${resolved.status}`,
       });
     }
 
-    const payload = withStatusCode(ride) as RideBookingRow & { status_code: number };
+    const payload = withStatusCode(resolved) as RideBookingRow & { status_code: number };
     return NextResponse.json({
       ride: payload,
       ticket_code: ticketCode,

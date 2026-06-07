@@ -462,7 +462,11 @@ function ViajePageInner() {
 
     const pinnedId = rideIdRef.current ?? readPinnedRideId();
     const ticketHint =
-      urlTicketRef.current || activeTicketRef.current || readPinnedTicket() || undefined;
+      urlTicketRef.current ||
+      activeTicketRef.current ||
+      readPinnedTicket() ||
+      normalizeTicketKey(uiRideRef.current?.ticket_code) ||
+      undefined;
     // Ticket + event hydration beats stale ride_id pins from WhatsApp deep links.
     const syncRideId = ticketHint ? undefined : pinnedId ?? undefined;
     const pollLike =
@@ -532,7 +536,6 @@ function ViajePageInner() {
           `${fastRow.status}${fastRow.ticket_code ? ` · ${fastRow.ticket_code}` : ""}`,
           syncResult.payload.debug?.drop_reason ?? null,
         );
-        urlTicketRef.current = null;
       }
     }
 
@@ -758,6 +761,27 @@ function ViajePageInner() {
         uiRideRef.current.status !== "in_trip" &&
         !mayClear;
       if (keepingActive) {
+        const stuckTicket =
+          ticketHint ||
+          normalizeTicketKey(uiRideRef.current?.ticket_code) ||
+          undefined;
+        if (
+          stuckTicket &&
+          uiRideRef.current?.status === "matched" &&
+          uiRideRef.current?.driver_id
+        ) {
+          const fast = await fetchBuyerRecoverByTicket(stuckTicket);
+          if (!isStale() && fast.ok && fast.ride?.id) {
+            const incoming = fast.ride as RideRow;
+            if (
+              rideStatusRank(incoming.status) > rideStatusRank(uiRideRef.current!.status)
+            ) {
+              repinCanonicalRideId(incoming, rideIdRef, activeTicketRef);
+              applyServerRide(incoming, `${source}+recover-stuck`);
+              return;
+            }
+          }
+        }
         setSyncDebug(
           syncDebugForRow(
             uiRideRef.current,
@@ -857,6 +881,8 @@ function ViajePageInner() {
     if (ticketParam) {
       const ticket = normalizeTicketKey(ticketParam);
       urlTicketRef.current = ticket;
+      activeTicketRef.current = ticket;
+      pinActiveTicket(ticket);
       setRecoverTicketInput(ticket);
     }
     if (rideParam || ticketParam) {
@@ -929,6 +955,35 @@ function ViajePageInner() {
     const timer = setInterval(() => void refreshActiveRide("poll"), ms);
     return () => clearInterval(timer);
   }, [authError, ride?.status, refreshActiveRide]);
+
+  /** Driver accepted in DB but replica/sync can leave rider stuck on matched. */
+  useEffect(() => {
+    if (ride?.status !== "matched" || !ride.driver_id) return;
+    const ticket =
+      normalizeTicketKey(ride.ticket_code) ||
+      normalizeTicketKey(recoverTicketInput) ||
+      readPinnedTicket() ||
+      urlTicketRef.current ||
+      null;
+    if (!ticket) return;
+
+    let cancelled = false;
+    const bump = async () => {
+      const fast = await fetchBuyerRecoverByTicket(ticket);
+      if (cancelled || !fast.ok || !fast.ride?.id) return;
+      const incoming = fast.ride as RideRow;
+      if (rideStatusRank(incoming.status) <= rideStatusRank("matched")) return;
+      repinCanonicalRideId(incoming, rideIdRef, activeTicketRef);
+      applyServerRide(incoming, "accept-watch");
+    };
+
+    void bump();
+    const timer = window.setInterval(() => void bump(), 1_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [ride?.status, ride?.driver_id, ride?.ticket_code, recoverTicketInput, applyServerRide]);
 
   /** When UI shows in_trip but driver already completed, recover completed status quickly. */
   useEffect(() => {

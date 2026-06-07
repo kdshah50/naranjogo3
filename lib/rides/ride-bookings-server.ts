@@ -407,47 +407,98 @@ async function resolveCompletedRideRow(
   return { ...row, status: "completed" };
 }
 
+const EVENT_TYPE_TO_STATUS = new Map<string, RideBookingStatus>(
+  RIDE_EVENT_TYPE_STATUS.map(([eventType, status]) => [eventType, status]),
+);
+
+/** One query over the append-only log — fresher than ride_bookings.status on replica. */
+async function highestStatusFromEventLog(
+  supabase: SupabaseClient,
+  rideId: string,
+): Promise<RideBookingStatus | null> {
+  const { data, error } = await supabase
+    .from("ride_events")
+    .select("event_type, to_status")
+    .eq("ride_id", rideId)
+    .order("created_at", { ascending: false })
+    .limit(32);
+
+  if (error) {
+    console.error("[ride-bookings] highestStatusFromEventLog", error);
+    return null;
+  }
+
+  let best: RideBookingStatus | null = null;
+  let bestRank = -1;
+  for (const evt of data ?? []) {
+    const toStatus = String(evt.to_status ?? "").trim();
+    const mapped = EVENT_TYPE_TO_STATUS.get(String(evt.event_type ?? "").trim());
+    const status = (toStatus || mapped) as RideBookingStatus | undefined;
+    if (!status) continue;
+    const rank = rideStatusRank(status);
+    if (rank > bestRank) {
+      best = status;
+      bestRank = rank;
+    }
+  }
+  return best;
+}
+
+function mergeEventTruthRow(
+  supabase: SupabaseClient,
+  row: RideBookingRow,
+  bestStatus: RideBookingStatus,
+): Promise<RideBookingRow> {
+  if (bestStatus === "completed" || bestStatus === "cancelled") {
+    return resolveCompletedRideRow(supabase, { ...row, status: bestStatus });
+  }
+  return Promise.resolve({ ...row, status: bestStatus });
+}
+
 /**
- * Fast read truth: parallel ride_events probes (one round) — booking rows lag on replica.
+ * Fast read truth: ride_events log first, then typed probes — booking rows lag on replica.
  */
 export async function applyEventTruthToRide(
   supabase: SupabaseClient,
   row: RideBookingRow,
 ): Promise<RideBookingRow> {
-  const eventStatuses = await Promise.all(
-    RIDE_EVENT_TYPE_STATUS.map(async ([eventType, status]) => {
-      const { data } = await supabase
-        .from("ride_events")
-        .select("id")
-        .eq("ride_id", row.id)
-        .eq("event_type", eventType)
-        .limit(1)
-        .maybeSingle();
-      return data?.id ? status : null;
-    }),
-  );
-
   let bestStatus: RideBookingStatus = row.status;
   let bestRank = rideStatusRank(row.status);
-  for (const status of eventStatuses) {
-    if (!status) continue;
-    const rank = rideStatusRank(status);
+
+  const fromLog = await highestStatusFromEventLog(supabase, row.id);
+  if (fromLog) {
+    const rank = rideStatusRank(fromLog);
     if (rank > bestRank) {
-      bestStatus = status;
+      bestStatus = fromLog;
       bestRank = rank;
     }
   }
 
-  if (bestRank > rideStatusRank(row.status)) {
-    if (bestStatus === "completed" || bestStatus === "cancelled") {
-      return resolveCompletedRideRow(supabase, {
-        ...row,
-        status: bestStatus,
-      });
+  if (bestRank <= rideStatusRank(row.status)) {
+    const eventStatuses = await Promise.all(
+      RIDE_EVENT_TYPE_STATUS.map(async ([eventType, status]) => {
+        const { data } = await supabase
+          .from("ride_events")
+          .select("id")
+          .eq("ride_id", row.id)
+          .eq("event_type", eventType)
+          .limit(1)
+          .maybeSingle();
+        return data?.id ? status : null;
+      }),
+    );
+    for (const status of eventStatuses) {
+      if (!status) continue;
+      const rank = rideStatusRank(status);
+      if (rank > bestRank) {
+        bestStatus = status;
+        bestRank = rank;
+      }
     }
-    const fresh = await getRideById(supabase, row.id);
-    if (fresh && rideStatusRank(fresh.status) >= bestRank) return fresh;
-    return { ...row, status: bestStatus };
+  }
+
+  if (bestRank > rideStatusRank(row.status)) {
+    return mergeEventTruthRow(supabase, row, bestStatus);
   }
 
   if (row.status === "completed" || row.status === "cancelled") {
@@ -469,11 +520,7 @@ export async function getRideByIdFresh(
   const initial = await getRideById(supabase, rideId);
   if (initial) {
     const truth = await applyEventTruthToRide(supabase, initial);
-    if (
-      rideStatusRank(truth.status) > rideStatusRank(initial.status) ||
-      truth.status === "completed" ||
-      truth.status === "cancelled"
-    ) {
+    if (rideStatusRank(truth.status) >= rideStatusRank(initial.status)) {
       return truth;
     }
   }

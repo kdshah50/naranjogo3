@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { isSameUserId } from "@/lib/auth-server";
-import { getRideById } from "@/lib/rides/ride-bookings-server";
+import { applyEventTruthToRide, getRideByIdFresh } from "@/lib/rides/ride-bookings-server";
 import { ridesRouteGuard } from "@/lib/rides/ride-route-guard";
 import {
   encodeSseEvent,
@@ -32,7 +32,7 @@ export async function GET(
   const guard = await ridesRouteGuard(req);
   if (!guard.ok) return guard.response;
 
-  const ride = await getRideById(guard.supabase, trimmed);
+  const ride = await getRideByIdFresh(guard.supabase, trimmed, { attempts: 2, delayMs: 200 });
   if (!ride) {
     return new Response("Viaje no encontrado", { status: 404 });
   }
@@ -52,19 +52,22 @@ export async function GET(
     start(controller) {
       let channel: ReturnType<typeof subscribeRideBookingChanges> | null = null;
 
-      const push = (row: typeof ride) => {
+      const push = async (row: typeof ride) => {
         try {
-          controller.enqueue(encodeSseEvent({ ride: toClientRideRow(row) }));
+          const truth = await applyEventTruthToRide(guard.supabase, row);
+          controller.enqueue(encodeSseEvent({ ride: toClientRideRow(truth) }));
         } catch {
           /* stream closed */
         }
       };
 
-      push(ride);
+      void push(ride);
 
       channel = subscribeRideBookingChanges(guard.supabase, {
         filter: `id=eq.${trimmed}`,
-        onChange: push,
+        onChange: (row) => {
+          void push(row);
+        },
       });
 
       const keepalive = setInterval(() => {
