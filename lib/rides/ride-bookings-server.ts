@@ -503,21 +503,32 @@ export async function applyEventTruthToRide(
   supabase: SupabaseClient,
   row: RideBookingRow,
 ): Promise<RideBookingRow> {
-  const fromProbes = await resolveLifecycleStatusFromEventProbes(supabase, row.id);
-  if (fromProbes) {
-    if (rideStatusRank(fromProbes) >= rideStatusRank(row.status)) {
-      return mergeEventTruthRow(supabase, row, fromProbes);
-    }
-  }
-
   let bestStatus: RideBookingStatus = row.status;
   let bestRank = rideStatusRank(row.status);
 
-  const fromLog = await latestStatusFromEvents(supabase, row.id, { attempts: 6, delayMs: 250 });
+  const fromProbes = await resolveLifecycleStatusFromEventProbes(supabase, row.id);
+  if (fromProbes) {
+    const rank = rideStatusRank(fromProbes);
+    if (rank > bestRank) {
+      bestStatus = fromProbes;
+      bestRank = rank;
+    }
+  }
+
+  const fromLog = await getRideLifecycleStatusFromEvents(supabase, row.id);
   if (fromLog) {
-    const rank = rideStatusRank(fromLog as RideBookingStatus);
-    if (rank >= bestRank) {
-      bestStatus = fromLog as RideBookingStatus;
+    const rank = rideStatusRank(fromLog);
+    if (rank > bestRank) {
+      bestStatus = fromLog;
+      bestRank = rank;
+    }
+  }
+
+  const fromLatestLog = await latestStatusFromEvents(supabase, row.id, { attempts: 4, delayMs: 200 });
+  if (fromLatestLog) {
+    const rank = rideStatusRank(fromLatestLog as RideBookingStatus);
+    if (rank > bestRank) {
+      bestStatus = fromLatestLog as RideBookingStatus;
       bestRank = rank;
     }
   }

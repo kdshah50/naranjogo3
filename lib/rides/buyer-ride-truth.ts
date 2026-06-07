@@ -3,9 +3,9 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isSameUserId } from "@/lib/auth-server";
 import {
+  applyEventTruthToRide,
   getRideById,
   getRideByIdFresh,
-  resolveLifecycleStatusFromEventProbes,
   type RideBookingRow,
 } from "@/lib/rides/ride-bookings-server";
 import {
@@ -121,13 +121,8 @@ export async function getBuyerRideTruthState(
     fresh = best;
   }
 
-  const probeStatus = await resolveLifecycleStatusFromEventProbes(supabase, fresh.id, {
-    attempts: 8,
-    delayMs: 200,
-  });
-  if (probeStatus) {
-    fresh = { ...fresh, status: probeStatus };
-  }
+  const probeStatus = await applyEventTruthToRide(supabase, fresh);
+  fresh = probeStatus;
 
   const ride = withStatusCode(fresh) as RideBookingRow & {
     status_code: number;
