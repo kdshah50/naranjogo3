@@ -412,7 +412,7 @@ const EVENT_TYPE_TO_STATUS = new Map<string, RideBookingStatus>(
 );
 
 /** One query over the append-only log — fresher than ride_bookings.status on replica. */
-async function highestStatusFromEventLog(
+export async function getRideLifecycleStatusFromEvents(
   supabase: SupabaseClient,
   rideId: string,
 ): Promise<RideBookingStatus | null> {
@@ -465,10 +465,10 @@ export async function applyEventTruthToRide(
   let bestStatus: RideBookingStatus = row.status;
   let bestRank = rideStatusRank(row.status);
 
-  const fromLog = await highestStatusFromEventLog(supabase, row.id);
+  const fromLog = await getRideLifecycleStatusFromEvents(supabase, row.id);
   if (fromLog) {
     const rank = rideStatusRank(fromLog);
-    if (rank > bestRank) {
+    if (rank >= bestRank) {
       bestStatus = fromLog;
       bestRank = rank;
     }

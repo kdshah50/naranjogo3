@@ -15,19 +15,18 @@ const BUYER_VISIBLE = new Set([
 ]);
 
 /**
- * GET /api/rides/buyer/recover?ticket_code=NG-XXXXXXXX
- * GET /api/rides/buyer/recover?ride_id=uuid
- * Alias of buyer/status — event-log is source of truth.
+ * GET /api/rides/buyer/status?ticket_code=NG-…&ride_id=…
+ * Authoritative rider panel state — status from ride_events only.
  */
 export async function GET(req: NextRequest) {
   const guard = await ridesRouteGuard(req);
   if (!guard.ok) return guard.response;
 
   const ticketCode = req.nextUrl.searchParams.get("ticket_code")?.trim() ?? "";
-  const rideIdParam = req.nextUrl.searchParams.get("ride_id")?.trim() ?? "";
-  if (!ticketCode && !rideIdParam) {
+  const rideId = req.nextUrl.searchParams.get("ride_id")?.trim() ?? "";
+  if (!ticketCode && !rideId) {
     return NextResponse.json(
-      { error: "ticket_code or ride_id required", code: "missing_ticket" },
+      { error: "ticket_code or ride_id required", code: "missing_ref" },
       { status: 400 },
     );
   }
@@ -36,14 +35,15 @@ export async function GET(req: NextRequest) {
     const state = await getBuyerRideTruthState(guard.supabase, {
       sessionUserId: guard.userId,
       authPhone: guard.authPhone,
-      rideId: rideIdParam || null,
+      rideId: rideId || null,
       ticketCode: ticketCode || null,
     });
 
     if (!state?.ride?.id) {
       return NextResponse.json({
         ride: null,
-        ticket_code: ticketCode || null,
+        driver_public: null,
+        status_source: "ride_events",
         reason: "not_found",
       });
     }
@@ -51,19 +51,17 @@ export async function GET(req: NextRequest) {
     if (!BUYER_VISIBLE.has(state.ride.status)) {
       return NextResponse.json({
         ride: null,
-        ticket_code: ticketCode || null,
+        driver_public: null,
+        status_source: "ride_events",
         reason: `status_${state.ride.status}`,
       });
     }
 
-    return NextResponse.json({
-      ride: state.ride,
-      driver_public: state.driver_public,
-      ticket_code: ticketCode || state.ride.ticket_code,
-      status_source: state.status_source,
+    return NextResponse.json(state, {
+      headers: { "Cache-Control": "no-store, max-age=0" },
     });
   } catch (e) {
-    console.error("[rides/buyer/recover] GET", e);
-    return NextResponse.json({ error: "Recover failed", code: "recover_failed" }, { status: 500 });
+    console.error("[rides/buyer/status] GET", e);
+    return NextResponse.json({ error: "Status failed", code: "status_failed" }, { status: 500 });
   }
 }

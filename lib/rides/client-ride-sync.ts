@@ -78,28 +78,50 @@ export async function fetchDriverPanel(
   return { ok: true, payload };
 }
 
-/** Fast ticket / ride lookup for rider recover (event-hydrated, skips slow sync fallbacks). */
-export async function fetchBuyerRecoverByTicket(
-  ticketCode: string,
+export type BuyerRideTruthPayload = {
+  ride: RideStatusRow | null;
+  driver_public: RideDriverPublic | null;
+  status_source?: "ride_events";
+  reason?: string;
+};
+
+/** Authoritative rider state — lifecycle status from ride_events only. */
+export async function fetchBuyerRideStatus(
+  ticketCode?: string | null,
   rideId?: string | null,
-): Promise<
-  | { ok: true; ride: RideStatusRow | null }
-  | { ok: false; status: number }
-> {
+): Promise<{ ok: true; payload: BuyerRideTruthPayload } | { ok: false; status: number }> {
+  const qs = new URLSearchParams();
   const ticket = String(ticketCode ?? "").trim();
   const id = String(rideId ?? "").trim();
-  if (!ticket && !id) return { ok: false, status: 400 };
-  const qs = new URLSearchParams();
   if (ticket) qs.set("ticket_code", ticket);
   if (id) qs.set("ride_id", id);
-  const r = await fetch(`/api/rides/buyer/recover?${qs}&_=${Date.now()}`, {
+  if (!ticket && !id) return { ok: false, status: 400 };
+  const r = await fetch(`/api/rides/buyer/status?${qs}&_=${Date.now()}`, {
     credentials: "include",
     cache: "no-store",
     headers: { Accept: "application/json", "Cache-Control": "no-cache" },
   });
   if (!r.ok) return { ok: false, status: r.status };
-  const payload = (await r.json().catch(() => null)) as { ride?: RideStatusRow | null } | null;
-  return { ok: true, ride: payload?.ride ?? null };
+  const payload = (await r.json().catch(() => null)) as BuyerRideTruthPayload | null;
+  if (!payload) return { ok: false, status: r.status };
+  return { ok: true, payload };
+}
+
+/** Fast ticket / ride lookup for rider recover (event-hydrated, skips slow sync fallbacks). */
+export async function fetchBuyerRecoverByTicket(
+  ticketCode: string,
+  rideId?: string | null,
+): Promise<
+  | { ok: true; ride: RideStatusRow | null; driver_public?: RideDriverPublic | null }
+  | { ok: false; status: number }
+> {
+  const result = await fetchBuyerRideStatus(ticketCode, rideId);
+  if (!result.ok) return result;
+  return {
+    ok: true,
+    ride: result.payload.ride,
+    driver_public: result.payload.driver_public,
+  };
 }
 
 /** Fast ticket lookup for driver recover button (skips slow panel fallbacks). */
