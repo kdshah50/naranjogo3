@@ -455,6 +455,46 @@ function mergeEventTruthRow(
   return Promise.resolve({ ...row, status: bestStatus });
 }
 
+/** Highest lifecycle status proven by ride_events rows (authoritative over ride_bookings). */
+export async function resolveLifecycleStatusFromEventProbes(
+  supabase: SupabaseClient,
+  rideId: string,
+  opts?: { attempts?: number; delayMs?: number },
+): Promise<RideBookingStatus | null> {
+  const attempts = Math.min(Math.max(opts?.attempts ?? 8, 1), 12);
+  const delayMs = opts?.delayMs ?? 200;
+  const types = RIDE_EVENT_TYPE_STATUS.map(([t]) => t);
+
+  let best: RideBookingStatus | null = null;
+  let bestRank = -1;
+
+  for (let i = 0; i < attempts; i++) {
+    const { data, error } = await supabase
+      .from("ride_events")
+      .select("event_type")
+      .eq("ride_id", rideId)
+      .in("event_type", types);
+    if (error) {
+      console.error("[ride-bookings] resolveLifecycleStatusFromEventProbes", error);
+    } else {
+      const present = new Set(
+        (data ?? []).map((e) => String((e as { event_type: string }).event_type ?? "").trim()),
+      );
+      for (const [eventType, status] of RIDE_EVENT_TYPE_STATUS) {
+        if (!present.has(eventType)) continue;
+        const rank = rideStatusRank(status);
+        if (rank > bestRank) {
+          best = status;
+          bestRank = rank;
+        }
+      }
+    }
+    if (bestRank >= rideStatusRank("accepted")) return best;
+    if (i < attempts - 1) await sleepMs(delayMs);
+  }
+  return best;
+}
+
 /**
  * Fast read truth: ride_events log first, then typed probes — booking rows lag on replica.
  */
@@ -462,6 +502,11 @@ export async function applyEventTruthToRide(
   supabase: SupabaseClient,
   row: RideBookingRow,
 ): Promise<RideBookingRow> {
+  const fromProbes = await resolveLifecycleStatusFromEventProbes(supabase, row.id);
+  if (fromProbes && rideStatusRank(fromProbes) > rideStatusRank(row.status)) {
+    return mergeEventTruthRow(supabase, row, fromProbes);
+  }
+
   let bestStatus: RideBookingStatus = row.status;
   let bestRank = rideStatusRank(row.status);
 
@@ -474,7 +519,6 @@ export async function applyEventTruthToRide(
     }
   }
 
-  // Always probe every step — fromLog can stop at accepted while trip_started already exists.
   for (const [eventType, status] of RIDE_EVENT_TYPE_STATUS) {
     const exists = await hasRideEvent(supabase, row.id, eventType, { attempts: 4, delayMs: 150 });
     if (!exists) continue;

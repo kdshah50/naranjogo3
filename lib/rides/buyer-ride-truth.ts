@@ -2,7 +2,12 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isSameUserId } from "@/lib/auth-server";
-import { getRideById, getRideByIdFresh, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
+import {
+  getRideById,
+  getRideByIdFresh,
+  resolveLifecycleStatusFromEventProbes,
+  type RideBookingRow,
+} from "@/lib/rides/ride-bookings-server";
 import {
   listRideBookingsByTicket,
   resolveCanonicalRideByTicketForBuyer,
@@ -114,6 +119,14 @@ export async function getBuyerRideTruthState(
       }
     }
     fresh = best;
+  }
+
+  const probeStatus = await resolveLifecycleStatusFromEventProbes(supabase, fresh.id, {
+    attempts: 8,
+    delayMs: 200,
+  });
+  if (probeStatus && rideStatusRank(probeStatus) > rideStatusRank(fresh.status)) {
+    fresh = { ...fresh, status: probeStatus };
   }
 
   const ride = withStatusCode(fresh) as RideBookingRow & {
