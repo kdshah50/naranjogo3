@@ -1,13 +1,21 @@
 import { NextRequest } from "next/server";
 import { isSameUserId } from "@/lib/auth-server";
-import { applyEventTruthToRide, getRideByIdFresh } from "@/lib/rides/ride-bookings-server";
+import {
+  applyEventTruthToRide,
+  getRideById,
+  getRideByIdFresh,
+  statusFromRideEvent,
+} from "@/lib/rides/ride-bookings-server";
 import { ridesRouteGuard } from "@/lib/rides/ride-route-guard";
 import {
   encodeSseEvent,
   encodeSseKeepalive,
+  lifecyclePayloadFromEvent,
   sseResponse,
   subscribeRideBookingChanges,
+  subscribeRideEventInserts,
   toClientRideRow,
+  type RideStreamSsePayload,
 } from "@/lib/rides/ride-stream-server";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 
@@ -17,7 +25,7 @@ export const maxDuration = 60;
 
 /**
  * GET /api/rides/[id]/stream
- * Server-Sent Events: push ride row updates (Supabase Realtime on server + cookie auth).
+ * Uber/Didi-style SSE: push on ride_events INSERT (authoritative) + ride_bookings fallback.
  */
 export async function GET(
   req: NextRequest,
@@ -50,23 +58,48 @@ export async function GET(
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      let channel: ReturnType<typeof subscribeRideBookingChanges> | null = null;
+      let bookingChannel: ReturnType<typeof subscribeRideBookingChanges> | null = null;
+      let eventChannel: ReturnType<typeof subscribeRideEventInserts> | null = null;
 
-      const push = async (row: typeof ride) => {
+      const pushPayload = async (payload: RideStreamSsePayload) => {
         try {
-          const truth = await applyEventTruthToRide(guard.supabase, row);
-          controller.enqueue(encodeSseEvent({ ride: toClientRideRow(truth) }));
+          controller.enqueue(encodeSseEvent(payload));
         } catch {
           /* stream closed */
         }
       };
 
-      void push(ride);
+      const pushFromRow = async (row: typeof ride, lifecycle?: RideStreamSsePayload["lifecycle"]) => {
+        const truth = await applyEventTruthToRide(guard.supabase, row);
+        await pushPayload({
+          lifecycle,
+          ride: toClientRideRow(truth),
+        });
+      };
 
-      channel = subscribeRideBookingChanges(guard.supabase, {
+      void pushFromRow(ride);
+
+      bookingChannel = subscribeRideBookingChanges(guard.supabase, {
         filter: `id=eq.${trimmed}`,
         onChange: (row) => {
-          void push(row);
+          void pushFromRow(row);
+        },
+      });
+
+      eventChannel = subscribeRideEventInserts(guard.supabase, {
+        rideId: trimmed,
+        onInsert: (evt) => {
+          void (async () => {
+            const mapped = statusFromRideEvent(evt.event_type, evt.to_status);
+            if (!mapped) return;
+            const base = (await getRideById(guard.supabase, trimmed)) ?? ride;
+            const seed = { ...base, status: mapped };
+            const truth = await applyEventTruthToRide(guard.supabase, seed);
+            await pushPayload({
+              lifecycle: lifecyclePayloadFromEvent(evt.event_type, truth.status),
+              ride: toClientRideRow(truth),
+            });
+          })();
         },
       });
 
@@ -80,7 +113,8 @@ export async function GET(
 
       req.signal.addEventListener("abort", () => {
         clearInterval(keepalive);
-        if (channel) void guard.supabase.removeChannel(channel);
+        if (bookingChannel) void guard.supabase.removeChannel(bookingChannel);
+        if (eventChannel) void guard.supabase.removeChannel(eventChannel);
         try {
           controller.close();
         } catch {

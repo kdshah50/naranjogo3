@@ -62,7 +62,7 @@ export async function appendRideEvent(
     toStatus?: string | null;
     meta?: Record<string, unknown>;
   }
-): Promise<void> {
+): Promise<boolean> {
   const { error } = await supabase.from("ride_events").insert({
     ride_id: args.rideId,
     actor_id: args.actorId ?? null,
@@ -73,7 +73,9 @@ export async function appendRideEvent(
   });
   if (error) {
     console.error("[ride-bookings] appendRideEvent", error);
+    return false;
   }
+  return true;
 }
 
 async function ensureUniqueTicketCode(supabase: SupabaseClient): Promise<string> {
@@ -410,6 +412,18 @@ async function resolveCompletedRideRow(
 const EVENT_TYPE_TO_STATUS = new Map<string, RideBookingStatus>(
   RIDE_EVENT_TYPE_STATUS.map(([eventType, status]) => [eventType, status]),
 );
+
+/** Map a ride_events row to lifecycle status (SSE push + notify). */
+export function statusFromRideEvent(
+  eventType: string,
+  toStatus: string | null | undefined,
+): RideBookingStatus | null {
+  const explicit = String(toStatus ?? "").trim();
+  if (explicit && rideStatusRank(explicit as RideBookingStatus) >= 0) {
+    return explicit as RideBookingStatus;
+  }
+  return EVENT_TYPE_TO_STATUS.get(String(eventType ?? "").trim()) ?? null;
+}
 
 /** One query over the append-only log — fresher than ride_bookings.status on replica. */
 export async function getRideLifecycleStatusFromEvents(

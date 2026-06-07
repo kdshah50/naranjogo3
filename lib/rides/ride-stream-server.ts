@@ -2,6 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { RideBookingRow } from "@/lib/rides/ride-bookings-server";
+import { rideStatusToCode } from "@/lib/rides/ride-status-codes";
 
 /** Slim ride payload for /viaje and /conductor/viajes. */
 export function toClientRideRow(row: RideBookingRow) {
@@ -19,6 +20,18 @@ export function toClientRideRow(row: RideBookingRow) {
     updated_at: row.updated_at,
   };
 }
+
+/** Uber/Didi-style push: server saw a new ride_events row (authoritative lifecycle step). */
+export type RideLifecycleSsePayload = {
+  event_type: string;
+  to_status: string;
+  status_code: number;
+};
+
+export type RideStreamSsePayload = {
+  lifecycle?: RideLifecycleSsePayload;
+  ride: ReturnType<typeof toClientRideRow>;
+};
 
 export function encodeSseEvent(payload: unknown): Uint8Array {
   return new TextEncoder().encode(`data: ${JSON.stringify(payload)}\n\n`);
@@ -39,6 +52,15 @@ export function sseResponse(stream: ReadableStream<Uint8Array>): Response {
 }
 
 type RideChangeHandler = (row: RideBookingRow) => void;
+
+export type RideEventInsertRow = {
+  ride_id: string;
+  event_type: string;
+  to_status: string | null;
+  from_status: string | null;
+};
+
+type RideEventInsertHandler = (row: RideEventInsertRow) => void;
 
 /** Subscribe to ride_bookings changes; caller must removeChannel on abort. */
 export function subscribeRideBookingChanges(
@@ -62,4 +84,42 @@ export function subscribeRideBookingChanges(
     );
   void channel.subscribe();
   return channel;
+}
+
+/**
+ * Subscribe to ride_events INSERT — primary Uber/Didi-style lifecycle signal.
+ * Fires when driver accepts/arrives/starts/completes (append-only log).
+ */
+export function subscribeRideEventInserts(
+  supabase: SupabaseClient,
+  args: { rideId: string; onInsert: RideEventInsertHandler },
+): ReturnType<SupabaseClient["channel"]> {
+  const channel = supabase
+    .channel(`ride-events-${args.rideId}-${Date.now()}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "INSERT",
+        schema: "public",
+        table: "ride_events",
+        filter: `ride_id=eq.${args.rideId}`,
+      },
+      (payload) => {
+        const row = payload.new as RideEventInsertRow | null;
+        if (row?.ride_id && row.event_type) args.onInsert(row);
+      },
+    );
+  void channel.subscribe();
+  return channel;
+}
+
+export function lifecyclePayloadFromEvent(
+  eventType: string,
+  toStatus: string,
+): RideLifecycleSsePayload {
+  return {
+    event_type: eventType,
+    to_status: toStatus,
+    status_code: rideStatusToCode(toStatus),
+  };
 }

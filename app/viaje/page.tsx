@@ -667,7 +667,24 @@ function ViajePageInner() {
     onEvent: (payload) => {
       const seqAtEvent = refreshSeqRef.current;
       void (async () => {
-        let row = (payload as { ride?: RideRow }).ride;
+        const body = payload as {
+          lifecycle?: { to_status?: string; event_type?: string };
+          ride?: RideRow;
+        };
+        const lifecycleStatus = body.lifecycle?.to_status?.trim();
+        if (lifecycleStatus && uiRideRef.current?.id) {
+          const current = uiRideRef.current;
+          if (rideStatusRank(lifecycleStatus) > rideStatusRank(current.status)) {
+            applyTruthRide(
+              { ...current, status: lifecycleStatus },
+              null,
+              "SSE-lifecycle",
+              body.lifecycle?.event_type,
+            );
+          }
+        }
+
+        let row = body.ride;
         if (!row?.id) return;
         const { ride: truth, driver_public: truthDriver } = await fetchBuyerRideTruth(
           row.ticket_code,
@@ -682,7 +699,7 @@ function ViajePageInner() {
         }
       })();
     },
-    fallbackPollMs: liveRideId ? 4_000 : 8_000,
+    fallbackPollMs: liveRideId ? 2_000 : 8_000,
     onFallbackPoll: () => void refreshActiveRide("poll-backup"),
   });
 
@@ -754,7 +771,15 @@ function ViajePageInner() {
     const activeTrip =
       ride?.status &&
       (isBuyerActiveStatus(ride.status) || ride.status === "in_trip");
-    const ms = terminal ? 8_000 : activeTrip ? 700 : ride ? 2_000 : 5_000;
+    const ms = terminal
+      ? 8_000
+      : ride?.status === "arrived"
+        ? 400
+        : activeTrip
+          ? 700
+          : ride
+            ? 2_000
+            : 5_000;
     const timer = setInterval(() => void refreshActiveRide("poll"), ms);
     return () => clearInterval(timer);
   }, [authError, ride?.status, refreshActiveRide]);

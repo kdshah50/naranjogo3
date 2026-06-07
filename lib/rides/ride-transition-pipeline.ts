@@ -107,7 +107,7 @@ export async function commitRidePhaseTransition(
   }
   passed.push("R-SEQ");
 
-  await appendRideEvent(supabase, {
+  const eventAppended = await appendRideEvent(supabase, {
     rideId: args.ride.id,
     actorId: args.actorId,
     eventType: args.eventType,
@@ -120,7 +120,8 @@ export async function commitRidePhaseTransition(
     },
   });
 
-  const eventOk = await eventExistsForStep(supabase, args.ride.id, args.eventType);
+  const eventOk =
+    eventAppended || (await eventExistsForStep(supabase, args.ride.id, args.eventType));
   if (eventOk) passed.push("R-EVT");
   else failed.push("R-EVT");
 
@@ -139,7 +140,8 @@ export async function commitRidePhaseTransition(
       : args.ride);
 
   let notifyOk = false;
-  if (postCommitted && (eventOk || postCommitted)) {
+  // WhatsApp follows POST commit (Uber/Didi): deep link opens /viaje; UI catches up via ride_events SSE.
+  if (postCommitted) {
     await emitRidePhaseNotifications(supabase, {
       ride: notifyRow,
       phase: args.phase,
