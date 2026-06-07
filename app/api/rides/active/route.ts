@@ -26,7 +26,7 @@ async function verifyDriverActiveTrips(
   if (rows.length === 0) return [];
   const verified = await Promise.all(
     rows.map(async (row) => {
-      const fresh = await getRideById(supabase, row.id);
+      const fresh = await getRideByIdFresh(supabase, row.id);
       if (!fresh || !DRIVER_OPEN_STATUSES.has(fresh.status)) return null;
       return fresh;
     }),

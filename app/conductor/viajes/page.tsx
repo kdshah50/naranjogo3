@@ -312,9 +312,20 @@ function ConductorViajesInner() {
     [mergeIncomingDriverTrip],
   );
 
-  /** Authoritative row by id — list/panel endpoints can lag behind POST. */
+  /** Authoritative row by id — event-truth first, GET by id can lag. */
   const refreshTripById = useCallback(
     async (rideId: string) => {
+      const ticket = readDriverActiveTicket() || undefined;
+      const fast = await fetchDriverRecoverByTicket(ticket ?? "", rideId);
+      if (fast.ok && fast.trips.length > 0) {
+        const row = fast.trips[0] as RideRow;
+        if (isDriverActiveTrip(row)) {
+          setTrips((prev) => mergeIncomingDriverTrip(prev, row));
+        } else {
+          setTrips((prev) => prev.filter((t) => t.id !== rideId));
+        }
+        return;
+      }
       const row = await fetchRideRowById<RideRow>(rideId);
       if (!row) return;
       if (isDriverActiveTrip(row)) {
@@ -606,7 +617,7 @@ function ConductorViajesInner() {
       completedTicketLatchRef.current &&
         Date.now() < completedTicketLatchRef.current.until,
     );
-    if (candidates.length === 0 && !skipActiveFallback) {
+    if (candidates.length === 0 && !skipActiveFallback && !ticketHint && !rideIdHint) {
       const activeFallback = filterDriverPanelTrips(
         (await fetchActiveDriverTrips()) as RideRow[],
         hideTickets,
@@ -641,7 +652,17 @@ function ConductorViajesInner() {
       if (urlTicketRef.current) urlTicketRef.current = null;
       setCompletedNotice(null);
       setPanelError(null);
-      applyServerTrips(candidates, source);
+      const ticketForTruth = normalizeTicketKey(top.ticket_code ?? ticketHint ?? "");
+      const truthResult = await fetchDriverRecoverByTicket(
+        ticketForTruth || "",
+        top.id ?? rideIdHint,
+      );
+      if (gen !== syncGenRef.current) return;
+      if (truthResult.ok && truthResult.trips.length > 0) {
+        applyServerTrips([truthResult.trips[0] as RideRow], `${source}+events`);
+      } else {
+        applyServerTrips(candidates, source);
+      }
     }
 
     if (panel.driver) {
@@ -653,8 +674,6 @@ function ConductorViajesInner() {
         setDriverApproved(false);
       }
     }
-    await verifyAndSetTrips(candidates, source, gen);
-
     setCanonicalUserId(panel.canonical_user_id ?? panel.driver?.user_id ?? null);
     setSessionUserId(panel.session_user_id ?? null);
     if (!panel.driver?.is_active_driver && panel.driver !== null) {
@@ -671,7 +690,6 @@ function ConductorViajesInner() {
       setPanelError(null);
     }
   }, [
-    verifyAndSetTrips,
     applyServerTrips,
     mergeDriverOnline,
     rememberApprovedDriver,

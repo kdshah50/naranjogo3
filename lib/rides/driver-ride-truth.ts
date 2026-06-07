@@ -55,7 +55,12 @@ export async function getDriverRideTruthState(
     status_code: number;
   };
 
-  if (!DRIVER_ACTIVE.has(ride.status)) return null;
+  if (!DRIVER_ACTIVE.has(ride.status)) {
+    if (ride.status === "completed" || ride.status === "cancelled") {
+      return { ride, trips: [ride], status_source: "ride_events" };
+    }
+    return null;
+  }
 
   return {
     ride,

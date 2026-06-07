@@ -8,6 +8,7 @@ import {
   getRideById,
   getRideByIdFresh,
   type RideBookingRow,
+  type RideBookingStatus,
 } from "@/lib/rides/ride-bookings-server";
 import { commitRidePhaseTransition } from "@/lib/rides/ride-transition-pipeline";
 import {
@@ -244,6 +245,70 @@ async function updateRideStatus(
   return (data as RideBookingRow) ?? null;
 }
 
+const STATUS_CHAIN = [
+  "requested",
+  "matched",
+  "accepted",
+  "arrived",
+  "in_trip",
+  "completed",
+] as const;
+
+/** Event-hydrated read — gates POST accept/arrive/start/complete. */
+async function getRideForTransition(
+  supabase: SupabaseClient,
+  rideId: string,
+): Promise<RideBookingRow | null> {
+  return getRideByIdFresh(supabase, rideId, { attempts: 4, delayMs: 200 });
+}
+
+/**
+ * Advance ride_bookings toward target, walking the replica forward when it lags
+ * behind ride_events (common on Supabase read replicas).
+ */
+async function transitionRideStatus(
+  supabase: SupabaseClient,
+  rideId: string,
+  targetStatus: RideBookingStatus,
+  effectiveStatus: RideBookingStatus,
+  patch: Record<string, unknown> = {},
+): Promise<RideBookingRow | null> {
+  if (effectiveStatus === targetStatus) {
+    return getRideForTransition(supabase, rideId);
+  }
+
+  const targetIdx = STATUS_CHAIN.indexOf(targetStatus as (typeof STATUS_CHAIN)[number]);
+  if (targetIdx < 0) return null;
+
+  let raw = await getRideById(supabase, rideId);
+  if (!raw) return null;
+
+  for (let step = 0; step < 6; step++) {
+    if (raw.status === targetStatus) return raw;
+
+    const curIdx = STATUS_CHAIN.indexOf(raw.status as (typeof STATUS_CHAIN)[number]);
+    if (curIdx < 0 || curIdx >= targetIdx) break;
+
+    const next = STATUS_CHAIN[curIdx + 1];
+    const stepPatch =
+      next === targetStatus ? { status: targetStatus, ...patch } : { status: next };
+    const updated = await updateRideStatus(supabase, rideId, raw.status, stepPatch);
+    if (updated) {
+      raw = updated;
+      continue;
+    }
+
+    const reread = await getRideById(supabase, rideId);
+    if (!reread) break;
+    if (reread.status === raw.status) break;
+    raw = reread;
+  }
+
+  const fresh = await getRideForTransition(supabase, rideId);
+  if (fresh?.status === targetStatus) return fresh;
+  return null;
+}
+
 export async function userCanAccessRide(
   supabase: SupabaseClient,
   userId: string,
@@ -275,7 +340,7 @@ export async function acceptRide(
   supabase: SupabaseClient,
   args: { rideId: string; driverUserId: string; authPhone?: string | null }
 ): Promise<TripResult> {
-  const ride = await getRideById(supabase, args.rideId);
+  const ride = await getRideForTransition(supabase, args.rideId);
   if (!ride) return { ok: false, error: "Viaje no encontrado" };
   const accountOpts = { authPhone: args.authPhone };
   if (!(await userIsDriverForRide(supabase, args.driverUserId, ride, accountOpts))) {
@@ -292,19 +357,9 @@ export async function acceptRide(
     };
   }
 
-  let updated = await updateRideStatus(supabase, ride.id, ride.status, { status: "accepted" });
+  let updated = await transitionRideStatus(supabase, ride.id, "accepted", ride.status);
   if (!updated) {
-    const { data: retry } = await supabase
-      .from("ride_bookings")
-      .update({ status: "accepted", updated_at: new Date().toISOString() })
-      .eq("id", ride.id)
-      .in("status", ["matched"])
-      .select("*")
-      .maybeSingle();
-    updated = (retry as RideBookingRow) ?? null;
-  }
-  if (!updated) {
-    const fresh = await getRideById(supabase, ride.id);
+    const fresh = await getRideForTransition(supabase, ride.id);
     if (fresh?.status === "accepted") {
       updated = fresh;
     } else {
@@ -319,7 +374,7 @@ export async function acceptRide(
       keepId: updated.id,
     });
   }
-  const freshAfter = await getRideById(supabase, updated.id);
+  const freshAfter = await getRideForTransition(supabase, updated.id);
   if (freshAfter) updated = freshAfter;
 
   const pipeline = await commitRidePhaseTransition(supabase, {
@@ -339,18 +394,25 @@ export async function arriveAtPickup(
   supabase: SupabaseClient,
   args: { rideId: string; driverUserId: string; authPhone?: string | null }
 ): Promise<TripResult> {
-  const ride = await getRideById(supabase, args.rideId);
+  const ride = await getRideForTransition(supabase, args.rideId);
   if (!ride) return { ok: false, error: "Viaje no encontrado" };
   const accountOpts = { authPhone: args.authPhone };
   if (!(await userIsDriverForRide(supabase, args.driverUserId, ride, accountOpts))) {
     return { ok: false, error: "No autorizado", code: "forbidden" };
   }
+  if (ride.status === "arrived") {
+    return { ok: true, ride };
+  }
   if (!canTransitionRideStatus(ride.status, "arrived")) {
     return { ok: false, error: "No se puede marcar llegada ahora", code: "invalid_state" };
   }
 
-  const updated = await updateRideStatus(supabase, ride.id, "accepted", { status: "arrived" });
-  if (!updated) return { ok: false, error: "No se pudo marcar llegada" };
+  const updated = await transitionRideStatus(supabase, ride.id, "arrived", ride.status);
+  if (!updated) {
+    const fresh = await getRideForTransition(supabase, ride.id);
+    if (fresh?.status === "arrived") return { ok: true, ride: fresh };
+    return { ok: false, error: "No se pudo marcar llegada" };
+  }
 
   if (updated.driver_id) {
     await cancelDuplicateOpenRowsForTicket(supabase, {
@@ -377,11 +439,14 @@ export async function startTrip(
   supabase: SupabaseClient,
   args: { rideId: string; driverUserId: string; ticketCode: string; authPhone?: string | null }
 ): Promise<TripResult> {
-  const ride = await getRideById(supabase, args.rideId);
+  const ride = await getRideForTransition(supabase, args.rideId);
   if (!ride) return { ok: false, error: "Viaje no encontrado" };
   const accountOpts = { authPhone: args.authPhone };
   if (!(await userIsDriverForRide(supabase, args.driverUserId, ride, accountOpts))) {
     return { ok: false, error: "No autorizado", code: "forbidden" };
+  }
+  if (ride.status === "in_trip") {
+    return { ok: true, ride };
   }
   if (!canTransitionRideStatus(ride.status, "in_trip")) {
     return { ok: false, error: "No se puede iniciar el viaje ahora", code: "invalid_state" };
@@ -394,11 +459,14 @@ export async function startTrip(
   }
 
   const now = new Date().toISOString();
-  const updated = await updateRideStatus(supabase, ride.id, "arrived", {
-    status: "in_trip",
+  const updated = await transitionRideStatus(supabase, ride.id, "in_trip", ride.status, {
     trip_started_at: now,
   });
-  if (!updated) return { ok: false, error: "No se pudo iniciar el viaje" };
+  if (!updated) {
+    const fresh = await getRideForTransition(supabase, ride.id);
+    if (fresh?.status === "in_trip") return { ok: true, ride: fresh };
+    return { ok: false, error: "No se pudo iniciar el viaje" };
+  }
 
   if (updated.driver_id) {
     await cancelDuplicateOpenRowsForTicket(supabase, {
@@ -426,16 +494,28 @@ export async function completeTrip(
   supabase: SupabaseClient,
   args: { rideId: string; driverUserId: string; finalTotalMxnCents?: number; authPhone?: string | null }
 ): Promise<TripResult> {
-  const ride = await getRideById(supabase, args.rideId);
+  let ride = await getRideForTransition(supabase, args.rideId);
   if (!ride) return { ok: false, error: "Viaje no encontrado" };
   const accountOpts = { authPhone: args.authPhone };
   if (!(await userIsDriverForRide(supabase, args.driverUserId, ride, accountOpts))) {
     return { ok: false, error: "No autorizado", code: "forbidden" };
   }
+  if (ride.status === "completed") {
+    return { ok: true, ride };
+  }
   if (!canTransitionRideStatus(ride.status, "completed")) {
     return { ok: false, error: "No se puede completar el viaje ahora", code: "invalid_state" };
   }
   if (!ride.driver_id) return { ok: false, error: "Sin conductor asignado" };
+
+  if (ride.status !== "in_trip") {
+    const caughtUp = await transitionRideStatus(supabase, ride.id, "in_trip", ride.status);
+    ride = caughtUp ?? (await getRideForTransition(supabase, ride.id));
+    if (!ride || (ride.status !== "in_trip" && ride.status !== "completed")) {
+      return { ok: false, error: "No se puede completar el viaje ahora", code: "invalid_state" };
+    }
+    if (ride.status === "completed") return { ok: true, ride };
+  }
 
   const finalTotal = Math.round(
     Number(args.finalTotalMxnCents ?? ride.estimated_total_mxn_cents)
@@ -480,26 +560,20 @@ export async function completeTrip(
     if (!cred.ok) return { ok: false, error: cred.error };
   }
 
-  const { data: updated, error } = await supabase
-    .from("ride_bookings")
-    .update({
-      status: "completed",
-      final_total_mxn_cents: finalTotal,
-      commission_mxn_cents: commission,
-      trip_ended_at: now,
-      updated_at: now,
-    })
-    .eq("id", ride.id)
-    .eq("status", "in_trip")
-    .select("*")
-    .maybeSingle();
-
-  if (error || !updated) {
-    console.error("[ride-trip] complete update", error);
-    return { ok: false, error: "No se pudo completar el viaje" };
+  let completed = await transitionRideStatus(supabase, ride.id, "completed", "in_trip", {
+    final_total_mxn_cents: finalTotal,
+    commission_mxn_cents: commission,
+    trip_ended_at: now,
+  });
+  if (!completed) {
+    const fresh = await getRideForTransition(supabase, ride.id);
+    if (fresh?.status === "completed") {
+      completed = fresh;
+    } else {
+      console.error("[ride-trip] complete update failed");
+      return { ok: false, error: "No se pudo completar el viaje" };
+    }
   }
-
-  const completed = updated as RideBookingRow;
 
   if (completed.driver_id) {
     await cancelDuplicateOpenRowsForTicket(supabase, {
