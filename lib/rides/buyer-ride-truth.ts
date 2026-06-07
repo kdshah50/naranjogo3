@@ -92,7 +92,7 @@ export async function getBuyerRideTruthState(
   if (!base?.id) return null;
 
   const fresh =
-    (await getRideByIdFresh(supabase, base.id, { attempts: 5, delayMs: 200 })) ?? base;
+    (await getRideByIdFresh(supabase, base.id, { attempts: 6, delayMs: 250 })) ?? base;
   const ride = withStatusCode(fresh) as RideBookingRow & {
     status_code: number;
   };

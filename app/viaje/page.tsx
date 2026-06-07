@@ -283,15 +283,7 @@ async function fetchBuyerRideTruth(
     }
     return { ride: null, driver_public: null, httpStatus: 200 };
   }
-  const httpStatus = result.status;
-  const id = String(rideId ?? "").trim();
-  if (httpStatus === 404 && id) {
-    const direct = await fetchRideRowById<RideRow>(id);
-    if (direct?.id) {
-      return { ride: direct, driver_public: null, httpStatus: 200 };
-    }
-  }
-  return { ride: null, driver_public: null, httpStatus };
+  return { ride: null, driver_public: null, httpStatus: result.status };
 }
 
 export default function ViajePage() {
@@ -747,8 +739,10 @@ function ViajePageInner() {
         else {
           setSessionPhone(String(d.user.phone ?? "").trim() || null);
           void refreshActiveRide("mount");
-          window.setTimeout(() => void refreshActiveRide("mount-retry"), 800);
-          window.setTimeout(() => void refreshActiveRide("mount-retry"), 2500);
+          window.setTimeout(() => void refreshActiveRide("mount-retry"), 400);
+          window.setTimeout(() => void refreshActiveRide("mount-retry"), 1200);
+          window.setTimeout(() => void refreshActiveRide("mount-retry"), 3000);
+          window.setTimeout(() => void refreshActiveRide("mount-retry"), 6000);
         }
       })
       .catch(() => setAuthError(t.sessionError));

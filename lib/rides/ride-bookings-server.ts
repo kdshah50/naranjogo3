@@ -465,7 +465,7 @@ export async function applyEventTruthToRide(
   let bestStatus: RideBookingStatus = row.status;
   let bestRank = rideStatusRank(row.status);
 
-  const fromLog = await latestStatusFromEvents(supabase, row.id, { attempts: 5, delayMs: 200 });
+  const fromLog = await latestStatusFromEvents(supabase, row.id, { attempts: 6, delayMs: 250 });
   if (fromLog) {
     const rank = rideStatusRank(fromLog as RideBookingStatus);
     if (rank >= bestRank) {
@@ -474,26 +474,14 @@ export async function applyEventTruthToRide(
     }
   }
 
-  if (bestRank <= rideStatusRank(row.status)) {
-    const eventStatuses = await Promise.all(
-      RIDE_EVENT_TYPE_STATUS.map(async ([eventType, status]) => {
-        const { data } = await supabase
-          .from("ride_events")
-          .select("id")
-          .eq("ride_id", row.id)
-          .eq("event_type", eventType)
-          .limit(1)
-          .maybeSingle();
-        return data?.id ? status : null;
-      }),
-    );
-    for (const status of eventStatuses) {
-      if (!status) continue;
-      const rank = rideStatusRank(status);
-      if (rank > bestRank) {
-        bestStatus = status;
-        bestRank = rank;
-      }
+  // Always probe every step — fromLog can stop at accepted while trip_started already exists.
+  for (const [eventType, status] of RIDE_EVENT_TYPE_STATUS) {
+    const exists = await hasRideEvent(supabase, row.id, eventType, { attempts: 4, delayMs: 150 });
+    if (!exists) continue;
+    const rank = rideStatusRank(status);
+    if (rank > bestRank) {
+      bestStatus = status;
+      bestRank = rank;
     }
   }
 

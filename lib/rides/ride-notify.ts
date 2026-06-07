@@ -3,6 +3,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { formatMxnFromCents } from "@/lib/rides/ride-pricing";
 import { applyEventTruthToRide, getRideById, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
+import { rideStatusRank } from "@/lib/rides/ride-status-merge";
 import { getPublicAppUrl } from "@/lib/app-url";
 import { sendWhatsAppToE164Digits, isTwilioWhatsAppConfigured } from "@/lib/twilio";
 import { e164DigitsForWhatsAppRecipient } from "@/lib/phone";
@@ -386,11 +387,22 @@ export async function emitRidePhaseNotifications(
   },
 ): Promise<void> {
   try {
+    const phaseStatus: Record<RideNotifyPhase, RideBookingRow["status"]> = {
+      accepted: "accepted",
+      arrived: "arrived",
+      in_trip: "in_trip",
+      completed: "completed",
+    };
     const base = (await getRideById(supabase, args.ride.id)) ?? args.ride;
     const fresh = await applyEventTruthToRide(supabase, base);
+    const phaseSt = phaseStatus[args.phase];
+    const rideForNotify =
+      rideStatusRank(fresh.status) >= rideStatusRank(phaseSt)
+        ? fresh
+        : { ...fresh, status: phaseSt };
     await sendRidePhaseWhatsAppPair(supabase, {
       ...args,
-      ride: fresh,
+      ride: rideForNotify,
     });
   } catch (e) {
     console.error("[ride-notify] emitRidePhaseNotifications", args.phase, e);

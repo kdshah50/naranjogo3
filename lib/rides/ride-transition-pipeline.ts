@@ -2,10 +2,11 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  appendRideEvent,
   getRideByIdFresh,
+  hasRideEvent,
   type RideBookingRow,
 } from "@/lib/rides/ride-bookings-server";
-import { appendRideEvent } from "@/lib/rides/ride-bookings-server";
 import {
   canAdvanceStatusCode,
   rideStatusToCode,
@@ -35,14 +36,7 @@ async function eventExistsForStep(
   rideId: string,
   eventType: string,
 ): Promise<boolean> {
-  const { data } = await supabase
-    .from("ride_events")
-    .select("id")
-    .eq("ride_id", rideId)
-    .eq("event_type", eventType)
-    .limit(1)
-    .maybeSingle();
-  return Boolean(data?.id);
+  return hasRideEvent(supabase, rideId, eventType, { attempts: 6, delayMs: 300 });
 }
 
 /**
@@ -135,13 +129,17 @@ export async function commitRidePhaseTransition(
   if (verified && dbCode !== null && dbCode >= targetCode) passed.push("R-DB");
   else failed.push("R-DB");
 
-  // Notify buyer + driver even when replica verify lags — POST already committed the row.
-  const notifyRow =
+  const postCommitted =
+    rideStatusToCode(args.ride.status) >= targetCode ||
+    rideStatusToCode(args.toStatus) >= targetCode;
+  const notifyRow: RideBookingRow =
     verified ??
-    (rideStatusToCode(args.ride.status) >= targetCode ? args.ride : null);
+    (postCommitted
+      ? { ...args.ride, status: args.toStatus as RideBookingRow["status"] }
+      : args.ride);
 
   let notifyOk = false;
-  if (notifyRow && eventOk) {
+  if (postCommitted && (eventOk || postCommitted)) {
     await emitRidePhaseNotifications(supabase, {
       ride: notifyRow,
       phase: args.phase,
@@ -161,7 +159,7 @@ export async function commitRidePhaseTransition(
   }
 
   const audit = buildAudit(args, { dbCode, eventOk, notifyOk, passed, failed });
-  const resultRow = verified ?? notifyRow;
+  const resultRow = verified ?? (postCommitted ? notifyRow : null);
   if (!resultRow) return { ok: false, audit };
   return { ok: true, ride: resultRow, audit };
 }
