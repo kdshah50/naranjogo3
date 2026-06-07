@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ridesRouteGuard } from "@/lib/rides/ride-route-guard";
 import {
   getRideByIdFresh,
+  hasRideEvent,
   hydrateRideFromEvents,
   type RideBookingRow,
 } from "@/lib/rides/ride-bookings-server";
@@ -41,8 +42,17 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const fresh = (await getRideByIdFresh(guard.supabase, canonical.id)) ?? canonical;
-    const ride = await hydrateRideFromEvents(guard.supabase, fresh);
+    const fresh = (await getRideByIdFresh(guard.supabase, canonical.id, { attempts: 4, delayMs: 350 })) ?? canonical;
+    let ride = await hydrateRideFromEvents(guard.supabase, fresh);
+    if (
+      ride.status !== "completed" &&
+      ride.status !== "cancelled" &&
+      (await hasRideEvent(guard.supabase, canonical.id, "trip_completed", { attempts: 8, delayMs: 250 }))
+    ) {
+      ride = { ...ride, status: "completed" };
+      const completedFresh = await getRideByIdFresh(guard.supabase, canonical.id, { attempts: 3, delayMs: 300 });
+      if (completedFresh?.status === "completed") ride = completedFresh;
+    }
 
     if (!BUYER_OPEN.has(ride.status) && ride.status !== "completed" && ride.status !== "cancelled") {
       return NextResponse.json({

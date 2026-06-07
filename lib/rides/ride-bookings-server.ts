@@ -359,6 +359,12 @@ export async function hydrateRideFromEvents(
   supabase: SupabaseClient,
   row: RideBookingRow,
 ): Promise<RideBookingRow> {
+  if (row.status !== "completed" && row.status !== "cancelled") {
+    if (await hasRideEvent(supabase, row.id, "trip_completed", { attempts: 10, delayMs: 350 })) {
+      return resolveCompletedRideRow(supabase, row);
+    }
+  }
+
   const fromEvents = await latestStatusFromEvents(supabase, row.id);
   if (!fromEvents || rideStatusRank(fromEvents) <= rideStatusRank(row.status)) {
     return row;
@@ -366,14 +372,7 @@ export async function hydrateRideFromEvents(
 
   // Terminal status from events — re-read booking row for final_total / trip_ended_at.
   if (fromEvents === "completed" || fromEvents === "cancelled") {
-    for (let i = 0; i < 6; i++) {
-      const fresh = await getRideById(supabase, row.id);
-      if (fresh && rideStatusRank(fresh.status) >= rideStatusRank(fromEvents)) {
-        return fresh;
-      }
-      if (i < 5) await sleepMs(500);
-    }
-    return { ...row, status: fromEvents as RideBookingRow["status"] };
+    return resolveCompletedRideRow(supabase, { ...row, status: fromEvents as RideBookingRow["status"] });
   }
 
   return { ...row, status: fromEvents as RideBookingRow["status"] };
@@ -381,6 +380,41 @@ export async function hydrateRideFromEvents(
 
 function sleepMs(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Probe ride_events for a lifecycle step — booking rows can lag minutes on replica. */
+export async function hasRideEvent(
+  supabase: SupabaseClient,
+  rideId: string,
+  eventType: string,
+  opts?: { attempts?: number; delayMs?: number },
+): Promise<boolean> {
+  const attempts = Math.min(Math.max(opts?.attempts ?? 8, 1), 16);
+  const delayMs = opts?.delayMs ?? 300;
+  for (let i = 0; i < attempts; i++) {
+    const { data } = await supabase
+      .from("ride_events")
+      .select("id")
+      .eq("ride_id", rideId)
+      .eq("event_type", eventType)
+      .limit(1)
+      .maybeSingle();
+    if (data?.id) return true;
+    if (i < attempts - 1) await sleepMs(delayMs);
+  }
+  return false;
+}
+
+async function resolveCompletedRideRow(
+  supabase: SupabaseClient,
+  row: RideBookingRow,
+): Promise<RideBookingRow> {
+  for (let i = 0; i < 6; i++) {
+    const fresh = await getRideById(supabase, row.id);
+    if (fresh?.status === "completed" || fresh?.status === "cancelled") return fresh;
+    if (i < 5) await sleepMs(400);
+  }
+  return { ...row, status: "completed" };
 }
 
 /**
@@ -412,6 +446,11 @@ export async function getRideByIdFresh(
       }
     }
     if (i < attempts - 1) await sleepMs(delayMs);
+  }
+  if (best && best.status === "in_trip") {
+    if (await hasRideEvent(supabase, rideId, "trip_completed", { attempts: 6, delayMs: 300 })) {
+      return resolveCompletedRideRow(supabase, best);
+    }
   }
   return best;
 }

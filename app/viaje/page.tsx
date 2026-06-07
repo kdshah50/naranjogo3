@@ -465,6 +465,14 @@ function ViajePageInner() {
       urlTicketRef.current || activeTicketRef.current || readPinnedTicket() || undefined;
     // Ticket + event hydration beats stale ride_id pins from WhatsApp deep links.
     const syncRideId = ticketHint ? undefined : pinnedId ?? undefined;
+    const awaitingComplete = uiRideRef.current?.status === "in_trip";
+    if (awaitingComplete && ticketHint && (source === "poll" || source === "poll-backup")) {
+      const fast = await fetchBuyerRecoverByTicket(ticketHint);
+      if (!isStale() && fast.ok && fast.ride?.id && isTerminalRideStatus(fast.ride.status)) {
+        applyServerRide(fast.ride as RideRow, `${source}+complete-fast`);
+        return;
+      }
+    }
     const skipDismissed =
       hadUrlRideParamsRef.current &&
       (source === "mount" || source === "mount-retry");
@@ -693,6 +701,16 @@ function ViajePageInner() {
         return;
       }
       const drop = debugMeta?.drop_reason ?? null;
+      if (
+        (drop?.startsWith("verify:completed") || drop === "dismissed:completed") &&
+        ticketHint
+      ) {
+        const fast = await fetchBuyerRecoverByTicket(ticketHint);
+        if (!isStale() && fast.ok && fast.ride?.id && isTerminalRideStatus(fast.ride.status)) {
+          applyServerRide(fast.ride as RideRow, `${source}+completed`, undefined, drop);
+          return;
+        }
+      }
       const mayClear =
         source === "clear" ||
         source === "cancel" ||
@@ -741,8 +759,25 @@ function ViajePageInner() {
       pinActiveTicket(ticket);
       const fast = await fetchBuyerRecoverByTicket(ticket);
       if (fast.ok && fast.ride?.id) {
-        repinCanonicalRideId(fast.ride as RideRow, rideIdRef, activeTicketRef);
-        applyServerRide(fast.ride as RideRow, "recover");
+        let row = fast.ride as RideRow;
+        if (row.status === "in_trip") {
+          const direct = await fetchRideRowById<RideRow>(row.id);
+          if (direct?.id && isTerminalRideStatus(direct.status)) {
+            row = direct;
+          } else {
+            await new Promise((r) => setTimeout(r, 600));
+            const retry = await fetchBuyerRecoverByTicket(ticket);
+            if (
+              retry.ok &&
+              retry.ride?.id &&
+              rideStatusRank(retry.ride.status) > rideStatusRank(row.status)
+            ) {
+              row = retry.ride as RideRow;
+            }
+          }
+        }
+        repinCanonicalRideId(row, rideIdRef, activeTicketRef);
+        applyServerRide(row, "recover");
         setRecoverBusy(false);
         return;
       }
