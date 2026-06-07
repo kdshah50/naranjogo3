@@ -509,14 +509,16 @@ function ConductorViajesInner() {
     );
     const ticketHint =
       urlTicketRef.current || readDriverActiveTicket() || undefined;
+    const rideIdHint =
+      pinnedRideIdRef.current ?? readDriverActiveRideId() ?? undefined;
     const pollLike =
       source === "poll" ||
       source === "poll-backup" ||
       source === "SSE" ||
       source === "focus" ||
       source === "visibility";
-    if (ticketHint && pollLike) {
-      const fast = await fetchDriverRecoverByTicket(ticketHint);
+    if ((ticketHint || rideIdHint) && pollLike) {
+      const fast = await fetchDriverRecoverByTicket(ticketHint ?? "", rideIdHint);
       if (gen !== syncGenRef.current) return;
       if (fast.ok && fast.trips.length > 0) {
         const incoming = fast.trips[0] as RideRow;
@@ -559,8 +561,10 @@ function ConductorViajesInner() {
       }
       if (panelResult.status === 404) {
         setPanelError(t.ridesDisabled);
-        setDriverApproved(false);
-        driverApprovedRef.current = false;
+        if (tripsRef.current.length === 0) {
+          setDriverApproved(false);
+          driverApprovedRef.current = false;
+        }
       } else if (panelResult.status === 401) {
         setPanelError(t.panelLoadFailed);
       } else {

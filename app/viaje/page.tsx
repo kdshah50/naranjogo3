@@ -263,19 +263,32 @@ const SYNC_DISCOVERY_SOURCES = new Set([
   "post-request",
 ]);
 
-/** Authoritative rider read — ride_events only (never lagging ride_bookings lists). */
+/** Authoritative rider read — ride_events via /api/rides/buyer/status. */
 async function fetchBuyerRideTruth(
   ticket: string | null | undefined,
   rideId: string | null | undefined,
-): Promise<{ ride: RideRow | null; driver_public: RideDriverPublic | null }> {
+): Promise<{
+  ride: RideRow | null;
+  driver_public: RideDriverPublic | null;
+  httpStatus: number;
+}> {
   const result = await fetchBuyerRideStatus(ticket, rideId);
-  if (!result.ok || !result.payload.ride?.id) {
-    return { ride: null, driver_public: null };
+  if (result.ok && result.payload.ride?.id) {
+    return {
+      ride: result.payload.ride as RideRow,
+      driver_public: result.payload.driver_public ?? null,
+      httpStatus: 200,
+    };
   }
-  return {
-    ride: result.payload.ride as RideRow,
-    driver_public: result.payload.driver_public ?? null,
-  };
+  const httpStatus = result.ok ? 200 : result.status;
+  const id = String(rideId ?? "").trim();
+  if (id) {
+    const direct = await fetchRideRowById<RideRow>(id);
+    if (direct?.id) {
+      return { ride: direct, driver_public: null, httpStatus: 200 };
+    }
+  }
+  return { ride: null, driver_public: null, httpStatus };
 }
 
 export default function ViajePage() {
@@ -476,6 +489,53 @@ function ViajePageInner() {
   }, [ride?.ticket_code, terminalBanner?.ticket_code]);
 
   /** Active trip: ride_events via /api/rides/buyer/status. Sync only to discover new rides. */
+  const applyTruthRide = useCallback(
+    (
+      incoming: RideRow,
+      driverPub: RideDriverPublic | null,
+      source: string,
+      note?: string,
+    ): boolean => {
+      if (!incoming?.id) return false;
+      if (isTicketLatched(incoming.ticket_code, completedTicketLatchRef.current)) {
+        return false;
+      }
+      clearDismissedTicket();
+      userClearedUntilRef.current = 0;
+      writeUserClearedUntil(0);
+      repinCanonicalRideId(incoming, rideIdRef, activeTicketRef);
+      if (driverPub) setDriverPublic(driverPub);
+      clearTerminalRideId();
+      setTerminalBanner(null);
+      setRide((prev) => {
+        if (prev && isTerminalRideStatus(prev.status)) {
+          const sameTicket =
+            prev.ticket_code &&
+            incoming.ticket_code &&
+            normalizeTicketKey(prev.ticket_code) === normalizeTicketKey(incoming.ticket_code);
+          if (sameTicket) return prev;
+        }
+        if (prev && rideStatusRank(incoming.status) < rideStatusRank(prev.status)) {
+          return prev;
+        }
+        const next = prev ? { ...prev, ...incoming, status: incoming.status } : incoming;
+        statusFloorByRideRef.current.set(next.id, rideStatusRank(next.status));
+        uiRideRef.current = next;
+        return next;
+      });
+      setSyncDebug(
+        syncDebugForRow(
+          incoming,
+          source,
+          note ??
+            `${incoming.status}${incoming.status_code != null ? ` #${incoming.status_code}` : ""}${incoming.ticket_code ? ` · ${incoming.ticket_code}` : ""} · events`,
+        ),
+      );
+      return true;
+    },
+    [],
+  );
+
   const refreshActiveRide = useCallback(async (source = "poll") => {
     const seq = ++refreshSeqRef.current;
     const isStale = () => seq !== refreshSeqRef.current;
@@ -489,56 +549,28 @@ function ViajePageInner() {
       undefined;
     const rideRef = pinnedId ?? uiRideRef.current?.id ?? undefined;
 
-    const paintTruth = (
-      incoming: RideRow,
-      driverPub: RideDriverPublic | null,
-      src: string,
-      note?: string,
-    ): boolean => {
-      if (isStale()) return false;
-      const cur = uiRideRef.current;
-      const sameTrip =
-        !cur?.id ||
-        cur.id === incoming.id ||
-        (cur.ticket_code &&
-          incoming.ticket_code &&
-          normalizeTicketKey(cur.ticket_code) === normalizeTicketKey(incoming.ticket_code));
-      if (!sameTrip) return false;
-      if (cur && rideStatusRank(incoming.status) < rideStatusRank(cur.status)) return false;
-      clearDismissedTicket();
-      userClearedUntilRef.current = 0;
-      writeUserClearedUntil(0);
-      repinCanonicalRideId(incoming, rideIdRef, activeTicketRef);
-      if (driverPub) setDriverPublic(driverPub);
-      applyServerRide(
-        incoming,
-        src,
-        note ??
-          `${incoming.status}${incoming.status_code != null ? ` #${incoming.status_code}` : ""}${incoming.ticket_code ? ` · ${incoming.ticket_code}` : ""} · events`,
-      );
-      return true;
-    };
-
+    let truthApplied = false;
     if (ticketHint || rideRef) {
-      const { ride: truthRow, driver_public: truthDriver } = await fetchBuyerRideTruth(
-        ticketHint,
-        rideRef,
-      );
-      if (truthRow?.id) {
-        paintTruth(truthRow, truthDriver, `${source}+events`);
+      const { ride: truthRow, driver_public: truthDriver, httpStatus } =
+        await fetchBuyerRideTruth(ticketHint, rideRef);
+      if (httpStatus === 401 && !isStale()) {
+        setAuthError(t.loginRequired);
+        return;
+      }
+      if (httpStatus === 404 && !isStale()) {
+        setRequestError(t.ridesDisabled);
+      }
+      if (truthRow?.id && !isStale()) {
+        truthApplied = applyTruthRide(truthRow, truthDriver, `${source}+events`);
         if (isTerminalRideStatus(truthRow.status)) return;
-        if (isBuyerActiveStatus(truthRow.status) && !SYNC_DISCOVERY_SOURCES.has(source)) {
-          return;
-        }
       }
     }
 
-    const cur = uiRideRef.current;
-    if (
-      !SYNC_DISCOVERY_SOURCES.has(source) &&
-      cur?.id &&
-      isBuyerActiveStatus(cur.status)
-    ) {
+    if (truthApplied && !SYNC_DISCOVERY_SOURCES.has(source)) {
+      return;
+    }
+
+    if (!SYNC_DISCOVERY_SOURCES.has(source) && !truthApplied) {
       return;
     }
 
@@ -568,7 +600,7 @@ function ViajePageInner() {
         row.id,
       );
       const finalRow = resolved?.id ? resolved : row;
-      paintTruth(
+      applyTruthRide(
         finalRow,
         resolvedDriver ?? sync.driver_public ?? null,
         `${source}+discover`,
@@ -576,7 +608,7 @@ function ViajePageInner() {
     } else if (!uiRideRef.current && sync.driver_public) {
       setDriverPublic(sync.driver_public);
     }
-  }, [applyServerRide]);
+  }, [applyTruthRide, t.loginRequired, t.ridesDisabled]);
 
   const recoverActiveTrip = useCallback(async () => {
     setRecoverBusy(true);
@@ -602,9 +634,7 @@ function ViajePageInner() {
         ride?.id,
       );
       if (fastRow?.id) {
-        if (fastDriver) setDriverPublic(fastDriver);
-        repinCanonicalRideId(fastRow, rideIdRef, activeTicketRef);
-        applyServerRide(fastRow, "recover");
+        applyTruthRide(fastRow, fastDriver, "recover");
         setRecoverBusy(false);
         return;
       }
@@ -613,9 +643,7 @@ function ViajePageInner() {
     if (ride?.id) {
       const { ride: byId, driver_public: byIdDriver } = await fetchBuyerRideTruth(null, ride.id);
       if (byId?.id) {
-        if (byIdDriver) setDriverPublic(byIdDriver);
-        repinCanonicalRideId(byId, rideIdRef, activeTicketRef);
-        applyServerRide(byId, "recover-id");
+        applyTruthRide(byId, byIdDriver, "recover-id");
         setRecoverBusy(false);
         return;
       }
@@ -623,7 +651,7 @@ function ViajePageInner() {
 
     await refreshActiveRide("manual");
     setRecoverBusy(false);
-  }, [applyServerRide, recoverTicketInput, refreshActiveRide, ride?.ticket_code]);
+  }, [applyTruthRide, recoverTicketInput, refreshActiveRide, ride?.id, ride?.ticket_code]);
 
   // Keep SSE through in_trip so we receive the completed event.
   const liveRideId =
@@ -645,14 +673,13 @@ function ViajePageInner() {
           row.ticket_code,
           row.id,
         );
-        if (truth?.id) row = truth;
-        else row = await resolveRowByTicketCanonical(row);
         if (seqAtEvent !== refreshSeqRef.current) return;
-        repinCanonicalRideId(row, rideIdRef, activeTicketRef);
-        if (truthDriver) setDriverPublic(truthDriver);
-        applyServerRide(row, "SSE");
-        const driverPub = (payload as { driver_public?: RideDriverPublic }).driver_public;
-        if (driverPub) setDriverPublic(driverPub);
+        if (truth?.id) {
+          applyTruthRide(truth, truthDriver, "SSE");
+        } else {
+          row = await resolveRowByTicketCanonical(row);
+          applyTruthRide(row, null, "SSE+canonical");
+        }
       })();
     },
     fallbackPollMs: liveRideId ? 4_000 : 8_000,

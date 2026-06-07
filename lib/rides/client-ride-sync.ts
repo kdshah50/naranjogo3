@@ -124,23 +124,25 @@ export async function fetchBuyerRecoverByTicket(
   };
 }
 
-/** Fast ticket lookup for driver recover button (skips slow panel fallbacks). */
+/** Fast ticket / ride lookup for driver recover (event-log truth). */
 export async function fetchDriverRecoverByTicket(
   ticketCode: string,
+  rideId?: string | null,
 ): Promise<
   | { ok: true; trips: RideStatusRow[]; ride: RideStatusRow | null }
   | { ok: false; status: number }
 > {
+  const qs = new URLSearchParams();
   const ticket = String(ticketCode ?? "").trim();
-  if (!ticket) return { ok: false, status: 400 };
-  const r = await fetch(
-    `/api/rides/drivers/me/recover?ticket_code=${encodeURIComponent(ticket)}&_=${Date.now()}`,
-    {
-      credentials: "include",
-      cache: "no-store",
-      headers: { Accept: "application/json", "Cache-Control": "no-cache" },
-    },
-  );
+  const id = String(rideId ?? "").trim();
+  if (ticket) qs.set("ticket_code", ticket);
+  if (id) qs.set("ride_id", id);
+  if (!ticket && !id) return { ok: false, status: 400 };
+  const r = await fetch(`/api/rides/drivers/me/recover?${qs}&_=${Date.now()}`, {
+    credentials: "include",
+    cache: "no-store",
+    headers: { Accept: "application/json", "Cache-Control": "no-cache" },
+  });
   if (!r.ok) return { ok: false, status: r.status };
   const payload = (await r.json().catch(() => null)) as {
     trips?: RideStatusRow[];

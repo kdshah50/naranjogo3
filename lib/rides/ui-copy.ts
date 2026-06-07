@@ -149,6 +149,8 @@ const VIAJE = {
       'WhatsApp (Phase 2): envía "taxi de centro a guadalupe" al sandbox de Twilio si configuraste el webhook en',
     whatsappRequires:
       "Requiere saldo en /saldo y un conductor aprobado en la colonia de origen.",
+    ridesDisabled:
+      "Viajes no activos en esta URL — usa el preview de Vercel (RIDES_ENABLED=true), no naranjogo.com.mx.",
   },
   en: {
     title: "Request a ride",
@@ -214,6 +216,8 @@ const VIAJE = {
       'WhatsApp (Phase 2): send "taxi de centro a guadalupe" to the Twilio sandbox if you configured the webhook at',
     whatsappRequires:
       "Requires balance at /saldo and an approved driver in the pickup neighborhood.",
+    ridesDisabled:
+      "Rides are not enabled on this URL — use the Vercel preview (RIDES_ENABLED=true), not naranjogo.com.mx.",
   },
 } as const;
 

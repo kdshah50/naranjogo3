@@ -2,14 +2,9 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isSameUserId } from "@/lib/auth-server";
-import {
-  applyEventTruthToRide,
-  getRideById,
-  getRideLifecycleStatusFromEvents,
-  type RideBookingRow,
-} from "@/lib/rides/ride-bookings-server";
+import { getRideById, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
+import { hydrateRideRowFromEvents } from "@/lib/rides/ride-event-truth";
 import { resolveCanonicalRideByTicketForBuyer } from "@/lib/rides/resolve-ride-by-ticket";
-import { rideStatusRank } from "@/lib/rides/ride-status-merge";
 import { withStatusCode } from "@/lib/rides/ride-transition-pipeline";
 import type { RideDriverPublic } from "@/lib/rides/ride-sync-server";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
@@ -55,21 +50,6 @@ async function loadDriverPublic(
   };
 }
 
-/** Status from ride_events only — never trust ride_bookings.status alone. */
-async function rideRowWithEventStatus(
-  supabase: SupabaseClient,
-  row: RideBookingRow,
-): Promise<RideBookingRow> {
-  const fromEvents = await getRideLifecycleStatusFromEvents(supabase, row.id);
-  if (fromEvents && rideStatusRank(fromEvents) >= rideStatusRank(row.status)) {
-    if (fromEvents === "completed" || fromEvents === "cancelled") {
-      return applyEventTruthToRide(supabase, { ...row, status: fromEvents });
-    }
-    return { ...row, status: fromEvents };
-  }
-  return applyEventTruthToRide(supabase, row);
-}
-
 export type BuyerRideTruthState = {
   ride: RideBookingRow & { status_code: number };
   driver_public: RideDriverPublic | null;
@@ -112,7 +92,7 @@ export async function getBuyerRideTruthState(
 
   if (!base?.id) return null;
 
-  const ride = withStatusCode(await rideRowWithEventStatus(supabase, base)) as RideBookingRow & {
+  const ride = withStatusCode(await hydrateRideRowFromEvents(supabase, base)) as RideBookingRow & {
     status_code: number;
   };
 
