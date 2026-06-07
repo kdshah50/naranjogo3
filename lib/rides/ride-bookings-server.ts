@@ -489,7 +489,7 @@ export async function resolveLifecycleStatusFromEventProbes(
         }
       }
     }
-    if (bestRank >= rideStatusRank("accepted")) return best;
+    if (best) return best;
     if (i < attempts - 1) await sleepMs(delayMs);
   }
   return best;
@@ -503,8 +503,10 @@ export async function applyEventTruthToRide(
   row: RideBookingRow,
 ): Promise<RideBookingRow> {
   const fromProbes = await resolveLifecycleStatusFromEventProbes(supabase, row.id);
-  if (fromProbes && rideStatusRank(fromProbes) > rideStatusRank(row.status)) {
-    return mergeEventTruthRow(supabase, row, fromProbes);
+  if (fromProbes) {
+    if (rideStatusRank(fromProbes) >= rideStatusRank(row.status)) {
+      return mergeEventTruthRow(supabase, row, fromProbes);
+    }
   }
 
   let bestStatus: RideBookingStatus = row.status;

@@ -125,7 +125,7 @@ export async function getBuyerRideTruthState(
     attempts: 8,
     delayMs: 200,
   });
-  if (probeStatus && rideStatusRank(probeStatus) > rideStatusRank(fresh.status)) {
+  if (probeStatus) {
     fresh = { ...fresh, status: probeStatus };
   }
 
