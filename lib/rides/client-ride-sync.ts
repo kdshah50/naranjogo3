@@ -78,23 +78,25 @@ export async function fetchDriverPanel(
   return { ok: true, payload };
 }
 
-/** Fast ticket lookup for rider recover (event-hydrated, skips slow sync fallbacks). */
+/** Fast ticket / ride lookup for rider recover (event-hydrated, skips slow sync fallbacks). */
 export async function fetchBuyerRecoverByTicket(
   ticketCode: string,
+  rideId?: string | null,
 ): Promise<
   | { ok: true; ride: RideStatusRow | null }
   | { ok: false; status: number }
 > {
   const ticket = String(ticketCode ?? "").trim();
-  if (!ticket) return { ok: false, status: 400 };
-  const r = await fetch(
-    `/api/rides/buyer/recover?ticket_code=${encodeURIComponent(ticket)}&_=${Date.now()}`,
-    {
-      credentials: "include",
-      cache: "no-store",
-      headers: { Accept: "application/json", "Cache-Control": "no-cache" },
-    },
-  );
+  const id = String(rideId ?? "").trim();
+  if (!ticket && !id) return { ok: false, status: 400 };
+  const qs = new URLSearchParams();
+  if (ticket) qs.set("ticket_code", ticket);
+  if (id) qs.set("ride_id", id);
+  const r = await fetch(`/api/rides/buyer/recover?${qs}&_=${Date.now()}`, {
+    credentials: "include",
+    cache: "no-store",
+    headers: { Accept: "application/json", "Cache-Control": "no-cache" },
+  });
   if (!r.ok) return { ok: false, status: r.status };
   const payload = (await r.json().catch(() => null)) as { ride?: RideStatusRow | null } | null;
   return { ok: true, ride: payload?.ride ?? null };

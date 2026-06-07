@@ -258,6 +258,26 @@ function repinCanonicalRideId(
   }
 }
 
+const LIFECYCLE_CATCHUP_STATUSES = new Set(["matched", "accepted", "arrived", "in_trip"]);
+
+/** Event-hydrated row — ticket and/or ride id (recover API reads ride_events first). */
+async function fetchBuyerRideTruth(
+  ticket: string | null | undefined,
+  rideId: string | null | undefined,
+): Promise<RideRow | null> {
+  const t = normalizeTicketKey(ticket);
+  const id = String(rideId ?? "").trim();
+  if (t || id) {
+    const fast = await fetchBuyerRecoverByTicket(t, id || undefined);
+    if (fast.ok && fast.ride?.id) return fast.ride as RideRow;
+  }
+  if (id) {
+    const direct = await fetchRideRowById<RideRow>(id);
+    if (direct?.id) return direct;
+  }
+  return null;
+}
+
 export default function ViajePage() {
   return (
     <Suspense
@@ -479,11 +499,14 @@ function ViajePageInner() {
       source === "manual" ||
       source === "mount" ||
       source === "mount-retry";
-    if (ticketHint && pollLike) {
-      const fast = await fetchBuyerRecoverByTicket(ticketHint);
-      if (fast.ok && fast.ride?.id && !isStale()) {
+    if (pollLike && (ticketHint || pinnedId || uiRideRef.current?.id)) {
+      const fastRow = await fetchBuyerRideTruth(
+        ticketHint,
+        pinnedId ?? uiRideRef.current?.id,
+      );
+      if (fastRow?.id && !isStale()) {
         const cur = uiRideRef.current;
-        const incoming = fast.ride as RideRow;
+        const incoming = fastRow;
         if (
           !cur?.id ||
           cur.id === incoming.id ||
@@ -504,10 +527,10 @@ function ViajePageInner() {
       }
     }
     const awaitingComplete = uiRideRef.current?.status === "in_trip";
-    if (awaitingComplete && ticketHint && (source === "poll" || source === "poll-backup")) {
-      const fast = await fetchBuyerRecoverByTicket(ticketHint);
-      if (!isStale() && fast.ok && fast.ride?.id && isTerminalRideStatus(fast.ride.status)) {
-        applyServerRide(fast.ride as RideRow, `${source}+complete-fast`);
+    if (awaitingComplete && (ticketHint || pinnedId) && (source === "poll" || source === "poll-backup")) {
+      const fastRow = await fetchBuyerRideTruth(ticketHint, pinnedId ?? uiRideRef.current?.id);
+      if (!isStale() && fastRow?.id && isTerminalRideStatus(fastRow.status)) {
+        applyServerRide(fastRow, `${source}+complete-fast`);
         return;
       }
     }
@@ -740,11 +763,11 @@ function ViajePageInner() {
       const drop = debugMeta?.drop_reason ?? null;
       if (
         (drop?.startsWith("verify:completed") || drop === "dismissed:completed") &&
-        ticketHint
+        (ticketHint || uiRideRef.current?.id)
       ) {
-        const fast = await fetchBuyerRecoverByTicket(ticketHint);
-        if (!isStale() && fast.ok && fast.ride?.id && isTerminalRideStatus(fast.ride.status)) {
-          applyServerRide(fast.ride as RideRow, `${source}+completed`, undefined, drop);
+        const fastRow = await fetchBuyerRideTruth(ticketHint, uiRideRef.current?.id);
+        if (!isStale() && fastRow?.id && isTerminalRideStatus(fastRow.status)) {
+          applyServerRide(fastRow, `${source}+completed`, undefined, drop);
           return;
         }
       }
@@ -765,14 +788,12 @@ function ViajePageInner() {
           ticketHint ||
           normalizeTicketKey(uiRideRef.current?.ticket_code) ||
           undefined;
-        if (
-          stuckTicket &&
-          uiRideRef.current?.status === "matched" &&
-          uiRideRef.current?.driver_id
-        ) {
-          const fast = await fetchBuyerRecoverByTicket(stuckTicket);
-          if (!isStale() && fast.ok && fast.ride?.id) {
-            const incoming = fast.ride as RideRow;
+        if (stuckTicket || uiRideRef.current?.id) {
+          const incoming = await fetchBuyerRideTruth(
+            stuckTicket,
+            uiRideRef.current?.id,
+          );
+          if (!isStale() && incoming?.id) {
             if (
               rideStatusRank(incoming.status) > rideStatusRank(uiRideRef.current!.status)
             ) {
@@ -815,27 +836,33 @@ function ViajePageInner() {
       urlTicketRef.current = ticket;
       activeTicketRef.current = ticket;
       pinActiveTicket(ticket);
-      const fast = await fetchBuyerRecoverByTicket(ticket);
-      if (fast.ok && fast.ride?.id) {
-        let row = fast.ride as RideRow;
+      const fastRow = await fetchBuyerRideTruth(ticket, ride?.id);
+      if (fastRow?.id) {
+        let row = fastRow;
         if (row.status === "in_trip") {
           const direct = await fetchRideRowById<RideRow>(row.id);
           if (direct?.id && isTerminalRideStatus(direct.status)) {
             row = direct;
           } else {
             await new Promise((r) => setTimeout(r, 600));
-            const retry = await fetchBuyerRecoverByTicket(ticket);
-            if (
-              retry.ok &&
-              retry.ride?.id &&
-              rideStatusRank(retry.ride.status) > rideStatusRank(row.status)
-            ) {
-              row = retry.ride as RideRow;
+            const retry = await fetchBuyerRideTruth(ticket, row.id);
+            if (retry?.id && rideStatusRank(retry.status) > rideStatusRank(row.status)) {
+              row = retry;
             }
           }
         }
         repinCanonicalRideId(row, rideIdRef, activeTicketRef);
         applyServerRide(row, "recover");
+        setRecoverBusy(false);
+        return;
+      }
+    }
+
+    if (ride?.id) {
+      const byId = await fetchBuyerRideTruth(null, ride.id);
+      if (byId?.id) {
+        repinCanonicalRideId(byId, rideIdRef, activeTicketRef);
+        applyServerRide(byId, "recover-id");
         setRecoverBusy(false);
         return;
       }
@@ -861,7 +888,9 @@ function ViajePageInner() {
       void (async () => {
         let row = (payload as { ride?: RideRow }).ride;
         if (!row?.id) return;
-        row = await resolveRowByTicketCanonical(row);
+        const truth = await fetchBuyerRideTruth(row.ticket_code, row.id);
+        if (truth?.id) row = truth;
+        else row = await resolveRowByTicketCanonical(row);
         if (seqAtEvent !== refreshSeqRef.current) return;
         repinCanonicalRideId(row, rideIdRef, activeTicketRef);
         applyServerRide(row, "SSE");
@@ -936,15 +965,17 @@ function ViajePageInner() {
   useEffect(() => {
     if (authError) return;
     const terminal = ride?.status === "completed" || ride?.status === "cancelled";
-    const awaitingComplete = ride?.status === "in_trip";
+    const needsFastPoll =
+      ride?.status === "in_trip" ||
+      LIFECYCLE_CATCHUP_STATUSES.has(ride?.status ?? "");
     const activeTrip =
       ride?.status &&
       isBuyerActiveStatus(ride.status);
     const fromWhatsApp = hadUrlRideParamsRef.current;
     const ms = terminal
       ? 8_000
-      : awaitingComplete
-        ? 1_000
+      : needsFastPoll
+        ? 800
         : activeTrip
           ? 1_500
           : ride
@@ -956,34 +987,38 @@ function ViajePageInner() {
     return () => clearInterval(timer);
   }, [authError, ride?.status, refreshActiveRide]);
 
-  /** Driver accepted in DB but replica/sync can leave rider stuck on matched. */
+  /** Replica/sync lag: catch up matched → accepted → arrived via event log. */
   useEffect(() => {
-    if (ride?.status !== "matched" || !ride.driver_id) return;
-    const ticket =
+    if (!ride?.id || !LIFECYCLE_CATCHUP_STATUSES.has(ride.status)) return;
+    const rideId = ride.id;
+    let cancelled = false;
+
+    const ticketFor = () =>
       normalizeTicketKey(ride.ticket_code) ||
       normalizeTicketKey(recoverTicketInput) ||
       readPinnedTicket() ||
       urlTicketRef.current ||
+      activeTicketRef.current ||
       null;
-    if (!ticket) return;
 
-    let cancelled = false;
     const bump = async () => {
-      const fast = await fetchBuyerRecoverByTicket(ticket);
-      if (cancelled || !fast.ok || !fast.ride?.id) return;
-      const incoming = fast.ride as RideRow;
-      if (rideStatusRank(incoming.status) <= rideStatusRank("matched")) return;
-      repinCanonicalRideId(incoming, rideIdRef, activeTicketRef);
-      applyServerRide(incoming, "accept-watch");
+      const cur = uiRideRef.current;
+      if (!cur?.id || cancelled || !LIFECYCLE_CATCHUP_STATUSES.has(cur.status)) return;
+      const incoming = await fetchBuyerRideTruth(ticketFor(), rideId);
+      if (!incoming?.id || cancelled) return;
+      if (rideStatusRank(incoming.status) > rideStatusRank(cur.status)) {
+        repinCanonicalRideId(incoming, rideIdRef, activeTicketRef);
+        applyServerRide(incoming, "lifecycle-watch");
+      }
     };
 
     void bump();
-    const timer = window.setInterval(() => void bump(), 1_000);
+    const timer = window.setInterval(() => void bump(), 800);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [ride?.status, ride?.driver_id, ride?.ticket_code, recoverTicketInput, applyServerRide]);
+  }, [ride?.id, ride?.status, ride?.ticket_code, recoverTicketInput, applyServerRide]);
 
   /** When UI shows in_trip but driver already completed, recover completed status quickly. */
   useEffect(() => {
@@ -997,17 +1032,14 @@ function ViajePageInner() {
     let cancelled = false;
 
     const checkDone = async () => {
-      if (ticket) {
-        const fast = await fetchBuyerRecoverByTicket(ticket);
-        if (
-          !cancelled &&
-          fast.ok &&
-          fast.ride?.id &&
-          isTerminalRideStatus(fast.ride.status)
-        ) {
-          applyServerRide(fast.ride as RideRow, "complete-watch");
-          return;
-        }
+      const incoming = await fetchBuyerRideTruth(ticket || null, rideId);
+      if (
+        !cancelled &&
+        incoming?.id &&
+        isTerminalRideStatus(incoming.status)
+      ) {
+        applyServerRide(incoming, "complete-watch");
+        return;
       }
       const direct = await fetchRideRowById<RideRow>(rideId);
       if (!cancelled && direct?.id && isTerminalRideStatus(direct.status)) {
