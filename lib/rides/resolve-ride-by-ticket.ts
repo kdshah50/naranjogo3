@@ -2,7 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isSameUserId } from "@/lib/auth-server";
-import { getRideByIdFresh, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
+import { getRideByIdFresh, applyEventTruthToRide, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
 import { normalizeRideTicketCode } from "@/lib/rides/ride-ghost-filter";
 import { rideStatusRank } from "@/lib/rides/ride-status-merge";
 import type { RideAccountOptions } from "@/lib/rides/ride-trip-server";
@@ -64,8 +64,7 @@ export async function resolveCanonicalRideByTicket(
   });
 
   const pick = sorted[0];
-  const fresh = await getRideByIdFresh(supabase, pick.id);
-  return fresh ?? pick;
+  return applyEventTruthToRide(supabase, pick);
 }
 
 export async function resolveCanonicalRideByTicketForBuyer(
@@ -126,8 +125,7 @@ export async function resolveCanonicalRideByTicketForDriver(
   });
 
   const pick = sorted[0];
-  const fresh = await getRideByIdFresh(supabase, pick.id);
-  return fresh ?? pick;
+  return applyEventTruthToRide(supabase, pick);
 }
 
 const DRIVER_ACTIVE = new Set(["matched", "accepted", "arrived", "in_trip"]);

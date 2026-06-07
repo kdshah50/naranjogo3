@@ -359,18 +359,11 @@ export async function hydrateRideFromEvents(
   supabase: SupabaseClient,
   row: RideBookingRow,
 ): Promise<RideBookingRow> {
-  if (row.status !== "completed" && row.status !== "cancelled") {
-    if (await hasRideEvent(supabase, row.id, "trip_completed", { attempts: 10, delayMs: 350 })) {
-      return resolveCompletedRideRow(supabase, row);
-    }
-  }
-
-  const fromEvents = await latestStatusFromEvents(supabase, row.id);
+  const fromEvents = await latestStatusFromEvents(supabase, row.id, { attempts: 3, delayMs: 200 });
   if (!fromEvents || rideStatusRank(fromEvents) <= rideStatusRank(row.status)) {
     return row;
   }
 
-  // Terminal status from events — re-read booking row for final_total / trip_ended_at.
   if (fromEvents === "completed" || fromEvents === "cancelled") {
     return resolveCompletedRideRow(supabase, { ...row, status: fromEvents as RideBookingRow["status"] });
   }
@@ -409,12 +402,32 @@ async function resolveCompletedRideRow(
   supabase: SupabaseClient,
   row: RideBookingRow,
 ): Promise<RideBookingRow> {
-  for (let i = 0; i < 6; i++) {
-    const fresh = await getRideById(supabase, row.id);
-    if (fresh?.status === "completed" || fresh?.status === "cancelled") return fresh;
-    if (i < 5) await sleepMs(400);
-  }
+  const fresh = await getRideById(supabase, row.id);
+  if (fresh?.status === "completed" || fresh?.status === "cancelled") return fresh;
   return { ...row, status: "completed" };
+}
+
+/**
+ * Fast read truth: one ride_events probe, then optional hydrate — avoids 10s+ retry loops on Vercel.
+ */
+export async function applyEventTruthToRide(
+  supabase: SupabaseClient,
+  row: RideBookingRow,
+): Promise<RideBookingRow> {
+  const { data: completedEvt } = await supabase
+    .from("ride_events")
+    .select("id")
+    .eq("ride_id", row.id)
+    .eq("event_type", "trip_completed")
+    .limit(1)
+    .maybeSingle();
+  if (completedEvt?.id) {
+    return resolveCompletedRideRow(supabase, row);
+  }
+  if (row.status === "completed" || row.status === "cancelled") {
+    return row;
+  }
+  return hydrateRideFromEvents(supabase, row);
 }
 
 /**
@@ -427,15 +440,23 @@ export async function getRideByIdFresh(
   rideId: string,
   opts?: { attempts?: number; delayMs?: number },
 ): Promise<RideBookingRow | null> {
-  const attempts = Math.min(Math.max(opts?.attempts ?? 6, 1), 10);
-  const delayMs = opts?.delayMs ?? 500;
+  const initial = await getRideById(supabase, rideId);
+  if (initial) {
+    const truth = await applyEventTruthToRide(supabase, initial);
+    if (truth.status === "completed" || truth.status === "cancelled") {
+      return truth;
+    }
+  }
+
+  const attempts = Math.min(Math.max(opts?.attempts ?? 4, 1), 8);
+  const delayMs = opts?.delayMs ?? 350;
   let best: RideBookingRow | null = null;
   let bestRank = -2;
 
   for (let i = 0; i < attempts; i++) {
     const row = await getRideById(supabase, rideId);
     if (row) {
-      const hydrated = await hydrateRideFromEvents(supabase, row);
+      const hydrated = await applyEventTruthToRide(supabase, row);
       const rank = rideStatusRank(hydrated.status);
       if (rank > bestRank) {
         best = hydrated;
@@ -448,9 +469,8 @@ export async function getRideByIdFresh(
     if (i < attempts - 1) await sleepMs(delayMs);
   }
   if (best && best.status === "in_trip") {
-    if (await hasRideEvent(supabase, rideId, "trip_completed", { attempts: 6, delayMs: 300 })) {
-      return resolveCompletedRideRow(supabase, best);
-    }
+    const truth = await applyEventTruthToRide(supabase, best);
+    if (truth.status === "completed") return truth;
   }
   return best;
 }

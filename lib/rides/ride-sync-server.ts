@@ -6,7 +6,7 @@ import { loadDriverPanel } from "@/lib/rides/driver-panel-server";
 import {
   getRideById,
   getRideByIdFresh,
-  hydrateRideFromEvents,
+  applyEventTruthToRide,
   type RideBookingRow,
 } from "@/lib/rides/ride-bookings-server";
 import {
@@ -96,9 +96,9 @@ async function resolveBuyerRideCanonical(
   );
   if (!canonical?.id) return row;
 
-  const fresh = await getRideByIdFresh(supabase, canonical.id);
+  const fresh = await getRideByIdFresh(supabase, canonical.id, { attempts: 3, delayMs: 300 });
   let resolved = fresh ?? canonical;
-  resolved = await hydrateRideFromEvents(supabase, resolved);
+  resolved = await applyEventTruthToRide(supabase, resolved);
   if (rideStatusRank(resolved.status) >= rideStatusRank(row.status)) {
     return resolved;
   }

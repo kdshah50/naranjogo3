@@ -891,6 +891,44 @@ function ViajePageInner() {
     return () => clearInterval(timer);
   }, [authError, ride?.status, refreshActiveRide]);
 
+  /** When UI shows in_trip but driver already completed, recover completed status quickly. */
+  useEffect(() => {
+    if (ride?.status !== "in_trip" || !ride.id) return;
+    const rideId = ride.id;
+    const ticket =
+      normalizeTicketKey(ride.ticket_code) ||
+      normalizeTicketKey(recoverTicketInput) ||
+      readPinnedTicket() ||
+      "";
+    let cancelled = false;
+
+    const checkDone = async () => {
+      if (ticket) {
+        const fast = await fetchBuyerRecoverByTicket(ticket);
+        if (
+          !cancelled &&
+          fast.ok &&
+          fast.ride?.id &&
+          isTerminalRideStatus(fast.ride.status)
+        ) {
+          applyServerRide(fast.ride as RideRow, "complete-watch");
+          return;
+        }
+      }
+      const direct = await fetchRideRowById<RideRow>(rideId);
+      if (!cancelled && direct?.id && isTerminalRideStatus(direct.status)) {
+        applyServerRide(direct, "complete-watch");
+      }
+    };
+
+    void checkDone();
+    const timer = setInterval(() => void checkDone(), 2_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [ride?.id, ride?.status, ride?.ticket_code, recoverTicketInput, applyServerRide]);
+
   useEffect(() => {
     const onFocus = () => void refreshActiveRide("focus");
     window.addEventListener("focus", onFocus);
