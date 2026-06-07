@@ -489,7 +489,8 @@ export async function resolveLifecycleStatusFromEventProbes(
         }
       }
     }
-    if (best) return best;
+    // Do not return on first partial read — replica may show driver_accepted before driver_arrived.
+    if (bestRank >= rideStatusRank("completed")) return best;
     if (i < attempts - 1) await sleepMs(delayMs);
   }
   return best;
