@@ -273,16 +273,19 @@ async function fetchBuyerRideTruth(
   httpStatus: number;
 }> {
   const result = await fetchBuyerRideStatus(ticket, rideId);
-  if (result.ok && result.payload.ride?.id) {
-    return {
-      ride: result.payload.ride as RideRow,
-      driver_public: result.payload.driver_public ?? null,
-      httpStatus: 200,
-    };
+  if (result.ok) {
+    if (result.payload.ride?.id) {
+      return {
+        ride: result.payload.ride as RideRow,
+        driver_public: result.payload.driver_public ?? null,
+        httpStatus: 200,
+      };
+    }
+    return { ride: null, driver_public: null, httpStatus: 200 };
   }
-  const httpStatus = result.ok ? 200 : result.status;
+  const httpStatus = result.status;
   const id = String(rideId ?? "").trim();
-  if (id) {
+  if (httpStatus === 404 && id) {
     const direct = await fetchRideRowById<RideRow>(id);
     if (direct?.id) {
       return { ride: direct, driver_public: null, httpStatus: 200 };

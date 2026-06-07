@@ -219,6 +219,15 @@ export default function ConductorViajesPage() {
 
 const STABLE_ORIGIN = process.env.NEXT_PUBLIC_STABLE_ORIGIN?.replace(/\/$/, "") ?? "";
 
+/** Panel fetch only when discovering new trips — polls use event-truth recover. */
+const PANEL_DISCOVERY_SOURCES = new Set([
+  "mount",
+  "mount-retry",
+  "manual",
+  "recover",
+  "url-pin",
+]);
+
 function isLikelyRidesHost(): boolean {
   if (typeof window === "undefined") return true;
   const env = process.env.NEXT_PUBLIC_VERCEL_ENV ?? "";
@@ -511,13 +520,8 @@ function ConductorViajesInner() {
       urlTicketRef.current || readDriverActiveTicket() || undefined;
     const rideIdHint =
       pinnedRideIdRef.current ?? readDriverActiveRideId() ?? undefined;
-    const pollLike =
-      source === "poll" ||
-      source === "poll-backup" ||
-      source === "SSE" ||
-      source === "focus" ||
-      source === "visibility";
-    if ((ticketHint || rideIdHint) && pollLike) {
+    let truthApplied = false;
+    if (ticketHint || rideIdHint) {
       const fast = await fetchDriverRecoverByTicket(ticketHint ?? "", rideIdHint);
       if (gen !== syncGenRef.current) return;
       if (fast.ok && fast.trips.length > 0) {
@@ -537,12 +541,28 @@ function ConductorViajesInner() {
             pinnedRideIdRef.current = incoming.id;
             recoverLatchUntilRef.current = Date.now() + 45_000;
             applyServerTrips([incoming], `${source}+recover-first`);
+            setPanelError(null);
+            setActionError(null);
+            truthApplied = true;
             if (incoming.status === "completed" || incoming.status === "cancelled") {
+              setCompletedNotice(incoming);
               return;
             }
           }
         }
       }
+    }
+
+    if (truthApplied && !PANEL_DISCOVERY_SOURCES.has(source)) {
+      return;
+    }
+
+    if (
+      (ticketHint || rideIdHint) &&
+      !truthApplied &&
+      !PANEL_DISCOVERY_SOURCES.has(source)
+    ) {
+      return;
     }
     const syncRideId = skipExplicitRide
       ? undefined
@@ -560,10 +580,12 @@ function ConductorViajesInner() {
         return;
       }
       if (panelResult.status === 404) {
-        setPanelError(t.ridesDisabled);
         if (tripsRef.current.length === 0) {
+          setPanelError(t.ridesDisabled);
           setDriverApproved(false);
           driverApprovedRef.current = false;
+        } else {
+          setPanelError(null);
         }
       } else if (panelResult.status === 401) {
         setPanelError(t.panelLoadFailed);
@@ -692,8 +714,14 @@ function ConductorViajesInner() {
       rememberDriverActiveTicket(ticket);
     }
 
-    if (ticket) {
-      const fast = await fetchDriverRecoverByTicket(ticket);
+    const rideIdHint =
+      readDriverActiveRideId() ||
+      pinnedRideIdRef.current ||
+      String(searchParams.get("ride") ?? "").trim() ||
+      undefined;
+
+    if (ticket || rideIdHint) {
+      const fast = await fetchDriverRecoverByTicket(ticket, rideIdHint);
       if (fast.ok && fast.trips.length > 0) {
         applyRecoveredTrip(fast.trips[0] as RideRow, ticket);
         setBusy(null);
@@ -706,11 +734,7 @@ function ConductorViajesInner() {
       }
     }
 
-    const rideId =
-      readDriverActiveRideId() ||
-      pinnedRideIdRef.current ||
-      String(searchParams.get("ride") ?? "").trim() ||
-      null;
+    const rideId = rideIdHint ?? null;
     if (rideId) {
       const direct = await fetchRideRowById<RideRow>(rideId);
       if (direct?.id && isDriverActiveTrip(direct)) {
@@ -925,7 +949,14 @@ function ConductorViajesInner() {
         void refreshOnlineStatus();
       }
     }, 2_500);
-    const ms = trips.length > 0 ? 3_000 : isOnline ? 2_000 : 8_000;
+    const ms =
+      trips.length > 0 && trips.some((t) => t.status === "accepted" || t.status === "arrived" || t.status === "in_trip")
+        ? 700
+        : trips.length > 0
+          ? 3_000
+          : isOnline
+            ? 2_000
+            : 8_000;
     const timer = setInterval(() => void load("poll"), ms);
     return () => {
       clearTimeout(retry);

@@ -44,12 +44,7 @@ export async function getDriverRideTruthState(
     );
   } else if (rideId) {
     const row = await getRideById(supabase, rideId);
-    if (
-      row &&
-      row.driver_id &&
-      pool.some((uid) => isSameUserId(uid, row.driver_id)) &&
-      DRIVER_ACTIVE.has(row.status)
-    ) {
+    if (row && row.driver_id && pool.some((uid) => isSameUserId(uid, row.driver_id))) {
       base = row;
     }
   }
