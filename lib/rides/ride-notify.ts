@@ -339,16 +339,20 @@ async function sendRidePhaseWhatsAppPair(
   const copy = PHASE_WHATSAPP_COPY[phase];
   const ticket = ride.ticket_code ?? "—";
   const route = `${ride.pickup_address} → ${ride.dropoff_address}`;
-  let core = `🚕 *${copy.title}*\nTicket *${ticket}*\n${route}`;
+  const header = `🚕 *${copy.title}*\nTicket *${ticket}*\n${route}`;
+
+  let riderBody = header;
+  let driverBody = header;
 
   if (phase === "completed") {
     const fare = formatMxnFromCents(
       args.finalTotalMxnCents ?? ride.final_total_mxn_cents ?? ride.estimated_total_mxn_cents,
     );
-    core += `\nTarifa: *${fare}*`;
+    riderBody += `\nTarifa: *${fare}*`;
+    driverBody += `\nTarifa: *${fare}*`;
     const payout = formatMxnFromCents(args.driverPayoutMxnCents ?? 0);
     if (payout && payout !== "$0.00") {
-      core += `\nPago conductor: *${payout}*`;
+      driverBody += `\nPago conductor: *${payout}*`;
     }
   }
 
@@ -360,7 +364,7 @@ async function sendRidePhaseWhatsAppPair(
       const viajeUrl = rideBuyerViajeUrl(ride.id, ride.ticket_code);
       await sendWhatsAppToE164Digits(
         buyerPhone,
-        `${core}\n\n${copy.riderNext}:\n${viajeUrl}`,
+        `${riderBody}\n\n${copy.riderNext}:\n${viajeUrl}`,
       );
     }
   }
@@ -370,7 +374,7 @@ async function sendRidePhaseWhatsAppPair(
     const panelUrl = rideDriverPanelUrl(ride.id, ride.ticket_code);
     await sendWhatsAppToE164Digits(
       driverPhone,
-      `${core}\n\n${copy.driverNext}:\n${panelUrl}`,
+      `${driverBody}\n\n${copy.driverNext}:\n${panelUrl}`,
     );
   }
 }
