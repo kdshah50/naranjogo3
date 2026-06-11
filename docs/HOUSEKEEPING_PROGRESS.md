@@ -12,8 +12,8 @@ Mirror format of `docs/TAILORING_PROGRESS.md` and `docs/VETERINARY_PROGRESS.md`.
 | Strategy | Additive: reuse `listings.service_menu` jsonb, enable menu editor for slug `limpieza` in `/unete`, add housekeeping starter template + disclaimer. **Zero changes to SellModal, booking, cart, payment, or webhook code.** |
 | Master kill-switch | Menu editor only renders for slugs in `PROVIDER_SERVICES_WITH_MENU`. Until `limpieza` is added, housekeeping signup behaves like any other service on `main`. |
 | Existing slug | `limpieza` — "Limpieza del hogar" / "House Cleaning" (already in `PROVIDER_SERVICES`) |
-| Latest step completed | **Phase H1 — menu template + `/unete` wiring + search hints** |
-| Next step | Deploy preview, smoke test, Phase H2 landing page `/limpieza-del-hogar` |
+| Latest step completed | **Phase H2 — `/limpieza-del-hogar` landing page** |
+| Next step | Deploy preview + smoke test (landing → signup → listing → chat quote) |
 
 ---
 
@@ -55,11 +55,16 @@ Every row is **editable or deletable** at signup. Final total always flows throu
 - [x] `/unete` — template button, ES/EN copy for `limpieza`
 - [x] Search trade hints — deep clean, mudanza, lavado ropa, etc.
 
-## Phase H2 — landing (deferred)
+## Phase H2 — landing (shipped on branch)
 
-- [ ] `/limpieza-del-hogar` landing → `/unete?service=limpieza`
-- [ ] Buyer CTA → `/?category=services&q=limpieza`
-- [ ] Optional: TrustBar link
+- [x] `/limpieza-del-hogar` landing → `/unete?service=limpieza`
+- [x] Buyer CTA → `/?category=services&q=limpieza`
+- [x] TrustBar footer link (alongside tailoring)
+
+## Later (deferred)
+
+- [ ] Seller dashboard UI to edit `service_menu` after signup (API PATCH exists)
+- [ ] Optional room-calculator widget (qty × room type) — today quote builder in chat is enough
 
 ## Phase H3 — WhatsApp bot (deferred)
 
@@ -69,11 +74,12 @@ Only after real booking demand.
 
 ## Smoke test (after deploy)
 
-1. `/unete?service=limpieza&lang=es` — primary service = Limpieza del hogar
-2. Load template (34 services) — edit prices, remove rows, add custom row
-3. Submit → admin approve → public menu + chat quote builder
-4. `/?category=services&q=limpieza+profunda` — hybrid search finds listing
-5. Regression: tailoring + veterinary templates unchanged
+1. `/limpieza-del-hogar` — ES/EN, sample 34-item menu, Registrarme CTA
+2. `/unete?service=limpieza&lang=es` — primary service = Limpieza del hogar
+3. Load template (34 services) — edit prices, remove rows, add custom row
+4. Submit → admin approve → public menu + chat quote builder
+5. `/?category=services&q=limpieza+profunda` — hybrid search finds listing
+6. Regression: tailoring + veterinary templates unchanged
 
 ---
 
