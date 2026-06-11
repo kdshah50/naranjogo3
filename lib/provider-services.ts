@@ -99,8 +99,12 @@ export const PROVIDER_SERVICES = [
 
 /** Service slugs that publish a fixed-price menu of sub-items (Phase T1). Drives the
  *  Únete menu-editor and the listing's `service_menu` jsonb column. Keep additive. */
+export const TAILORING_SERVICE = "arreglos_de_ropa";
+export const VETERINARY_SERVICE = "veterinaria";
+
 export const PROVIDER_SERVICES_WITH_MENU = new Set<string>([
-  "arreglos_de_ropa",
+  TAILORING_SERVICE,
+  VETERINARY_SERVICE,
 ]);
 
 export function providerServiceSupportsMenu(slug: string | null | undefined): boolean {

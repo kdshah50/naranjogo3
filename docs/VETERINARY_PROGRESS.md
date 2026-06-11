@@ -12,8 +12,8 @@ Mirror format of `docs/TAILORING_PROGRESS.md`. Keep updating after every step.
 | Branch | `veterinary-service` (forked from `main`) |
 | Strategy | Additive: reuse existing `service_menu` jsonb on `listings`, enable menu editor for slug `veterinaria` in `/unete`, add a veterinary starter template + disclaimer. **Zero changes to sell/buy `SellModal`, booking, cart, payment, or webhook code.** |
 | Master kill-switch | Menu editor only renders for slugs in `PROVIDER_SERVICES_WITH_MENU`. Until `veterinaria` is added to that set, vet signup behaves exactly like any other service on `main`. |
-| Latest step completed | **Planning doc only — Phase V1 not started** |
-| Next step | Phase V1 code: add `veterinaria` to menu set, `veterinaryStarterMenu()`, wire `/unete` template button + ES/EN copy |
+| Latest step completed | **Phase V1 — code complete on `veterinary-service`, awaiting preview deploy + smoke test** |
+| Next step | Deploy preview, run smoke test at `/unete` with Servicios veterinarios |
 
 ---
 

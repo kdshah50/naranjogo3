@@ -19,6 +19,7 @@ import {
   SERVICE_LOCATION_OPTIONS,
   providerServiceLabels,
   providerServiceSupportsMenu,
+  VETERINARY_SERVICE,
   COACHING_TRAINING_SERVICE,
   COACHING_TRAINING_FOCUS,
   COACHING_TRAINING_DELIVERY,
@@ -27,7 +28,8 @@ import {
 } from "@/lib/provider-services";
 import {
   MAX_SERVICE_MENU_ITEMS,
-  tailoringStarterMenu,
+  menuDisclaimersForProviderSlug,
+  starterMenuForProviderSlug,
   type ServiceMenuItem,
 } from "@/lib/listing-service-menu";
 import { useAppLang, useAppLangActions } from "@/hooks/use-app-lang";
@@ -113,10 +115,14 @@ const T = {
     coachingStep2Error:     "Para Coaching y capacitación: elige al menos un área y una modalidad.",
     menuTitle:              "Menú de servicios (precios fijos)",
     menuHint:               "Lista los arreglos comunes con su precio. Los compradores los verán publicados y podrás armar un presupuesto desde el chat.",
+    menuHintVet:            "Lista consultas, vacunas y servicios comunes con precio fijo. Los clientes los verán publicados y podrás armar un presupuesto desde el chat.",
     menuTemplateBtn:        "Cargar plantilla sugerida (20 servicios)",
+    menuTemplateBtnVet:      "Cargar plantilla sugerida (19 servicios)",
     menuAddRow:             "+ Agregar servicio",
     menuRowNamePh:          "Nombre (ej. Dobladillo de pantalón)",
+    menuRowNamePhVet:       "Nombre (ej. Consulta general perro/gato)",
     menuDisclaimer:         "El precio puede ajustarse al revisar la prenda físicamente.",
+    menuDisclaimerVet:      "El precio puede ajustarse después del examen físico y según el peso, edad o condición del paciente.",
     menuEmpty:              "Sin servicios — toca «Cargar plantilla» o «+ Agregar servicio» para empezar.",
   },
   en: {
@@ -190,10 +196,14 @@ const T = {
     coachingStep2Error:     "For Coaching & training: pick at least one specialty and one delivery mode.",
     menuTitle:              "Service menu (fixed prices)",
     menuHint:               "List common alterations with their price. Buyers will see the published menu and you can build a quote from chat.",
+    menuHintVet:            "List exams, vaccines, and common services at fixed prices. Clients will see the published menu and you can build a quote from chat.",
     menuTemplateBtn:        "Load suggested template (20 services)",
+    menuTemplateBtnVet:      "Load suggested template (19 services)",
     menuAddRow:             "+ Add service",
     menuRowNamePh:          "Name (e.g. Pants hem)",
+    menuRowNamePhVet:       "Name (e.g. General exam dog/cat)",
     menuDisclaimer:         "Price may change after physical inspection of the garment.",
+    menuDisclaimerVet:      "Price may change after physical exam and depending on the patient's weight, age, or condition.",
     menuEmpty:              "No services yet — tap 'Load template' or '+ Add service' to begin.",
   },
 };
@@ -214,6 +224,16 @@ export default function UnetePage() {
 
 function UnetePageInner() {
   const lang = useAppLang();
+
+  const menuCopy = (service: string, t: typeof T.es) => {
+    const isVet = service === VETERINARY_SERVICE;
+    return {
+      hint: isVet ? t.menuHintVet : t.menuHint,
+      templateBtn: isVet ? t.menuTemplateBtnVet : t.menuTemplateBtn,
+      namePh: isVet ? t.menuRowNamePhVet : t.menuRowNamePh,
+      disclaimer: isVet ? t.menuDisclaimerVet : t.menuDisclaimer,
+    };
+  };
   const { setLang } = useAppLangActions();
   const sp = useSearchParams();
   const [step, setStep] = useState(1);
@@ -300,7 +320,10 @@ function UnetePageInner() {
             .filter((r) => r.name_es.length > 0 && Number.isFinite(r.pesos) && r.pesos > 0)
             .map((r) => ({ name_es: r.name_es, price_mxn: r.pesos }))
         : [];
-      const service_menu = cleanedMenu.length > 0 ? { items: cleanedMenu } : null;
+      const service_menu =
+        cleanedMenu.length > 0
+          ? { items: cleanedMenu, ...menuDisclaimersForProviderSlug(form.service) }
+          : null;
 
       const res = await fetch("/api/provider-signup", {
         method: "POST",
@@ -525,7 +548,8 @@ function UnetePageInner() {
                     <button
                       type="button"
                       onClick={() => {
-                        const tpl = tailoringStarterMenu();
+                        const tpl = starterMenuForProviderSlug(form.service);
+                        if (!tpl) return;
                         set(
                           "service_menu_rows",
                           tpl.items.map((it: ServiceMenuItem) => ({
@@ -536,10 +560,10 @@ function UnetePageInner() {
                       }}
                       className="text-[11px] font-semibold text-[#1B4332] underline"
                     >
-                      {t.menuTemplateBtn}
+                      {menuCopy(form.service, t).templateBtn}
                     </button>
                   </div>
-                  <p className="text-xs text-[#92400E]">{t.menuHint}</p>
+                  <p className="text-xs text-[#92400E]">{menuCopy(form.service, t).hint}</p>
 
                   {form.service_menu_rows.length === 0 ? (
                     <p className="text-xs italic text-[#A16207]">{t.menuEmpty}</p>
@@ -555,7 +579,7 @@ function UnetePageInner() {
                               next[i] = { ...next[i], name: e.target.value };
                               set("service_menu_rows", next);
                             }}
-                            placeholder={t.menuRowNamePh}
+                            placeholder={menuCopy(form.service, t).namePh}
                             maxLength={80}
                             className="flex-1 min-w-0 rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-[#B45309]"
                           />
@@ -607,7 +631,7 @@ function UnetePageInner() {
                     {t.menuAddRow} ({form.service_menu_rows.length}/{MAX_SERVICE_MENU_ITEMS})
                   </button>
 
-                  <p className="mt-1 text-[10px] italic text-[#92400E]">{t.menuDisclaimer}</p>
+                  <p className="mt-1 text-[10px] italic text-[#92400E]">{menuCopy(form.service, t).disclaimer}</p>
                 </div>
               )}
 

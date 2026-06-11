@@ -29,6 +29,11 @@ export const DEFAULT_INSPECTION_DISCLAIMER_ES =
 export const DEFAULT_INSPECTION_DISCLAIMER_EN =
   "Price may change after physical inspection of the garment.";
 
+export const DEFAULT_VET_DISCLAIMER_SPANISH =
+  "El precio puede ajustarse después del examen físico y según el peso, edad o condición del paciente.";
+export const DEFAULT_VET_DISCLAIMER_EN =
+  "Price may change after physical exam and depending on the patient's weight, age, or condition.";
+
 export type ServiceMenuItem = {
   sku: string;
   name_es: string;
@@ -252,4 +257,71 @@ export function tailoringStarterMenu(): ServiceMenu {
     disclaimer_es: DEFAULT_INSPECTION_DISCLAIMER_ES,
     disclaimer_en: DEFAULT_INSPECTION_DISCLAIMER_EN,
   };
+
+
+/**
+ * Pre-filled starter menu for veterinary clinics (Mexico, neighborhood tier).
+ */
+export function veterinaryStarterMenu(): ServiceMenu {
+  const items: ServiceMenuItem[] = [
+    { sku: "consult_general", name_es: "Consulta general (perro/gato)", name_en: "General exam (dog/cat)", price_mxn_cents: 35000 },
+    { sku: "consult_puppy", name_es: "Consulta cachorro / kitten", name_en: "Puppy/k kitten exam", price_mxn_cents: 40000 },
+    { sku: "consult_followup", name_es: "Consulta de seguimiento", name_en: "Follow-up visit", price_mxn_cents: 25000 },
+    { sku: "vaccine_rabies_dog", name_es: "Vacuna antirrábica (perro)", name_en: "Rabies vaccine (dog)", price_mxn_cents: 28000 },
+    { sku: "vaccine_rabies_cat", name_es: "Vacuna antirrábica (gato)", name_en: "Rabies vaccine (cat)", price_mxn_cents: 28000 },
+    { sku: "vaccine_quintuple", name_es: "Vacuna múltiple perro (quintuple)", name_en: "Dog multivalent vaccine", price_mxn_cents: 45000 },
+    { sku: "vaccine_triple_felina", name_es: "Vacuna triple felina", name_en: "Feline triple vaccine", price_mxn_cents: 42000 },
+    { sku: "deworm_oral", name_es: "Desparasitación oral", name_en: "Oral deworming", price_mxn_cents: 18000 },
+    { sku: "deworm_inject", name_es: "Desparasitación inyectable", name_en: "Injectable deworming", price_mxn_cents: 22000 },
+    { sku: "nail_trim", name_es: "Corte de uñas", name_en: "Nail trim", price_mxn_cents: 12000 },
+    { sku: "ear_clean", name_es: "Limpieza de oídos", name_en: "Ear cleaning", price_mxn_cents: 15000 },
+    { sku: "chip_id", name_es: "Microchip + registro", name_en: "Microchip + registration", price_mxn_cents: 65000 },
+    { sku: "blood_panel_basic", name_es: "Química sanguínea básica", name_en: "Basic blood panel", price_mxn_cents: 90000 },
+    { sku: "urinalysis", name_es: "Examen general de orina", name_en: "Urinalysis", price_mxn_cents: 35000 },
+    { sku: "fluid_subq", name_es: "Fluidos subcutáneos", name_en: "Subcutaneous fluids", price_mxn_cents: 40000 },
+    { sku: "home_visit_fee", name_es: "Visita a domicilio (dentro de zona)", name_en: "Home visit (in zone)", price_mxn_cents: 30000 },
+    { sku: "emergency_surcharge", name_es: "Urgencia fuera de horario", name_en: "After-hours emergency surcharge", price_mxn_cents: 50000 },
+    { sku: "cert_travel", name_es: "Certificado de salud para viaje", name_en: "Travel health certificate", price_mxn_cents: 55000 },
+    { sku: "euthanasia_consult", name_es: "Consulta valoración eutanasia", name_en: "Euthanasia consultation", price_mxn_cents: 60000 },
+  ];
+  return {
+    version: 1,
+    currency: "MXN",
+    items,
+    disclaimer_es: DEFAULT_VET_DISCLAIMER_SPANISH,
+    disclaimer_en: DEFAULT_VET_DISCLAIMER_EN,
+  };
+}
+
+/** Starter template for menu-enabled provider slugs (tailoring, veterinary, …). */
+export function starterMenuForProviderSlug(
+  slug: string | null | undefined,
+): ServiceMenu | null {
+  switch (String(slug ?? "").trim()) {
+    case "arreglos_de_ropa":
+      return tailoringStarterMenu();
+    case "veterinaria":
+      return veterinaryStarterMenu();
+    default:
+      return null;
+  }
+}
+
+/** Default disclaimers when persisting a menu for a provider slug. */
+export function menuDisclaimersForProviderSlug(slug: string | null | undefined): {
+  disclaimer_es: string;
+  disclaimer_en: string;
+} {
+  const menu = starterMenuForProviderSlug(slug);
+  if (menu) {
+    return {
+      disclaimer_es: menu.disclaimer_es ?? DEFAULT_INSPECTION_DISCLAIMER_ES,
+      disclaimer_en: menu.disclaimer_en ?? DEFAULT_INSPECTION_DISCLAIMER_EN,
+    };
+  }
+  return {
+    disclaimer_es: DEFAULT_INSPECTION_DISCLAIMER_ES,
+    disclaimer_en: DEFAULT_INSPECTION_DISCLAIMER_EN,
+  };
+}
 }
