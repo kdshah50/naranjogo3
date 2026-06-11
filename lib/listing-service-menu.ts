@@ -257,7 +257,7 @@ export function tailoringStarterMenu(): ServiceMenu {
     disclaimer_es: DEFAULT_INSPECTION_DISCLAIMER_ES,
     disclaimer_en: DEFAULT_INSPECTION_DISCLAIMER_EN,
   };
-
+}
 
 /**
  * Pre-filled starter menu for veterinary clinics (Mexico, neighborhood tier).
@@ -323,5 +323,4 @@ export function menuDisclaimersForProviderSlug(slug: string | null | undefined):
     disclaimer_es: DEFAULT_INSPECTION_DISCLAIMER_ES,
     disclaimer_en: DEFAULT_INSPECTION_DISCLAIMER_EN,
   };
-}
 }
