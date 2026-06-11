@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Veterinary Services MVP — Progress Log</title>
+<style>
+  body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; line-height: 1.4; margin: 1in; }
+  h1 { font-size: 18pt; color: #1a1a1a; border-bottom: 2px solid #e87722; padding-bottom: 6px; }
+  h2 { font-size: 14pt; color: #333; margin-top: 24px; }
+  h3 { font-size: 12pt; color: #444; margin-top: 16px; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+  th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: #f5f5f5; font-weight: bold; }
+  code, pre { font-family: Consolas, monospace; font-size: 9pt; background: #f8f8f8; }
+  pre { padding: 10px; border: 1px solid #ddd; white-space: pre-wrap; }
+  ul, ol { margin: 8px 0; }
+  li { margin: 4px 0; }
+  .meta { color: #666; font-style: italic; }
+  hr { border: none; border-top: 1px solid #ddd; margin: 20px 0; }
+</style>
+</head>
+<body>
+
+<h1>Veterinary Services MVP — Progress Log</h1>
+<p>A running log of what's built, what's deployed, and how to verify each step.<br>
+Mirror format of <em>TAILORING_PROGRESS.md</em>. Keep updating after every step.</p>
+
+<hr>
+
+<h2>Status snapshot</h2>
+<table>
+  <tr><th>Item</th><th>Value</th></tr>
+  <tr><td>Branch</td><td><code>veterinary-service</code> (forked from <code>main</code>)</td></tr>
+  <tr><td>Strategy</td><td>Additive: reuse existing <code>service_menu</code> jsonb on <code>listings</code>, enable menu editor for slug <code>veterinaria</code> in <code>/unete</code>, add a veterinary starter template + disclaimer. <strong>Zero changes to sell/buy SellModal, booking, cart, payment, or webhook code.</strong></td></tr>
+  <tr><td>Master kill-switch</td><td>Menu editor only renders for slugs in <code>PROVIDER_SERVICES_WITH_MENU</code>. Until <code>veterinaria</code> is added to that set, vet signup behaves exactly like any other service on <code>main</code>.</td></tr>
+  <tr><td>Latest step completed</td><td><strong>Planning doc only — Phase V1 not started</strong></td></tr>
+  <tr><td>Next step</td><td>Phase V1 code: add <code>veterinaria</code> to menu set, <code>veterinaryStarterMenu()</code>, wire <code>/unete</code> template button + ES/EN copy</td></tr>
+</table>
+
+<hr>
+
+<h2>Architectural decision</h2>
+<p><strong>Veterinary is added through the dedicated service-provider onboarding flow at <code>/unete</code>, NOT through the general "+ Vender" (SellModal) button.</strong></p>
+<p>Same model as tailoring (<code>arreglos_de_ropa</code>):</p>
+<ul>
+  <li>The sell/buy flow (SellModal → POST /api/listings) stays <strong>unchanged</strong>.</li>
+  <li>The service-provider flow (<code>/unete</code> → POST /api/provider-signup) gains a <strong>"Menú de servicios (precios fijos)"</strong> editor when the selected primary service is <strong><code>veterinaria</code></strong>.</li>
+  <li>Other providers (plumber, tailor, taxi, etc.) see <strong>no change</strong> in <code>/unete</code>.</li>
+  <li>The listing row carries the menu in <strong><code>listings.service_menu</code></strong> (jsonb, nullable). Public listing + in-chat quote builder reuse existing components.</li>
+</ul>
+<p><strong>Existing slug:</strong> <code>veterinaria</code> is already in PROVIDER_SERVICES. Phase V1 only wires the <strong>menu vertical</strong> — not a new signup category.</p>
+<p><strong>Related pet slugs (unchanged in V1):</strong> <code>paseador</code>, <code>pet_sitting</code>, <code>estetica_canina</code> remain separate simple signups without menus unless we expand later.</p>
+
+<hr>
+
+<h2>Decision log</h2>
+<ul>
+  <li><strong>Reuse tailoring infrastructure.</strong> ServiceMenuPublic, ServiceMenuQuoteBuilder, provider-signup API — all exist on main. Veterinary adds a starter template + slug gate only.</li>
+  <li><strong>Reuse existing buyer/seller flows.</strong> Chat → agreed price → Stripe Checkout → wa.me unlock.</li>
+  <li><strong>No new tables.</strong> Same <code>service_menu</code> jsonb column.</li>
+  <li><strong>No new Stripe primitives.</strong></li>
+  <li><strong>Vet-specific disclaimer</strong> (not garment inspection): price may change after physical exam / assessment.</li>
+  <li><strong>WhatsApp interactive bot deferred to Phase V3</strong> — only after real vet bookings validate demand.</li>
+  <li><strong>No diagnosis or prescription UX in V1.</strong> Menu items are published service prices only; not a telemedicine product.</li>
+</ul>
+
+<hr>
+
+<h2>Phase V1 — Menu MVP (target: 1–2 days)</h2>
+
+<h3>Goal</h3>
+<p>A vet clinic or mobile vet can sign up at <code>/unete</code>, publish a <strong>fixed-price service menu</strong>, and use the <strong>in-chat quote builder</strong> like a tailor.</p>
+
+<h3>Database</h3>
+<p>No new migration if <code>listings.service_menu</code> already exists. Verify with:</p>
+<pre>SELECT column_name FROM information_schema.columns
+WHERE table_schema = 'public' AND table_name = 'listings' AND column_name = 'service_menu';</pre>
+
+<h3>Library (lib/listing-service-menu.ts)</h3>
+<ul>
+  <li>Add DEFAULT_VET_DISCLAIMER_ES / DEFAULT_VET_DISCLAIMER_EN</li>
+  <li>Add veterinaryStarterMenu(): ServiceMenu</li>
+  <li>Export helper starterMenuForProviderSlug(slug) or branch in /unete</li>
+</ul>
+
+<h3>Provider catalog (lib/provider-services.ts)</h3>
+<ul>
+  <li>Add "veterinaria" to PROVIDER_SERVICES_WITH_MENU</li>
+  <li>providerServiceSupportsMenu("veterinaria") → true</li>
+</ul>
+
+<h3>Server / API</h3>
+<p>No API route changes expected — provider-signup and listings PATCH already accept service_menu when slug supports menu.</p>
+
+<h3>UI</h3>
+<ul>
+  <li>app/unete/page.tsx — vet menu editor + "Cargar plantilla sugerida" loads veterinaryStarterMenu()</li>
+  <li>ServiceMenuPublic, ServiceMenuQuoteBuilder — already generic</li>
+  <li>SellModal.tsx — untouched</li>
+</ul>
+
+<h3>Suggested starter menu (Mexico — mid-range pesos)</h3>
+<table>
+  <tr><th>SKU</th><th>ES</th><th>EN</th><th>Price (MXN)</th></tr>
+  <tr><td>consult_general</td><td>Consulta general (perro/gato)</td><td>General exam (dog/cat)</td><td>$350</td></tr>
+  <tr><td>consult_puppy</td><td>Consulta cachorro / kitten</td><td>Puppy/kitten exam</td><td>$400</td></tr>
+  <tr><td>consult_followup</td><td>Consulta de seguimiento</td><td>Follow-up visit</td><td>$250</td></tr>
+  <tr><td>vaccine_rabies_dog</td><td>Vacuna antirrábica (perro)</td><td>Rabies vaccine (dog)</td><td>$280</td></tr>
+  <tr><td>vaccine_rabies_cat</td><td>Vacuna antirrábica (gato)</td><td>Rabies vaccine (cat)</td><td>$280</td></tr>
+  <tr><td>vaccine_quintuple</td><td>Vacuna múltiple perro (quintuple)</td><td>Dog multivalent vaccine</td><td>$450</td></tr>
+  <tr><td>vaccine_triple_felina</td><td>Vacuna triple felina</td><td>Feline triple vaccine</td><td>$420</td></tr>
+  <tr><td>deworm_oral</td><td>Desparasitación oral</td><td>Oral deworming</td><td>$180</td></tr>
+  <tr><td>deworm_inject</td><td>Desparasitación inyectable</td><td>Injectable deworming</td><td>$220</td></tr>
+  <tr><td>nail_trim</td><td>Corte de uñas</td><td>Nail trim</td><td>$120</td></tr>
+  <tr><td>ear_clean</td><td>Limpieza de oídos</td><td>Ear cleaning</td><td>$150</td></tr>
+  <tr><td>chip_id</td><td>Microchip + registro</td><td>Microchip + registration</td><td>$650</td></tr>
+  <tr><td>blood_panel_basic</td><td>Química sanguínea básica</td><td>Basic blood panel</td><td>$900</td></tr>
+  <tr><td>urinalysis</td><td>Examen general de orina</td><td>Urinalysis</td><td>$350</td></tr>
+  <tr><td>fluid_subq</td><td>Fluidos subcutáneos</td><td>Subcutaneous fluids</td><td>$400</td></tr>
+  <tr><td>home_visit_fee</td><td>Visita a domicilio (dentro de zona)</td><td>Home visit (in zone)</td><td>$300</td></tr>
+  <tr><td>emergency_surcharge</td><td>Urgencia fuera de horario</td><td>After-hours emergency surcharge</td><td>$500</td></tr>
+  <tr><td>cert_travel</td><td>Certificado de salud para viaje</td><td>Travel health certificate</td><td>$550</td></tr>
+  <tr><td>euthanasia_consult</td><td>Consulta valoración eutanasia</td><td>Euthanasia consultation</td><td>$600</td></tr>
+</table>
+<p><em>Prices are starting suggestions — vets edit before publishing.</em></p>
+
+<h3>Vet disclaimer (default)</h3>
+<ul>
+  <li><strong>ES:</strong> El precio puede ajustarse después del examen físico y según el peso, edad o condición del paciente.</li>
+  <li><strong>EN:</strong> Price may change after physical exam and depending on the patient's weight, age, or condition.</li>
+</ul>
+
+<hr>
+
+<h2>How to verify (smoke test)</h2>
+
+<h3>A. Confirm database (one-time)</h3>
+<pre>ALTER TABLE public.listings ADD COLUMN IF NOT EXISTS service_menu JSONB;
+-- (see full SQL in VETERINARY_PROGRESS.md)</pre>
+
+<h3>B. Test vet signup (/unete)</h3>
+<ol>
+  <li>Open Vercel preview for veterinary-service.</li>
+  <li>Go to /unete → choose "Servicios veterinarios".</li>
+  <li>Menu editor appears → load suggested template (~19 rows).</li>
+  <li>Submit → admin verifies listing.</li>
+</ol>
+
+<h3>C. Test public listing &amp; chat quote builder</h3>
+<p>Listing shows menu + disclaimer. Vet uses quote builder in chat → agreed price → checkout.</p>
+
+<h3>D. Zero regression</h3>
+<p>SellModal unchanged. Other /unete services unchanged.</p>
+
+<hr>
+
+<h2>Phase V2 — Landing + recruitment (2–3 days after V1)</h2>
+<ul>
+  <li>/veterinaria landing page → /unete?service=veterinaria</li>
+  <li>Recruit 3–5 local vets</li>
+  <li>Optional: species served, clinic vs home visit</li>
+</ul>
+
+<h2>Phase V3 — WhatsApp bot (deferred)</h2>
+<p>Only if Phase V2 produces real bookings. Same deferral as tailoring.</p>
+
+<hr>
+
+<h2>Rollback plan</h2>
+<ol>
+  <li>Hide UI: revert provider-services.ts, unete/page.tsx, listing-service-menu.ts</li>
+  <li>Clear single listing: UPDATE listings SET service_menu = NULL WHERE id = '…'</li>
+  <li>Drop column only if no menus in use (affects tailoring too)</li>
+</ol>
+
+<hr>
+
+<h2>File map (tailoring → veterinary)</h2>
+<table>
+  <tr><th>Tailoring</th><th>Veterinary (Phase V1)</th></tr>
+  <tr><td>Slug arreglos_de_ropa</td><td>Slug veterinaria (already in catalog)</td></tr>
+  <tr><td>tailoringStarterMenu()</td><td>veterinaryStarterMenu() (to add)</td></tr>
+  <tr><td>PROVIDER_SERVICES_WITH_MENU</td><td>Add veterinaria</td></tr>
+  <tr><td>Garment disclaimer</td><td>Physical exam disclaimer</td></tr>
+  <tr><td>/arreglos-de-ropa landing</td><td>/veterinaria landing (V2)</td></tr>
+  <tr><td>Branch tailoring-mvp</td><td>Branch veterinary-service</td></tr>
+</table>
+
+<hr>
+
+<p class="meta">Last updated: planning doc on veterinary-service branch. NaranjoGo — Veterinary Services MVP.</p>
+
+</body>
+</html>
