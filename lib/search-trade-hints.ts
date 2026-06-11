@@ -49,6 +49,20 @@ const TRADE_HINTS: { re: RegExp; terms: string[] }[] = [
     terms: ["carpintero", "carpintería", "madera"],
   },
   {
+    re: /\b(veterinar(y|ia|io|ios|ias)|\bvet\b|vets|pet\s+hospital|cl[ií]nica\s+veterin|servicios?\s+veterin|vacun(a|cion|aci[oó]n)|desparasit|antirr[aá]bica|rabies\s+vaccine|spay|neuter|esteriliz|castrac|rayos?\s*x|radiograf[ií]|ultrasonido|ultrasound|limpieza\s+dental|extracci[oó]n\s+dental|eutanasia|cremaci[oó]n|hospitalizaci[oó]n|chequeo\s+anual|wellness\s+exam|ex[oó]tico?s?\s+(animal|pet)|microchip\s+pet|consulta\s+veterin)\b/i,
+    terms: [
+      "veterinaria",
+      "veterinario",
+      "clínica veterinaria",
+      "servicios veterinarios",
+      "consulta veterinaria",
+      "vacunas",
+      "vacunación",
+      "desparasitación",
+      "antirrábica",
+    ],
+  },
+  {
     re: /\b(dog|dogs|puppy|puppies|cat|cats|pet\b|pets?|animal|walk(er|ers|ing)?\s+dog|dog\s+walk(er|ers|ing)?|petsit|pet-?sit|paseador|paseadores|paseo\s+(de\s+)?perros?|cuidado\s+de\s+mascotas)\b/i,
     terms: ["paseador", "perros", "mascotas", "cuidado de mascotas", "paseo de mascotas"],
   },

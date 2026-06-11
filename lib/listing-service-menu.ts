@@ -264,25 +264,47 @@ export function tailoringStarterMenu(): ServiceMenu {
  */
 export function veterinaryStarterMenu(): ServiceMenu {
   const items: ServiceMenuItem[] = [
+    // Primary / general care
+    { sku: "wellness_annual", name_es: "Chequeo anual / wellness", name_en: "Annual wellness exam", price_mxn_cents: 45000 },
     { sku: "consult_general", name_es: "Consulta general (perro/gato)", name_en: "General exam (dog/cat)", price_mxn_cents: 35000 },
-    { sku: "consult_puppy", name_es: "Consulta cachorro / kitten", name_en: "Puppy/k kitten exam", price_mxn_cents: 40000 },
+    { sku: "consult_puppy", name_es: "Consulta cachorro / kitten", name_en: "Puppy/kitten exam", price_mxn_cents: 40000 },
     { sku: "consult_followup", name_es: "Consulta de seguimiento", name_en: "Follow-up visit", price_mxn_cents: 25000 },
+    { sku: "consult_exotic", name_es: "Consulta animales exóticos (aves, reptiles, conejos)", name_en: "Exotic animal exam (birds, reptiles, rabbits)", price_mxn_cents: 55000 },
     { sku: "vaccine_rabies_dog", name_es: "Vacuna antirrábica (perro)", name_en: "Rabies vaccine (dog)", price_mxn_cents: 28000 },
     { sku: "vaccine_rabies_cat", name_es: "Vacuna antirrábica (gato)", name_en: "Rabies vaccine (cat)", price_mxn_cents: 28000 },
     { sku: "vaccine_quintuple", name_es: "Vacuna múltiple perro (quintuple)", name_en: "Dog multivalent vaccine", price_mxn_cents: 45000 },
     { sku: "vaccine_triple_felina", name_es: "Vacuna triple felina", name_en: "Feline triple vaccine", price_mxn_cents: 42000 },
     { sku: "deworm_oral", name_es: "Desparasitación oral", name_en: "Oral deworming", price_mxn_cents: 18000 },
     { sku: "deworm_inject", name_es: "Desparasitación inyectable", name_en: "Injectable deworming", price_mxn_cents: 22000 },
-    { sku: "nail_trim", name_es: "Corte de uñas", name_en: "Nail trim", price_mxn_cents: 12000 },
-    { sku: "ear_clean", name_es: "Limpieza de oídos", name_en: "Ear cleaning", price_mxn_cents: 15000 },
+    { sku: "flea_tick_prevention", name_es: "Prevención pulgas y garrapatas", name_en: "Flea and tick prevention", price_mxn_cents: 35000 },
+    { sku: "spay_neuter", name_es: "Esterilización / castración (perro o gato)", name_en: "Spay/neuter (dog or cat)", price_mxn_cents: 220000 },
     { sku: "chip_id", name_es: "Microchip + registro", name_en: "Microchip + registration", price_mxn_cents: 65000 },
+    { sku: "nutrition_consult", name_es: "Asesoría nutricional", name_en: "Nutrition counseling", price_mxn_cents: 30000 },
+    { sku: "home_visit_fee", name_es: "Consulta / visita a domicilio (zona local)", name_en: "Home visit (local zone)", price_mxn_cents: 30000 },
+    // Diagnostic
     { sku: "blood_panel_basic", name_es: "Química sanguínea básica", name_en: "Basic blood panel", price_mxn_cents: 90000 },
     { sku: "urinalysis", name_es: "Examen general de orina", name_en: "Urinalysis", price_mxn_cents: 35000 },
+    { sku: "inhouse_lab_panel", name_es: "Panel de laboratorio en consultorio", name_en: "In-house lab panel", price_mxn_cents: 65000 },
+    { sku: "xray", name_es: "Rayos X (radiografía digital)", name_en: "X-ray (digital radiology)", price_mxn_cents: 80000 },
+    { sku: "ultrasound", name_es: "Ultrasonido", name_en: "Ultrasound imaging", price_mxn_cents: 120000 },
     { sku: "fluid_subq", name_es: "Fluidos subcutáneos", name_en: "Subcutaneous fluids", price_mxn_cents: 40000 },
-    { sku: "home_visit_fee", name_es: "Visita a domicilio (dentro de zona)", name_en: "Home visit (in zone)", price_mxn_cents: 30000 },
-    { sku: "emergency_surcharge", name_es: "Urgencia fuera de horario", name_en: "After-hours emergency surcharge", price_mxn_cents: 50000 },
+    // Hospitalization & surgery
+    { sku: "hospitalization_day", name_es: "Hospitalización (por día)", name_en: "Hospitalization (per day)", price_mxn_cents: 80000 },
+    { sku: "soft_tissue_surgery", name_es: "Cirugía de tejidos blandos (referencia)", name_en: "Soft tissue surgery (reference)", price_mxn_cents: 350000 },
+    { sku: "surgery_ortho_consult", name_es: "Valoración ortopedia / traumatología", name_en: "Orthopedic evaluation", price_mxn_cents: 45000 },
+    // Dental
+    { sku: "dental_cleaning", name_es: "Limpieza y profilaxis dental", name_en: "Professional dental cleaning", price_mxn_cents: 150000 },
+    { sku: "dental_extraction", name_es: "Extracción dental", name_en: "Tooth extraction", price_mxn_cents: 80000 },
+    { sku: "dental_xray", name_es: "Radiografía dental", name_en: "Dental X-ray", price_mxn_cents: 60000 },
+    // Minor care & admin
+    { sku: "nail_trim", name_es: "Corte de uñas", name_en: "Nail trim", price_mxn_cents: 12000 },
+    { sku: "ear_clean", name_es: "Limpieza de oídos", name_en: "Ear cleaning", price_mxn_cents: 15000 },
+    { sku: "emergency_surcharge", name_es: "Urgencia / cirugía de emergencia (recargo)", name_en: "Emergency / after-hours surcharge", price_mxn_cents: 50000 },
     { sku: "cert_travel", name_es: "Certificado de salud para viaje", name_en: "Travel health certificate", price_mxn_cents: 55000 },
+    // End-of-life
     { sku: "euthanasia_consult", name_es: "Consulta valoración eutanasia", name_en: "Euthanasia consultation", price_mxn_cents: 60000 },
+    { sku: "euthanasia_procedure", name_es: "Eutanasia humanitaria", name_en: "Humane euthanasia", price_mxn_cents: 150000 },
+    { sku: "cremation_pet", name_es: "Cremación de mascotas", name_en: "Pet cremation", price_mxn_cents: 200000 },
   ];
   return {
     version: 1,
