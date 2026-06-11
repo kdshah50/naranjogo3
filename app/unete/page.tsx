@@ -20,6 +20,7 @@ import {
   providerServiceLabels,
   providerServiceSupportsMenu,
   VETERINARY_SERVICE,
+  HOUSEKEEPING_SERVICE,
   COACHING_TRAINING_SERVICE,
   COACHING_TRAINING_FOCUS,
   COACHING_TRAINING_DELIVERY,
@@ -116,13 +117,17 @@ const T = {
     menuTitle:              "Menú de servicios (precios fijos)",
     menuHint:               "Lista los arreglos comunes con su precio. Los compradores los verán publicados y podrás armar un presupuesto desde el chat.",
     menuHintVet:            "Lista consultas, vacunas y servicios comunes con precio fijo. Los clientes los verán publicados y podrás armar un presupuesto desde el chat.",
+    menuHintHousekeeping:   "Lista limpieza estándar/profunda por cuarto, lavado de ropa y extras con precio fijo. Armas el presupuesto total en el chat según el hogar.",
     menuTemplateBtn:        "Cargar plantilla sugerida (20 servicios)",
     menuTemplateBtnVet:      "Cargar plantilla sugerida (35 servicios)",
+    menuTemplateBtnHousekeeping: "Cargar plantilla sugerida (34 servicios)",
     menuAddRow:             "+ Agregar servicio",
     menuRowNamePh:          "Nombre (ej. Dobladillo de pantalón)",
     menuRowNamePhVet:       "Nombre (ej. Consulta general perro/gato)",
+    menuRowNamePhHousekeeping: "Nombre (ej. Baño profundo)",
     menuDisclaimer:         "El precio puede ajustarse al revisar la prenda físicamente.",
     menuDisclaimerVet:      "El precio puede ajustarse después del examen físico y según el peso, edad o condición del paciente.",
+    menuDisclaimerHousekeeping: "El precio puede variar según el estado del hogar, el tamaño real y el acceso. Se confirma en visita o por mensaje.",
     menuEmpty:              "Sin servicios — toca «Cargar plantilla» o «+ Agregar servicio» para empezar.",
   },
   en: {
@@ -197,13 +202,17 @@ const T = {
     menuTitle:              "Service menu (fixed prices)",
     menuHint:               "List common alterations with their price. Buyers will see the published menu and you can build a quote from chat.",
     menuHintVet:            "List exams, vaccines, and common services at fixed prices. Clients will see the published menu and you can build a quote from chat.",
+    menuHintHousekeeping:   "List standard/deep cleaning by room, laundry, and add-ons at fixed prices. Build the total quote in chat based on the home.",
     menuTemplateBtn:        "Load suggested template (20 services)",
     menuTemplateBtnVet:      "Load suggested template (35 services)",
+    menuTemplateBtnHousekeeping: "Load suggested template (34 services)",
     menuAddRow:             "+ Add service",
     menuRowNamePh:          "Name (e.g. Pants hem)",
     menuRowNamePhVet:       "Name (e.g. General exam dog/cat)",
+    menuRowNamePhHousekeeping: "Name (e.g. Deep bathroom clean)",
     menuDisclaimer:         "Price may change after physical inspection of the garment.",
     menuDisclaimerVet:      "Price may change after physical exam and depending on the patient's weight, age, or condition.",
+    menuDisclaimerHousekeeping: "Price may vary based on home condition, actual size, and access. Confirmed on visit or by message.",
     menuEmpty:              "No services yet — tap 'Load template' or '+ Add service' to begin.",
   },
 };
@@ -226,12 +235,27 @@ function UnetePageInner() {
   const lang = useAppLang();
 
   const menuCopy = (service: string, t: typeof T.es) => {
-    const isVet = service === VETERINARY_SERVICE;
+    if (service === VETERINARY_SERVICE) {
+      return {
+        hint: t.menuHintVet,
+        templateBtn: t.menuTemplateBtnVet,
+        namePh: t.menuRowNamePhVet,
+        disclaimer: t.menuDisclaimerVet,
+      };
+    }
+    if (service === HOUSEKEEPING_SERVICE) {
+      return {
+        hint: t.menuHintHousekeeping,
+        templateBtn: t.menuTemplateBtnHousekeeping,
+        namePh: t.menuRowNamePhHousekeeping,
+        disclaimer: t.menuDisclaimerHousekeeping,
+      };
+    }
     return {
-      hint: isVet ? t.menuHintVet : t.menuHint,
-      templateBtn: isVet ? t.menuTemplateBtnVet : t.menuTemplateBtn,
-      namePh: isVet ? t.menuRowNamePhVet : t.menuRowNamePh,
-      disclaimer: isVet ? t.menuDisclaimerVet : t.menuDisclaimer,
+      hint: t.menuHint,
+      templateBtn: t.menuTemplateBtn,
+      namePh: t.menuRowNamePh,
+      disclaimer: t.menuDisclaimer,
     };
   };
   const { setLang } = useAppLangActions();

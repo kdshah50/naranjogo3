@@ -34,6 +34,11 @@ export const DEFAULT_VET_DISCLAIMER_SPANISH =
 export const DEFAULT_VET_DISCLAIMER_EN =
   "Price may change after physical exam and depending on the patient's weight, age, or condition.";
 
+export const DEFAULT_HOUSEKEEPING_DISCLAIMER_ES =
+  "El precio puede variar según el estado del hogar, el tamaño real y el acceso. Se confirma en visita o por mensaje.";
+export const DEFAULT_HOUSEKEEPING_DISCLAIMER_EN =
+  "Price may vary based on home condition, actual size, and access. Confirmed on visit or by message.";
+
 export type ServiceMenuItem = {
   sku: string;
   name_es: string;
@@ -315,6 +320,65 @@ export function veterinaryStarterMenu(): ServiceMenu {
   };
 }
 
+/**
+ * Pre-filled starter menu for home cleaning / housekeeping (Mexico, neighborhood tier).
+ * Line-item model: standard vs deep per room, laundry, specials. Editable before publish.
+ */
+export function housekeepingStarterMenu(): ServiceMenu {
+  const items: ServiceMenuItem[] = [
+    // Standard / deep — base & bedrooms
+    { sku: "std_base_1bed", name_es: "Limpieza estándar base (hasta 1 recámara)", name_en: "Standard clean base (up to 1 bedroom)", price_mxn_cents: 45000 },
+    { sku: "std_bedroom_add", name_es: "Recámara adicional (estándar)", name_en: "Additional bedroom (standard)", price_mxn_cents: 12000 },
+    { sku: "deep_base_1bed", name_es: "Limpieza profunda base (hasta 1 recámara)", name_en: "Deep clean base (up to 1 bedroom)", price_mxn_cents: 95000 },
+    { sku: "deep_bedroom_add", name_es: "Recámara adicional (profunda)", name_en: "Additional bedroom (deep)", price_mxn_cents: 20000 },
+    // Bathrooms
+    { sku: "std_bathroom", name_es: "Baño (estándar)", name_en: "Bathroom (standard)", price_mxn_cents: 15000 },
+    { sku: "deep_bathroom", name_es: "Baño (profunda)", name_en: "Bathroom (deep)", price_mxn_cents: 28000 },
+    // Kitchen
+    { sku: "std_kitchen", name_es: "Cocina (estándar)", name_en: "Kitchen (standard)", price_mxn_cents: 18000 },
+    { sku: "deep_kitchen", name_es: "Cocina (profunda)", name_en: "Kitchen (deep)", price_mxn_cents: 35000 },
+    // Living / family / other rooms
+    { sku: "std_living", name_es: "Sala / comedor (estándar)", name_en: "Living / dining room (standard)", price_mxn_cents: 15000 },
+    { sku: "deep_living", name_es: "Sala / comedor (profunda)", name_en: "Living / dining room (deep)", price_mxn_cents: 25000 },
+    { sku: "std_family", name_es: "Cuarto familiar / estudio (estándar)", name_en: "Family room / study (standard)", price_mxn_cents: 12000 },
+    { sku: "deep_family", name_es: "Cuarto familiar / estudio (profunda)", name_en: "Family room / study (deep)", price_mxn_cents: 22000 },
+    { sku: "std_other_room", name_es: "Otro cuarto / oficina (estándar)", name_en: "Other room / office (standard)", price_mxn_cents: 12000 },
+    { sku: "deep_other_room", name_es: "Otro cuarto / oficina (profunda)", name_en: "Other room / office (deep)", price_mxn_cents: 22000 },
+    // Laundry & clothes
+    { sku: "laundry_small", name_es: "Lavado de ropa (carga pequeña)", name_en: "Laundry (small load)", price_mxn_cents: 10000 },
+    { sku: "laundry_large", name_es: "Lavado de ropa (carga grande)", name_en: "Laundry (large load)", price_mxn_cents: 18000 },
+    { sku: "folding_clothes", name_es: "Doblar y guardar ropa", name_en: "Fold and put away laundry", price_mxn_cents: 8000 },
+    { sku: "ironing_hour", name_es: "Planchado (por hora)", name_en: "Ironing (per hour)", price_mxn_cents: 12000 },
+    // Special surfaces & appliances
+    { sku: "windows_each", name_es: "Ventanas (por ventana)", name_en: "Windows (each)", price_mxn_cents: 6000 },
+    { sku: "fridge_interior", name_es: "Interior de refrigerador", name_en: "Refrigerator interior", price_mxn_cents: 15000 },
+    { sku: "oven_stove", name_es: "Horno y estufa", name_en: "Oven and stovetop", price_mxn_cents: 18000 },
+    { sku: "cabinets_interior", name_es: "Interior de gabinetes (cocina)", name_en: "Cabinet interiors (kitchen)", price_mxn_cents: 20000 },
+    { sku: "baseboards", name_es: "Zoclos, marcos y polvo alto", name_en: "Baseboards, frames, high dusting", price_mxn_cents: 12000 },
+    { sku: "blinds_dust", name_es: "Persianas / lamas", name_en: "Blinds / slats", price_mxn_cents: 10000 },
+    { sku: "upholstery_sofa", name_es: "Sofá (aspirado / superficie)", name_en: "Sofa (vacuum / surface)", price_mxn_cents: 20000 },
+    { sku: "balcony_patio", name_es: "Balcón / patio (estándar)", name_en: "Balcony / patio (standard)", price_mxn_cents: 15000 },
+    // Special jobs
+    { sku: "move_out", name_es: "Limpieza post-mudanza / entrega de llaves", name_en: "Move-out / key handover clean", price_mxn_cents: 180000 },
+    { sku: "post_construction", name_es: "Limpieza post-obra (referencia)", name_en: "Post-construction clean (reference)", price_mxn_cents: 250000 },
+    { sku: "disinfection", name_es: "Desinfección / sanitización", name_en: "Disinfection / sanitization", price_mxn_cents: 80000 },
+    { sku: "pet_hair_surcharge", name_es: "Recargo pelo de mascotas", name_en: "Pet hair surcharge", price_mxn_cents: 15000 },
+    // Supplies & logistics
+    { sku: "supplies_included", name_es: "Productos de limpieza incluidos", name_en: "Cleaning supplies included", price_mxn_cents: 8000 },
+    { sku: "travel_fee", name_es: "Visita fuera de zona / traslado", name_en: "Out-of-zone visit / travel fee", price_mxn_cents: 15000 },
+    // Recurring
+    { sku: "recurring_weekly", name_es: "Paquete semanal (1 visita, referencia)", name_en: "Weekly package (1 visit, reference)", price_mxn_cents: 35000 },
+    { sku: "recurring_biweekly", name_es: "Paquete quincenal (1 visita, referencia)", name_en: "Biweekly package (1 visit, reference)", price_mxn_cents: 40000 },
+  ];
+  return {
+    version: 1,
+    currency: "MXN",
+    items,
+    disclaimer_es: DEFAULT_HOUSEKEEPING_DISCLAIMER_ES,
+    disclaimer_en: DEFAULT_HOUSEKEEPING_DISCLAIMER_EN,
+  };
+}
+
 /** Starter template for menu-enabled provider slugs (tailoring, veterinary, …). */
 export function starterMenuForProviderSlug(
   slug: string | null | undefined,
@@ -324,6 +388,8 @@ export function starterMenuForProviderSlug(
       return tailoringStarterMenu();
     case "veterinaria":
       return veterinaryStarterMenu();
+    case "limpieza":
+      return housekeepingStarterMenu();
     default:
       return null;
   }

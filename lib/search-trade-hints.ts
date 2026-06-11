@@ -25,8 +25,15 @@ const TRADE_HINTS: { re: RegExp; terms: string[] }[] = [
     terms: ["chef", "cocinero", "cocinera", "cocina", "comida", "servicio de cocina"],
   },
   {
-    re: /\b(clean(ing)?|housekeep|maid|limpieza|limpiar|aseo)\b/i,
-    terms: ["limpieza", "aseo", "servicio doméstico"],
+    re: /\b(clean(ing)?|housekeep(ing|er)?|maid|limpieza|limpiar|aseo|deep\s+clean|limpieza\s+profunda|mudanza|move-?out|lavado\s+de\s+ropa|lavander[ií]a|planchado|ironing|sanitize|desinfecc|house\s+clean)\b/i,
+    terms: [
+      "limpieza",
+      "limpieza del hogar",
+      "aseo",
+      "servicio doméstico",
+      "limpieza profunda",
+      "empleada doméstica",
+    ],
   },
   {
     re: /\b(babysit|nanny|childcare|niñer|guardería|niños|niñas|cuidado infantil)\b/i,

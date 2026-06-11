@@ -101,10 +101,12 @@ export const PROVIDER_SERVICES = [
  *  Únete menu-editor and the listing's `service_menu` jsonb column. Keep additive. */
 export const TAILORING_SERVICE = "arreglos_de_ropa";
 export const VETERINARY_SERVICE = "veterinaria";
+export const HOUSEKEEPING_SERVICE = "limpieza";
 
 export const PROVIDER_SERVICES_WITH_MENU = new Set<string>([
   TAILORING_SERVICE,
   VETERINARY_SERVICE,
+  HOUSEKEEPING_SERVICE,
 ]);
 
 export function providerServiceSupportsMenu(slug: string | null | undefined): boolean {
