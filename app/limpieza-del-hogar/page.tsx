@@ -79,13 +79,13 @@ const COPY: Record<
       "El cliente paga en línea (tarifa de plataforma o servicio completo con Stripe Connect). Menos cobros en efectivo sin registro.",
     why3Title: "Menú claro por cuarto y servicio",
     why3Body:
-      "Publicas precios por recámara, baño, cocina, sala, limpieza profunda, lavado de ropa y extras. Armas el total en el chat según el hogar.",
+      "Publicas precios por visita (recámara, baño, cocina, sala, profunda, lavado). En el chat eliges frecuencia: diario, semanal, 2×/semana o mensual.",
     howTitle: "Cómo funciona",
     how1Title: "1. Te registras gratis",
     how1Body: "Formulario corto: nombre, WhatsApp, colonia y servicios. Unos 5 minutos.",
     how2Title: "2. Cargas tu menú de precios",
     how2Body:
-      "Plantilla con 34 servicios (estándar/profunda por cuarto, lavandería, mudanza, etc.). Borras lo que no ofreces y pones tus precios.",
+      "Plantilla con 32 servicios por visita (estándar/profunda por cuarto, lavandería, mudanza, etc.). Borras lo que no ofreces y pones tus precios.",
     how3Title: "3. Te aprobamos en 24 h",
     how3Body: "Revisamos tu perfil y te avisamos por WhatsApp. Luego apareces en búsquedas.",
     how4Title: "4. Limpias y cobras",
@@ -102,7 +102,7 @@ const COPY: Record<
       "Nada. El registro es gratuito. Naranjogo cobra comisión solo cuando recibes un pago en línea — los términos se acuerdan contigo antes de cualquier cobro.",
     faq2Q: "¿Estándar vs limpieza profunda?",
     faq2A:
-      "En tu menú publicas ambas por cuarto (recámara, baño, cocina, etc.). En el chat seleccionas lo que aplica al hogar del cliente y das el total.",
+      "En tu menú publicas ambas por cuarto (recámara, baño, cocina, etc.). En el chat seleccionas cuartos y frecuencia (única, diaria, semanal, 2×/semana, mensual) para calcular el total.",
     faq3Q: "¿Traigo productos de limpieza?",
     faq3A:
       "Tú decides. Puedes incluir «productos incluidos» en tu menú con un cargo, o coordinar que el cliente los tenga listos.",
@@ -112,7 +112,7 @@ const COPY: Record<
     faq5Q: "¿Mi WhatsApp es público?",
     faq5A: "No. Solo clientes que abren chat en la app pueden contactarte.",
     finalTitle: "Empieza hoy. Tarda 5 minutos.",
-    finalSub: "Cargamos tu menú con 34 servicios de referencia. Solo ajustas precios y listo.",
+    finalSub: "Cargamos tu menú con 32 servicios de referencia por visita. Solo ajustas precios y listo.",
     buyerEyebrow: "¿Buscas limpieza?",
     buyerTitle: "Encuentra limpieza del hogar cerca de ti.",
     buyerSub: "Mira proveedores aprobados en San Miguel de Allende, con menú y precios claros.",
@@ -142,13 +142,13 @@ const COPY: Record<
       "Customers pay online (platform fee or full service via Stripe Connect). Less unrecorded cash collection.",
     why3Title: "Clear per-room menu",
     why3Body:
-      "Publish prices per bedroom, bathroom, kitchen, living room, deep clean, laundry, and extras. Build the total in chat for each home.",
+      "Publish per-visit prices (bedroom, bathroom, kitchen, living, deep clean, laundry). In chat, pick frequency: daily, weekly, twice/week, or monthly.",
     howTitle: "How it works",
     how1Title: "1. You sign up for free",
     how1Body: "Short form: name, WhatsApp, neighborhood, services. About 5 minutes.",
     how2Title: "2. You load your price menu",
     how2Body:
-      "Template with 34 services (standard/deep by room, laundry, move-out, etc.). Remove what you don't offer and set your prices.",
+      "Template with 32 per-visit services (standard/deep by room, laundry, move-out, etc.). Remove what you don't offer and set your prices.",
     how3Title: "3. We approve you within 24h",
     how3Body: "We review your profile and ping you on WhatsApp. Then you appear in search.",
     how4Title: "4. You clean and get paid",
@@ -165,7 +165,7 @@ const COPY: Record<
       "Nothing. Signup is free. Naranjogo only takes a commission when you receive an in-app payment — terms are agreed before any charge.",
     faq2Q: "Standard vs deep cleaning?",
     faq2A:
-      "You publish both per room (bedroom, bathroom, kitchen, etc.). In chat you select what applies to the client's home and quote the total.",
+      "You publish both per room (bedroom, bathroom, kitchen, etc.). In chat you pick rooms and frequency (one-time, daily, weekly, twice/week, monthly) to calculate the total.",
     faq3Q: "Do I bring cleaning supplies?",
     faq3A:
       "Your choice. You can add a «supplies included» line in your menu, or coordinate with the client to have products ready.",
@@ -175,7 +175,7 @@ const COPY: Record<
     faq5Q: "Is my WhatsApp public?",
     faq5A: "No. Only customers who open a chat in the app can contact you.",
     finalTitle: "Start today. Takes 5 minutes.",
-    finalSub: "We load your menu with 34 reference services. Just adjust prices and you're done.",
+    finalSub: "We load your menu with 32 per-visit reference services. Just adjust prices and you're done.",
     buyerEyebrow: "Need a cleaner?",
     buyerTitle: "Find home cleaning near you.",
     buyerSub: "Browse approved cleaning providers in San Miguel de Allende with clear menus and prices.",

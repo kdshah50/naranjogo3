@@ -26,6 +26,8 @@ import { getSellerPlatformJobStats } from "@/lib/seller-platform-stats";
 import { parseBeforeAfterPhotoUrls } from "@/lib/provider-trust";
 import ListingTrustStrip from "@/components/ListingTrustStrip";
 import ListingBeforeAfterSection from "@/components/ListingBeforeAfterSection";
+import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
+import { HOUSEKEEPING_SERVICE } from "@/lib/provider-services";
 
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
   const supaUrl = getSupabaseUrl();
@@ -97,6 +99,9 @@ export default async function ListingPage({
 
   const price = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 0 }).format(listing.price_mxn / 100);
   const isServiceListing = isServicesListing(listing);
+  const providerSlug = inferProviderSlugFromListingTitle(listing.title_es);
+  const menuQuoteLayout =
+    providerSlug === HOUSEKEEPING_SERVICE ? ("housekeeping" as const) : ("default" as const);
   const listingLang = langFromParam(searchParams?.lang);
   const listingQueryBase = new URLSearchParams();
   if (listingLang === "en") listingQueryBase.set("lang", "en");
@@ -333,6 +338,7 @@ export default async function ListingPage({
                 ? (listing as { service_menu?: ServiceMenu | null }).service_menu ?? null
                 : null
             }
+            quoteLayout={menuQuoteLayout}
           />
           <div id="booking-section" className="scroll-mt-28">
             <ServiceBookingBlock

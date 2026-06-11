@@ -25,6 +25,7 @@ export default function ListingChat({
   showFullListingLink,
   lang = "es",
   serviceMenu = null,
+  quoteLayout = "default",
 }: {
   listingId: string;
   initialConversationId?: string;
@@ -36,6 +37,8 @@ export default function ListingChat({
   lang?: Lang;
   /** Optional service menu for the listing — drives the seller's quote builder. */
   serviceMenu?: ServiceMenu | null;
+  /** Housekeeping listings get quick room-type qty picks in the quote builder. */
+  quoteLayout?: "default" | "housekeeping";
 }) {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -542,6 +545,7 @@ export default function ListingChat({
             <ServiceMenuQuoteBuilder
               menu={serviceMenu}
               lang={lang === "en" ? "en" : "es"}
+              quoteLayout={quoteLayout}
               disabled={agreedSaving || agreedLoading}
               onApplyTotal={(pesos) => setAgreedPesos(pesos)}
               onInsertAsMessage={async (body) => {

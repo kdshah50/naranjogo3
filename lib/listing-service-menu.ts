@@ -202,6 +202,128 @@ export function hasServiceMenu(menu: ServiceMenu | null | undefined): boolean {
   return Boolean(menu && Array.isArray(menu.items) && menu.items.length > 0);
 }
 
+export type ServiceMenuFormRow = { name: string; pesos: string };
+
+/** Form rows for the menu editor UI (signup or profile). */
+export function serviceMenuFormRowsFromMenu(
+  menu: ServiceMenu | null | undefined,
+  lang: "es" | "en" = "es",
+): ServiceMenuFormRow[] {
+  if (!menu?.items?.length) return [];
+  return menu.items.map((it) => ({
+    name: (lang === "en" && it.name_en) || it.name_es,
+    pesos: String(it.price_mxn_cents / 100),
+  }));
+}
+
+/** Build API payload from editor rows + provider slug (disclaimers from slug). */
+export function serviceMenuPayloadFromFormRows(
+  rows: ServiceMenuFormRow[],
+  providerSlug: string | null | undefined,
+): { items: { name_es: string; price_mxn: number }[] } & ReturnType<typeof menuDisclaimersForProviderSlug> | null {
+  const cleaned = rows
+    .map((r) => ({
+      name_es: r.name.trim(),
+      pesos: Number(String(r.pesos).trim().replace(/,/g, ".")),
+    }))
+    .filter((r) => r.name_es.length > 0 && Number.isFinite(r.pesos) && r.pesos > 0)
+    .map((r) => ({ name_es: r.name_es, price_mxn: r.pesos }));
+  if (cleaned.length === 0) return null;
+  return { items: cleaned, ...menuDisclaimersForProviderSlug(providerSlug) };
+}
+
+/** Quick room-type qty controls for housekeeping quote builder (maps to menu SKUs). */
+export const HOUSEKEEPING_QUICK_QUOTE_GROUPS: {
+  sku: string;
+  label_es: string;
+  label_en: string;
+  /** When qty > 0, also set this SKU to 1 (e.g. base clean once per quote). */
+  alsoSetSku?: string;
+}[] = [
+  { sku: "std_bedroom_add", label_es: "Recámaras extra (estándar)", label_en: "Extra bedrooms (standard)", alsoSetSku: "std_base_1bed" },
+  { sku: "deep_bedroom_add", label_es: "Recámaras extra (profunda)", label_en: "Extra bedrooms (deep)", alsoSetSku: "deep_base_1bed" },
+  { sku: "std_bathroom", label_es: "Baños (estándar)", label_en: "Bathrooms (standard)" },
+  { sku: "deep_bathroom", label_es: "Baños (profunda)", label_en: "Bathrooms (deep)" },
+  { sku: "std_kitchen", label_es: "Cocina (estándar)", label_en: "Kitchen (standard)" },
+  { sku: "deep_kitchen", label_es: "Cocina (profunda)", label_en: "Kitchen (deep)" },
+  { sku: "std_living", label_es: "Sala / comedor (estándar)", label_en: "Living / dining (standard)" },
+  { sku: "deep_living", label_es: "Sala / comedor (profunda)", label_en: "Living / dining (deep)" },
+  { sku: "laundry_small", label_es: "Lavado ropa (carga pequeña)", label_en: "Laundry (small load)" },
+  { sku: "laundry_large", label_es: "Lavado ropa (carga grande)", label_en: "Laundry (large load)" },
+];
+
+/** Visit frequency for recurring housekeeping quotes (menu prices = per visit). */
+export type HousekeepingVisitFrequency =
+  | "one_time"
+  | "daily"
+  | "weekly"
+  | "twice_weekly"
+  | "monthly";
+
+export const HOUSEKEEPING_VISIT_FREQUENCIES: {
+  id: HousekeepingVisitFrequency;
+  label_es: string;
+  label_en: string;
+  /** Visits in a typical month — used to estimate monthly total from per-visit menu prices. */
+  visitsPerMonth: number;
+}[] = [
+  { id: "one_time", label_es: "Única visita", label_en: "One-time visit", visitsPerMonth: 1 },
+  { id: "daily", label_es: "Diario (~26 visitas/mes)", label_en: "Daily (~26 visits/month)", visitsPerMonth: 26 },
+  { id: "weekly", label_es: "Semanal (4 visitas/mes)", label_en: "Weekly (4 visits/month)", visitsPerMonth: 4 },
+  {
+    id: "twice_weekly",
+    label_es: "2× por semana (8 visitas/mes)",
+    label_en: "Twice a week (8 visits/month)",
+    visitsPerMonth: 8,
+  },
+  { id: "monthly", label_es: "Mensual (1 visita/mes)", label_en: "Monthly (1 visit/month)", visitsPerMonth: 1 },
+];
+
+export function housekeepingVisitsPerMonth(
+  frequency: HousekeepingVisitFrequency,
+): number {
+  const row = HOUSEKEEPING_VISIT_FREQUENCIES.find((f) => f.id === frequency);
+  return row?.visitsPerMonth ?? 1;
+}
+
+export type HousekeepingQuoteTotals = {
+  perVisitCents: number;
+  /** Per visit × visits/month (same as perVisit when frequency is one_time). */
+  monthlyPackageCents: number;
+  visitsPerMonth: number;
+  frequency: HousekeepingVisitFrequency;
+};
+
+export type HousekeepingQuoteBasis = "per_visit" | "monthly_package";
+
+/** Which amount to put in agreed price for a housekeeping quote. */
+export function housekeepingAgreedPriceCents(
+  totals: HousekeepingQuoteTotals,
+  basis: HousekeepingQuoteBasis,
+): number {
+  if (basis === "monthly_package" && totals.frequency !== "one_time") {
+    return totals.monthlyPackageCents;
+  }
+  return totals.perVisitCents;
+}
+
+/** Per-visit subtotal from menu cart, with recurring monthly package estimate. */
+export function computeHousekeepingQuoteTotals(
+  menu: ServiceMenu | null | undefined,
+  cart: ServiceMenuQuoteLine[],
+  frequency: HousekeepingVisitFrequency = "one_time",
+): HousekeepingQuoteTotals {
+  const perVisitCents = computeServiceMenuQuoteCents(menu, cart);
+  const visitsPerMonth = housekeepingVisitsPerMonth(frequency);
+  const monthlyPackageCents = Math.round(perVisitCents * visitsPerMonth);
+  return {
+    perVisitCents,
+    monthlyPackageCents,
+    visitsPerMonth,
+    frequency,
+  };
+}
+
 export type ServiceMenuQuoteLine = {
   sku: string;
   qty: number;
@@ -366,9 +488,6 @@ export function housekeepingStarterMenu(): ServiceMenu {
     // Supplies & logistics
     { sku: "supplies_included", name_es: "Productos de limpieza incluidos", name_en: "Cleaning supplies included", price_mxn_cents: 8000 },
     { sku: "travel_fee", name_es: "Visita fuera de zona / traslado", name_en: "Out-of-zone visit / travel fee", price_mxn_cents: 15000 },
-    // Recurring
-    { sku: "recurring_weekly", name_es: "Paquete semanal (1 visita, referencia)", name_en: "Weekly package (1 visit, reference)", price_mxn_cents: 35000 },
-    { sku: "recurring_biweekly", name_es: "Paquete quincenal (1 visita, referencia)", name_en: "Biweekly package (1 visit, reference)", price_mxn_cents: 40000 },
   ];
   return {
     version: 1,

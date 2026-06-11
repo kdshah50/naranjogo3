@@ -12,8 +12,8 @@ Mirror format of `docs/TAILORING_PROGRESS.md` and `docs/VETERINARY_PROGRESS.md`.
 | Strategy | Additive: reuse `listings.service_menu` jsonb, enable menu editor for slug `limpieza` in `/unete`, add housekeeping starter template + disclaimer. **Zero changes to SellModal, booking, cart, payment, or webhook code.** |
 | Master kill-switch | Menu editor only renders for slugs in `PROVIDER_SERVICES_WITH_MENU`. Until `limpieza` is added, housekeeping signup behaves like any other service on `main`. |
 | Existing slug | `limpieza` — "Limpieza del hogar" / "House Cleaning" (already in `PROVIDER_SERVICES`) |
-| Latest step completed | **Phase H2 — `/limpieza-del-hogar` landing page** |
-| Next step | Deploy preview + smoke test (landing → signup → listing → chat quote) |
+| Latest step completed | **Later phase — profile menu editor + housekeeping quick quote** |
+| Next step | Deploy preview + smoke test (profile menu edit, chat quick quote) |
 
 ---
 
@@ -41,7 +41,7 @@ The starter template uses **line-item pricing** (not a calculator UI):
 - **Standard vs deep** — separate rows per room type so sellers can quote "2 recámaras estándar + 1 baño profundo" in chat.
 - **Room types** — recámara, baño, cocina, sala/comedor, family room, otro cuarto.
 - **Add-ons** — laundry, ironing, windows, appliances, move-out, pets.
-- **Recurring** — weekly / biweekly visit rows (reference prices).
+- **Recurring** — menu prices are **per visit**; seller picks **per visit** or **monthly package** (× frequency) for agreed price
 
 Every row is **editable or deletable** at signup. Final total always flows through chat + agreed price disclaimer.
 
@@ -50,7 +50,7 @@ Every row is **editable or deletable** at signup. Final total always flows throu
 ## Phase H1 — shipped on branch
 
 - [x] `limpieza` in `PROVIDER_SERVICES_WITH_MENU`
-- [x] `housekeepingStarterMenu()` — 34 reference items (Mexico neighborhood tier, SMA)
+- [x] `housekeepingStarterMenu()` — 32 reference items (Mexico neighborhood tier, SMA)
 - [x] Housekeeping disclaimers (home condition / access)
 - [x] `/unete` — template button, ES/EN copy for `limpieza`
 - [x] Search trade hints — deep clean, mudanza, lavado ropa, etc.
@@ -61,10 +61,13 @@ Every row is **editable or deletable** at signup. Final total always flows throu
 - [x] Buyer CTA → `/?category=services&q=limpieza`
 - [x] TrustBar footer link (alongside tailoring)
 
-## Later (deferred)
+## Later — shipped on branch
 
-- [ ] Seller dashboard UI to edit `service_menu` after signup (API PATCH exists)
-- [ ] Optional room-calculator widget (qty × room type) — today quote builder in chat is enough
+- [x] **`/profile/listing/[id]/menu`** — seller edits `service_menu` after signup (owner auth, PATCH API)
+- [x] **`ServiceMenuEditor`** — shared component used by `/unete` and profile menu page
+- [x] **Housekeeping quick quote** — room-type qty picks + **visit frequency** (one-time, daily, weekly, 2×/week, monthly) in `ServiceMenuQuoteBuilder`
+- [x] Profile **Editar menú** link on menu-enabled listings
+- [x] `lib/infer-listing-provider-slug.ts` — infer slug from listing title for templates + quote layout
 
 ## Phase H3 — WhatsApp bot (deferred)
 
@@ -74,12 +77,14 @@ Only after real booking demand.
 
 ## Smoke test (after deploy)
 
-1. `/limpieza-del-hogar` — ES/EN, sample 34-item menu, Registrarme CTA
+1. `/limpieza-del-hogar` — ES/EN, sample 32-item menu, Registrarme CTA
 2. `/unete?service=limpieza&lang=es` — primary service = Limpieza del hogar
-3. Load template (34 services) — edit prices, remove rows, add custom row
+3. Load template (32 services) — edit prices, remove rows, add custom row
 4. Submit → admin approve → public menu + chat quote builder
 5. `/?category=services&q=limpieza+profunda` — hybrid search finds listing
 6. Regression: tailoring + veterinary templates unchanged
+7. `/profile` → **Editar menú** on a limpieza listing → change prices → save → public menu updates
+8. Seller chat on limpieza listing → pick **Frecuencia de visitas** (e.g. weekly) → verify monthly total = per-visit × visits/month
 
 ---
 
