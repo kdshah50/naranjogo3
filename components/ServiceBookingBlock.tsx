@@ -38,6 +38,9 @@ type BookingState = {
   sellerAgreedPriceAt?: string | null;
   usingAgreedPrice?: boolean;
   sellerConnectReady?: boolean;
+  requiresQuoteAccept?: boolean;
+  quoteStatus?: string | null;
+  canPayDeposit?: boolean;
   fullConnectPreview?: {
     subtotalCents: number;
     commissionCents: number;
@@ -193,11 +196,18 @@ export default function ServiceBookingBlock({
       void load();
     };
     window.addEventListener("tianguis:agreed-price-updated", onAgreed);
+    const onQuote = (ev: Event) => {
+      const d = (ev as CustomEvent<{ listingId?: string }>).detail;
+      if (d?.listingId && String(d.listingId) !== String(listingId)) return;
+      void load();
+    };
+    window.addEventListener("tianguis:quote-updated", onQuote);
     return () => {
       window.removeEventListener("tianguis:listing-contact", onContact);
       window.removeEventListener("tianguis:booking-paid", onPaid);
       window.removeEventListener("tianguis:booking-lifecycle", onLifecycle);
       window.removeEventListener("tianguis:agreed-price-updated", onAgreed);
+      window.removeEventListener("tianguis:quote-updated", onQuote);
     };
   }, [load, listingId]);
 
@@ -238,10 +248,10 @@ export default function ServiceBookingBlock({
   ]);
 
   useEffect(() => {
-    if (!booking?.sellerConnectReady || !booking?.fullConnectPreview) {
+    if (!booking?.sellerConnectReady || !booking?.fullConnectPreview || booking?.requiresQuoteAccept) {
       setCheckoutMode("commission_only");
     }
-  }, [booking?.sellerConnectReady, booking?.fullConnectPreview]);
+  }, [booking?.sellerConnectReady, booking?.fullConnectPreview, booking?.requiresQuoteAccept]);
 
   /** Server uses merged account (phone) to detect seller; client id match is fallback. */
   const iAmSellerOnThisListing = Boolean(booking?.isSeller) || Boolean(sellerId && meId && sameUserId(meId, sellerId));
@@ -345,6 +355,11 @@ export default function ServiceBookingBlock({
   const contacted = booking.contactedInApp;
   const partyLabel = isService ? "proveedor" : "vendedor";
   const hasPaid = booking.checkoutBlocked;
+  const requiresQuote = Boolean(booking.requiresQuoteAccept);
+  const quoteStatus = String(booking.quoteStatus ?? "none");
+  const canPayDeposit = booking.canPayDeposit !== false;
+  const quoteBlocksPay = requiresQuote && !canPayDeposit && !hasPaid;
+  const showPayStep = contacted && !hasPaid && !quoteBlocksPay;
 
   const liveHintEn =
     liveAvailability?.syncEnabled && (liveAvailability.upcomingSlotCount ?? 0) > 0
@@ -639,19 +654,69 @@ export default function ServiceBookingBlock({
         </div>
       )}
 
-      {/* STEP 2: Contacted, ready to pay */}
-      {contacted && !hasPaid && (
+      {/* STEP 2: Quote pending (housekeeping) */}
+      {contacted && quoteBlocksPay && (
+        <div className="px-4 pb-4 space-y-3">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 space-y-2">
+            <p className="text-xs text-blue-900 leading-relaxed">
+              {quoteStatus === "pending" ? (
+                listingLang === "en" ? (
+                  <>
+                    <strong>Step 2:</strong> Your provider sent a quote — open <strong>Messages</strong> above to{" "}
+                    <strong>Accept</strong> or <strong>Decline</strong>. After accepting, pay the deposit here.
+                  </>
+                ) : (
+                  <>
+                    <strong>Paso 2:</strong> Tu proveedor envió una cotización — en <strong>Mensajes</strong> arriba{" "}
+                    <strong>Acepta</strong> o <strong>Rechaza</strong>. Después paga el depósito aquí.
+                  </>
+                )
+              ) : quoteStatus === "declined" ? (
+                listingLang === "en"
+                  ? "You declined the quote. Wait for a revised quote from your provider, or send a new request in chat."
+                  : "Rechazaste la cotización. Espera una cotización revisada o envía una nueva solicitud en el chat."
+              ) : listingLang === "en" ? (
+                <>
+                  <strong>Step 2:</strong> Send your cleaning request in <strong>Messages</strong> above. When the provider
+                  sends a quote, accept it here to pay the deposit.
+                </>
+              ) : (
+                <>
+                  <strong>Paso 2:</strong> Envía tu solicitud de limpieza en <strong>Mensajes</strong> arriba. Cuando el
+                  proveedor envíe la cotización, acéptala para pagar el depósito.
+                </>
+              )}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              document.getElementById("listing-inapp-chat")?.scrollIntoView({ behavior: "smooth", block: "center" });
+            }}
+            className="w-full py-2.5 rounded-xl border border-[#1B4332] text-[#1B4332] text-xs font-semibold hover:bg-[#ECFDF5]"
+          >
+            {listingLang === "en" ? "Go to messages & quote" : "Ir a mensajes y cotización"}
+          </button>
+        </div>
+      )}
+
+      {/* STEP 2: Contacted, ready to pay deposit */}
+      {showPayStep && (
         <div className="px-4 pb-4 space-y-3">
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
             <p className="text-xs text-amber-800">
               <strong>{listingLang === "en" ? "Step 2:" : "Paso 2:"}</strong>{" "}
-              {isService
+              {requiresQuote
                 ? listingLang === "en"
-                  ? "Pay the service fee below to continue."
-                  : "Paga la tarifa de servicio abajo para continuar."
-                : listingLang === "en"
-                  ? "Pay the connection fee to open the seller’s WhatsApp."
-                  : "Paga la tarifa de conexión para recibir el WhatsApp del vendedor."}
+                  ? "Pay the deposit (platform fee) below to confirm your cleaning service."
+                  : "Paga el depósito (tarifa de plataforma) abajo para confirmar tu servicio de limpieza."
+                : isService
+                  ? listingLang === "en"
+                    ? "Pay the service fee below to continue."
+                    : "Paga la tarifa de servicio abajo para continuar."
+                  : listingLang === "en"
+                    ? "Pay the connection fee to open the seller’s WhatsApp."
+                    : "Paga la tarifa de conexión para recibir el WhatsApp del vendedor."}
             </p>
           </div>
 
@@ -673,7 +738,7 @@ export default function ServiceBookingBlock({
               </div>
             )}
 
-          {booking.sellerConnectReady && booking.fullConnectPreview && (
+          {booking.sellerConnectReady && booking.fullConnectPreview && !requiresQuote && (
             <div className="rounded-xl border border-[#E5E0D8] bg-white p-3 space-y-2">
               <p className="text-[11px] font-semibold text-[#374151]">
                 {listingLang === "en" ? "How do you want to pay?" : "¿Cómo quieres pagar?"}
@@ -842,8 +907,12 @@ export default function ServiceBookingBlock({
                   : `Pagar ${formatMXN(booking.fullConnectPreview.totalCents)} (total)`
                 : isService
                   ? listingLang === "en"
-                    ? `Pay ${formatMXN(booking.commissionAmountCents)}`
-                    : `Pagar ${formatMXN(booking.commissionAmountCents)}`
+                    ? requiresQuote
+                      ? `Pay deposit ${formatMXN(booking.commissionAmountCents)}`
+                      : `Pay ${formatMXN(booking.commissionAmountCents)}`
+                    : requiresQuote
+                      ? `Pagar depósito ${formatMXN(booking.commissionAmountCents)}`
+                      : `Pagar ${formatMXN(booking.commissionAmountCents)}`
                   : listingLang === "en"
                     ? `Pay ${formatMXN(booking.commissionAmountCents)} and open WhatsApp`
                     : `Pagar ${formatMXN(booking.commissionAmountCents)} y abrir WhatsApp`}

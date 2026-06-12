@@ -22,6 +22,9 @@ import {
   resolveServicePricingBaseMxnCents,
 } from "@/lib/service-booking-pricing";
 import { applyServiceBookingStatusTruthPass } from "@/lib/booking-status-truth";
+import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
+import { providerServiceRequiresQuoteAccept } from "@/lib/provider-services";
+import { loadServiceQuoteGate } from "@/lib/service-quote-server";
 
 export const dynamic = "force-dynamic";
 
@@ -323,12 +326,25 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       };
     }
 
+    const slug = inferProviderSlugFromListingTitle(String(listing.title_es ?? ""));
+    const requiresQuoteAccept = providerServiceRequiresQuoteAccept(slug);
+    const quoteGate = requiresQuoteAccept
+      ? await loadServiceQuoteGate(supabase, listingId, userId)
+      : null;
+    const quoteStatus = quoteGate?.quoteStatus ?? "none";
+    const canPayDeposit = requiresQuoteAccept ? quoteStatus === "accepted" : true;
+
     return NextResponse.json(
       {
         isService: isServicesCategory,
         flowActive: true,
         canBook: hasContacted,
         contactedInApp,
+        requiresQuoteAccept,
+        quoteStatus,
+        quoteSentAt: quoteGate?.quoteSentAt ?? null,
+        quoteRespondedAt: quoteGate?.quoteRespondedAt ?? null,
+        canPayDeposit,
         checkoutBlocked,
         paidBookingId: latestPaid?.id ?? null,
         paidBookingStatus: latestPaid ? (String(latestPaid.status ?? "confirmed")) : null,

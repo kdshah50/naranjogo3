@@ -5,7 +5,9 @@ import Link from "next/link";
 import type { Lang } from "@/lib/i18n-lang";
 import type { ServiceMenu } from "@/lib/listing-service-menu";
 import { hasServiceMenu } from "@/lib/listing-service-menu";
-import ServiceMenuQuoteBuilder from "@/components/ServiceMenuQuoteBuilder";
+import ServiceMenuQuoteBuilder, { type QuoteBuilderPayload } from "@/components/ServiceMenuQuoteBuilder";
+import ServiceQuoteBuyerPanel from "@/components/ServiceQuoteBuyerPanel";
+import type { ServiceQuoteStatus } from "@/lib/service-quote";
 
 type Msg = { id: string; sender_id: string; body: string; created_at: string };
 
@@ -26,6 +28,8 @@ export default function ListingChat({
   lang = "es",
   serviceMenu = null,
   quoteLayout = "default",
+  requiresQuoteAccept = false,
+  highlightQuote = false,
 }: {
   listingId: string;
   initialConversationId?: string;
@@ -39,6 +43,10 @@ export default function ListingChat({
   serviceMenu?: ServiceMenu | null;
   /** Housekeeping listings get quick room-type qty picks in the quote builder. */
   quoteLayout?: "default" | "housekeeping";
+  /** Housekeeping: gated quote accept before deposit checkout. */
+  requiresQuoteAccept?: boolean;
+  /** Deep link ?quote=1 — scroll quote panel into view. */
+  highlightQuote?: boolean;
 }) {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -56,6 +64,10 @@ export default function ListingChat({
   const [agreedLoading, setAgreedLoading] = useState(false);
   const [agreedSaving, setAgreedSaving] = useState(false);
   const [agreedErr, setAgreedErr] = useState("");
+  const [quoteStatus, setQuoteStatus] = useState<ServiceQuoteStatus>("none");
+  const [quoteAgreedCents, setQuoteAgreedCents] = useState<number | null>(null);
+  const [quoteSentAt, setQuoteSentAt] = useState<string | null>(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
   /** Scroll this pane — `scrollIntoView` on children scrolls the whole page in Chrome (nested overflow). */
   const messagesScrollRef = useRef<HTMLDivElement | null>(null);
   /** Which listing `selectedId` belongs to. If it differs from `listingId`, do not use `selectedId` for sends. */
@@ -283,6 +295,113 @@ export default function ListingChat({
       cancelled = true;
     };
   }, [role, listingId, agreedPriceBuyerId]);
+
+  const loadQuoteState = useCallback(async () => {
+    if (!requiresQuoteAccept) return;
+    setQuoteLoading(true);
+    try {
+      const buyerQuery =
+        role === "seller" && agreedPriceBuyerId
+          ? `?buyerId=${encodeURIComponent(agreedPriceBuyerId)}`
+          : "";
+      const r = await fetch(
+        `/api/listings/${encodeURIComponent(listingId)}/service-booking/quote${buyerQuery}`,
+        { credentials: "same-origin", cache: "no-store" },
+      );
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) return;
+      setQuoteStatus((d as { quoteStatus?: ServiceQuoteStatus }).quoteStatus ?? "none");
+      const cents = (d as { agreedSubtotalMxnCents?: number | null }).agreedSubtotalMxnCents;
+      setQuoteAgreedCents(cents != null ? Number(cents) : null);
+      setQuoteSentAt((d as { quoteSentAt?: string | null }).quoteSentAt ?? null);
+    } finally {
+      setQuoteLoading(false);
+    }
+  }, [requiresQuoteAccept, role, agreedPriceBuyerId, listingId]);
+
+  useEffect(() => {
+    void loadQuoteState();
+  }, [loadQuoteState]);
+
+  useEffect(() => {
+    const onQuote = (ev: Event) => {
+      const d = (ev as CustomEvent<{ listingId?: string }>).detail;
+      if (d?.listingId && d.listingId !== listingId) return;
+      void loadQuoteState();
+    };
+    window.addEventListener("tianguis:quote-updated", onQuote);
+    window.addEventListener("tianguis:agreed-price-updated", onQuote);
+    return () => {
+      window.removeEventListener("tianguis:quote-updated", onQuote);
+      window.removeEventListener("tianguis:agreed-price-updated", onQuote);
+    };
+  }, [listingId, loadQuoteState]);
+
+  useEffect(() => {
+    if (!highlightQuote) return;
+    const t = window.setTimeout(() => {
+      document.getElementById("service-quote-panel")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 400);
+    return () => window.clearTimeout(t);
+  }, [highlightQuote, quoteStatus]);
+
+  const sendOfficialQuote = async (payload: QuoteBuilderPayload) => {
+    if (role !== "seller" || !agreedPriceBuyerId) return;
+    setAgreedErr("");
+    const r = await fetch(`/api/listings/${encodeURIComponent(listingId)}/service-booking/quote/send`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        buyerId: agreedPriceBuyerId,
+        agreedSubtotalMxnCents: payload.totalCents,
+        quoteLineItems: payload.lineItems,
+        quoteMetadata: {
+          visitFrequency: payload.visitFrequency,
+          quoteBasis: payload.quoteBasis,
+          lang: lang === "en" ? "en" : "es",
+          kind: "provider_quote",
+        },
+        messageBody: payload.messageBody,
+        lang: lang === "en" ? "en" : "es",
+      }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error((d as { error?: string }).error ?? "No se pudo enviar cotización");
+    setAgreedPesos(String(payload.totalCents / 100));
+    const msg = (d as { message?: Msg }).message;
+    if (msg) setMessages((m) => [...m, msg]);
+    window.dispatchEvent(new CustomEvent("tianguis:quote-updated", { detail: { listingId } }));
+    window.dispatchEvent(new CustomEvent("tianguis:agreed-price-updated", { detail: { listingId } }));
+    await loadQuoteState();
+  };
+
+  const submitCleaningRequest = async (payload: QuoteBuilderPayload) => {
+    if (role !== "buyer") return;
+    setError("");
+    const r = await fetch(`/api/listings/${encodeURIComponent(listingId)}/service-booking/quote/request`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        cartLines: payload.cartLines,
+        visitFrequency: payload.visitFrequency,
+        quoteBasis: payload.quoteBasis,
+        buyerNotes: payload.buyerNotes,
+        lang: lang === "en" ? "en" : "es",
+      }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error((d as { error?: string }).error ?? "No se pudo enviar solicitud");
+    const msg = (d as { message?: Msg }).message;
+    const convId = (d as { conversationId?: string }).conversationId;
+    if (convId) {
+      setSelectedId(convId);
+      conversationListingIdRef.current = listingId;
+    }
+    if (msg) setMessages((m) => [...m, msg]);
+    window.dispatchEvent(new CustomEvent("tianguis:listing-contact"));
+  };
 
   // Poll thread list for new buyers/messages (seller only)
   useEffect(() => {
@@ -546,8 +665,10 @@ export default function ListingChat({
               menu={serviceMenu}
               lang={lang === "en" ? "en" : "es"}
               quoteLayout={quoteLayout}
+              variant="seller"
               disabled={agreedSaving || agreedLoading}
               onApplyTotal={(pesos) => setAgreedPesos(pesos)}
+              onSendOfficialQuote={requiresQuoteAccept ? sendOfficialQuote : undefined}
               onInsertAsMessage={async (body) => {
                 try {
                   await postMessageBody(body);
@@ -557,6 +678,68 @@ export default function ListingChat({
               }}
             />
           )}
+        </div>
+      )}
+
+      {role === "buyer" && requiresQuoteAccept && hasServiceMenu(serviceMenu) && (quoteStatus === "none" || quoteStatus === "declined") && (
+        <div className="px-4 py-2 border-b border-[#E5E0D8] bg-[#FFFBEB]">
+          <ServiceMenuQuoteBuilder
+            menu={serviceMenu}
+            lang={lang === "en" ? "en" : "es"}
+            quoteLayout={quoteLayout}
+            variant="buyer"
+            disabled={sending || quoteLoading}
+            onSubmitRequest={submitCleaningRequest}
+          />
+        </div>
+      )}
+
+      {role === "buyer" && requiresQuoteAccept && !quoteLoading && quoteStatus !== "none" && (
+        <div className="px-4 py-2 border-b border-[#E5E0D8]">
+          <ServiceQuoteBuyerPanel
+            listingId={listingId}
+            quoteStatus={quoteStatus}
+            agreedSubtotalMxnCents={quoteAgreedCents}
+            quoteSentAt={quoteSentAt}
+            lang={lang === "en" ? "en" : "es"}
+            disabled={sending}
+            onResponded={() => {
+              void loadQuoteState();
+              const el = document.getElementById("booking-section");
+              el?.scrollIntoView({ behavior: "smooth", block: "center" });
+            }}
+          />
+        </div>
+      )}
+
+      {role === "seller" && requiresQuoteAccept && agreedPriceBuyerId && !quoteLoading && quoteStatus !== "none" && (
+        <div className="px-4 py-2 border-b border-[#E5E0D8] text-xs">
+          <p className="font-semibold text-[#78350F]">
+            {lang === "en" ? "Quote status" : "Estado de cotización"}:{" "}
+            <span className="text-[#92400E]">
+              {quoteStatus === "pending"
+                ? lang === "en"
+                  ? "Waiting for customer"
+                  : "Esperando al cliente"
+                : quoteStatus === "accepted"
+                  ? lang === "en"
+                    ? "Accepted — customer can pay deposit"
+                    : "Aceptada — cliente puede pagar depósito"
+                  : lang === "en"
+                    ? "Declined"
+                    : "Rechazada"}
+            </span>
+          </p>
+          {quoteAgreedCents != null && quoteAgreedCents > 0 ? (
+            <p className="text-[#92400E] mt-1">
+              {lang === "en" ? "Total" : "Total"}:{" "}
+              {new Intl.NumberFormat(lang === "en" ? "en-MX" : "es-MX", {
+                style: "currency",
+                currency: "MXN",
+                maximumFractionDigits: 0,
+              }).format(quoteAgreedCents / 100)}
+            </p>
+          ) : null}
         </div>
       )}
 

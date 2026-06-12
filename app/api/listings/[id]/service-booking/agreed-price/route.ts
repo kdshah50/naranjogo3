@@ -125,6 +125,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         .update({
           agreed_subtotal_mxn_cents: null,
           seller_set_agreed_price_at: null,
+          quote_status: "none",
+          quote_line_items: null,
+          quote_metadata: null,
+          quote_sent_at: null,
+          quote_responded_at: null,
           updated_at: now,
         })
         .in("listing_id", listVars)

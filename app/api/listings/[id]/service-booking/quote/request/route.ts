@@ -1,0 +1,183 @@
+import { NextRequest, NextResponse } from "next/server";
+import {
+  createAdminSupabase,
+  getUserIdFromRequest,
+  idMatchVariantsForIn,
+} from "@/lib/auth-server";
+import { buyerHasSentInAppMessage, ensureContactGateFromMessages } from "@/lib/contact-gate";
+import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
+import { parseServiceMenu } from "@/lib/listing-service-menu";
+import { providerServiceRequiresQuoteAccept } from "@/lib/provider-services";
+import {
+  buildMenuQuoteMessage,
+  computeQuoteTotalCents,
+  lineItemsFromCart,
+  parseQuoteMetadata,
+  type ServiceQuoteLineItem,
+} from "@/lib/service-quote";
+import {
+  insertListingChatMessage,
+  resolveConversationForBuyer,
+} from "@/lib/service-quote-server";
+import { notifySellerBuyerCleaningRequest } from "@/lib/service-quote-notify";
+import { expandUserAccountIdPool, userIsListingSellerAccount } from "@/lib/user-account-pool";
+
+export const dynamic = "force-dynamic";
+
+/** POST — buyer sends structured cleaning request from menu picker. */
+export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const buyerUserId = await getUserIdFromRequest(req);
+    if (!buyerUserId) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+
+    const listingId = params.id?.trim() ?? "";
+    if (!listingId) return NextResponse.json({ error: "listingId inválido" }, { status: 400 });
+
+    const json = await req.json().catch(() => ({}));
+    const cartLines = Array.isArray((json as { cartLines?: unknown }).cartLines)
+      ? ((json as { cartLines: Array<{ sku?: string; qty?: number }> }).cartLines ?? [])
+          .map((x) => ({ sku: String(x.sku ?? ""), qty: Math.round(Number(x.qty)) }))
+          .filter((x) => x.sku && x.qty > 0)
+      : [];
+    const visitFrequency = (json as { visitFrequency?: string }).visitFrequency;
+    const quoteBasis = (json as { quoteBasis?: string }).quoteBasis;
+    const buyerNotes = String((json as { buyerNotes?: string }).buyerNotes ?? "").trim().slice(0, 500) || null;
+    const lang = (json as { lang?: string }).lang === "en" ? "en" : "es";
+
+    if (cartLines.length === 0) {
+      return NextResponse.json({ error: "Selecciona al menos un servicio" }, { status: 400 });
+    }
+
+    const supabase = createAdminSupabase();
+    const { data: listing, error: le } = await supabase
+      .from("listings")
+      .select("id,seller_id,title_es,service_menu,status")
+      .eq("id", listingId)
+      .maybeSingle();
+    if (le || !listing?.seller_id) {
+      return NextResponse.json({ error: "Anuncio no encontrado" }, { status: 404 });
+    }
+    if (listing.status !== "active") {
+      return NextResponse.json({ error: "Este anuncio no está activo" }, { status: 400 });
+    }
+    if (await userIsListingSellerAccount(supabase, buyerUserId, listing.seller_id as string)) {
+      return NextResponse.json({ error: "No puedes solicitar tu propio servicio" }, { status: 400 });
+    }
+
+    const slug = inferProviderSlugFromListingTitle(listing.title_es as string);
+    if (!providerServiceRequiresQuoteAccept(slug)) {
+      return NextResponse.json({ error: "Este anuncio no usa solicitud estructurada" }, { status: 400 });
+    }
+
+    const parsedMenu = parseServiceMenu(listing.service_menu);
+    if (!parsedMenu.ok) {
+      return NextResponse.json({ error: "Menú de servicio no disponible" }, { status: 400 });
+    }
+
+    const lineItems = lineItemsFromCart(parsedMenu.menu, cartLines);
+    if (lineItems.length === 0) {
+      return NextResponse.json({ error: "Servicios seleccionados inválidos" }, { status: 400 });
+    }
+
+    const totalCents = computeQuoteTotalCents({
+      menu: parsedMenu.menu,
+      cartLines,
+      visitFrequency: visitFrequency as never,
+      quoteBasis: quoteBasis as never,
+      quoteLayout: "housekeeping",
+    });
+    if (totalCents < 100) {
+      return NextResponse.json({ error: "Total estimado inválido" }, { status: 400 });
+    }
+
+    let conv = await resolveConversationForBuyer(supabase, listingId, buyerUserId);
+    if (!conv) {
+      const { data: created, error: cErr } = await supabase
+        .from("listing_conversations")
+        .insert({
+          listing_id: listingId,
+          buyer_id: buyerUserId,
+          seller_id: listing.seller_id,
+        })
+        .select("id,buyer_id")
+        .single();
+      if (cErr || !created?.id) {
+        console.error("[service-quote/request] create conv", cErr);
+        return NextResponse.json({ error: "No se pudo iniciar conversación" }, { status: 500 });
+      }
+      conv = { id: String(created.id), buyer_id: String(created.buyer_id ?? buyerUserId) };
+    }
+
+    await ensureContactGateFromMessages(supabase, listingId, conv.buyer_id);
+    const sent = await buyerHasSentInAppMessage(supabase, listingId, buyerUserId);
+    if (!sent) {
+      /* first message below will satisfy gate via messages route side effects */
+    }
+
+    const quoteMetadata = parseQuoteMetadata({
+      visitFrequency,
+      quoteBasis,
+      buyerNotes,
+      lang,
+      kind: "buyer_request",
+    }) ?? { kind: "buyer_request" as const, lang, buyerNotes };
+
+    let messageBody = buildMenuQuoteMessage({
+      menu: parsedMenu.menu,
+      lineItems,
+      totalCents,
+      lang,
+      visitFrequency: visitFrequency as never,
+      quoteBasis: quoteBasis as never,
+      headerKind: "buyer_request",
+    });
+    if (buyerNotes) {
+      messageBody += lang === "en" ? `\n\nNotes: ${buyerNotes}` : `\n\nNotas: ${buyerNotes}`;
+    }
+
+    const inserted = await insertListingChatMessage(supabase, conv.id, buyerUserId, messageBody);
+    if (!inserted) {
+      return NextResponse.json({ error: "No se pudo enviar la solicitud" }, { status: 500 });
+    }
+
+    const now = new Date().toISOString();
+    await supabase.from("listing_service_contact_gate").upsert(
+      {
+        listing_id: listingId,
+        buyer_id: conv.buyer_id,
+        contacted_in_app: true,
+        quote_metadata: quoteMetadata,
+        quote_line_items: lineItems,
+        updated_at: now,
+      },
+      { onConflict: "listing_id,buyer_id" },
+    );
+
+    const { data: buyerRow } = await supabase
+      .from("users")
+      .select("display_name")
+      .in("id", idMatchVariantsForIn(buyerUserId))
+      .maybeSingle();
+
+    void notifySellerBuyerCleaningRequest({
+      supabase,
+      sellerId: String(listing.seller_id),
+      listingId,
+      listingTitle: String(listing.title_es ?? "Servicio"),
+      conversationId: conv.id,
+      buyerName: String(buyerRow?.display_name ?? "Cliente"),
+      totalCents,
+      lang,
+    });
+
+    return NextResponse.json({
+      ok: true,
+      conversationId: conv.id,
+      estimatedTotalCents: totalCents,
+      message: inserted,
+    });
+  } catch (e) {
+    console.error("[service-quote/request] POST", e);
+    return NextResponse.json({ error: "Error del servidor" }, { status: 500 });
+  }
+}

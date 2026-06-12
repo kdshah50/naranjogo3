@@ -69,6 +69,15 @@ Every row is **editable or deletable** at signup. Final total always flows throu
 - [x] Profile **Editar menú** link on menu-enabled listings
 - [x] `lib/infer-listing-provider-slug.ts` — infer slug from listing title for templates + quote layout
 
+## Phase H4 — gated quote + deposit (shipped on branch)
+
+- [x] Migration `20260605120000_service_quote_gate.sql` — `quote_status`, line items, metadata on contact gate
+- [x] Buyer **cleaning request** panel (menu picker + notes) → chat + WhatsApp to provider
+- [x] Seller **Enviar cotización al cliente** → `pending` quote + WhatsApp deep link `?quote=1`
+- [x] Buyer **Accept / Decline** → blocks deposit until accepted
+- [x] Checkout gated: `commission_only` deposit only after `quote_status = accepted` (limpieza only)
+- [x] APIs: `GET/POST .../service-booking/quote/*` (send, request, respond)
+
 ## Phase H3 — WhatsApp bot (deferred)
 
 Only after real booking demand.

@@ -16,6 +16,9 @@ import {
   getMarketplaceVatPercent,
 } from "@/lib/marketplace-cart-pricing";
 import { resolveServicePricingBaseMxnCents } from "@/lib/service-booking-pricing";
+import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
+import { providerServiceRequiresQuoteAccept } from "@/lib/provider-services";
+import { loadServiceQuoteGate } from "@/lib/service-quote-server";
 
 export const dynamic = "force-dynamic";
 /** Allow Stripe + retries to finish on Vercel (requires Hobby 10s default or Pro for 60s). */
@@ -100,6 +103,31 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: "Primero contacta al proveedor por mensajes en la app." },
         { status: 400 }
+      );
+    }
+
+    const slug = inferProviderSlugFromListingTitle(String(listing.title_es ?? ""));
+    const requiresQuoteAccept = providerServiceRequiresQuoteAccept(slug);
+    if (requiresQuoteAccept) {
+      const quoteGate = await loadServiceQuoteGate(supabase, listingId, userId);
+      if (!quoteGate || quoteGate.quoteStatus !== "accepted") {
+        return NextResponse.json(
+          {
+            error:
+              "Acepta la cotización del proveedor en el chat antes de pagar el depósito (tarifa de plataforma).",
+          },
+          { status: 400 },
+        );
+      }
+    }
+
+    if (requiresQuoteAccept && checkoutMode === "full_connect") {
+      return NextResponse.json(
+        {
+          error:
+            "Para limpieza del hogar, paga primero el depósito (tarifa de plataforma). El saldo del servicio se liquida al completar.",
+        },
+        { status: 400 },
       );
     }
 

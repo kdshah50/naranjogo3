@@ -27,7 +27,7 @@ import { parseBeforeAfterPhotoUrls } from "@/lib/provider-trust";
 import ListingTrustStrip from "@/components/ListingTrustStrip";
 import ListingBeforeAfterSection from "@/components/ListingBeforeAfterSection";
 import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
-import { HOUSEKEEPING_SERVICE } from "@/lib/provider-services";
+import { HOUSEKEEPING_SERVICE, providerServiceRequiresQuoteAccept } from "@/lib/provider-services";
 
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
   const supaUrl = getSupabaseUrl();
@@ -56,7 +56,7 @@ export default async function ListingPage({
   searchParams,
 }: {
   params: { id: string };
-  searchParams?: { chat?: string; lang?: string };
+  searchParams?: { chat?: string; lang?: string; quote?: string };
 }) {
   const supaUrl = getSupabaseUrl();
   const h = { ...getServiceRoleRestHeaders(), "Content-Type": "application/json" };
@@ -102,6 +102,8 @@ export default async function ListingPage({
   const providerSlug = inferProviderSlugFromListingTitle(listing.title_es);
   const menuQuoteLayout =
     providerSlug === HOUSEKEEPING_SERVICE ? ("housekeeping" as const) : ("default" as const);
+  const requiresQuoteAccept = providerServiceRequiresQuoteAccept(providerSlug);
+  const highlightQuote = searchParams?.quote === "1" || searchParams?.quote === "true";
   const listingLang = langFromParam(searchParams?.lang);
   const listingQueryBase = new URLSearchParams();
   if (listingLang === "en") listingQueryBase.set("lang", "en");
@@ -339,6 +341,8 @@ export default async function ListingPage({
                 : null
             }
             quoteLayout={menuQuoteLayout}
+            requiresQuoteAccept={requiresQuoteAccept}
+            highlightQuote={highlightQuote}
           />
           <div id="booking-section" className="scroll-mt-28">
             <ServiceBookingBlock

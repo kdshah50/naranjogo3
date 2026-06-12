@@ -12,40 +12,60 @@ import {
   type ServiceMenu,
 } from "@/lib/listing-service-menu";
 
+import {
+  buildMenuQuoteMessage,
+  computeQuoteTotalCents,
+  lineItemsFromCart,
+  type ServiceQuoteLineItem,
+} from "@/lib/service-quote";
+
+export type QuoteBuilderPayload = {
+  totalCents: number;
+  cartLines: Array<{ sku: string; qty: number }>;
+  lineItems: ServiceQuoteLineItem[];
+  visitFrequency: HousekeepingVisitFrequency;
+  quoteBasis: HousekeepingQuoteBasis;
+  messageBody: string;
+  buyerNotes?: string | null;
+};
+
 /**
  * Seller-side quote builder for service menus (tailoring MVP).
  *
  * Shown inside `ListingChat` when the listing carries a `service_menu`.
- * The seller taps + / − on each menu row, watches the running total, then
- * clicks "Aplicar a precio acordado" — that fills the existing agreed-price
- * input in the parent component. Optionally a formatted item list can be
- * dropped into the chat thread as a regular message.
- *
- * No new APIs, no new DB tables. All money handling reuses the existing
- * `agreedSubtotalMxnCents` flow via the parent.
+ * Housekeeping: buyer variant collects request; seller sends official quote.
  */
 export default function ServiceMenuQuoteBuilder({
   menu,
   onApplyTotal,
   onInsertAsMessage,
+  onSendOfficialQuote,
+  onSubmitRequest,
   lang = "es",
   disabled = false,
   quoteLayout = "default",
+  variant = "seller",
 }: {
   menu: ServiceMenu | null | undefined;
   /** Called with the running total in pesos (string), to drop into the parent's agreedPesos input. */
-  onApplyTotal: (pesos: string) => void;
+  onApplyTotal?: (pesos: string) => void;
   /** Optional: insert a formatted summary as a chat message. */
   onInsertAsMessage?: (body: string) => Promise<void> | void;
+  /** Housekeeping seller: send official quote (pending + WhatsApp). */
+  onSendOfficialQuote?: (payload: QuoteBuilderPayload) => Promise<void> | void;
+  /** Housekeeping buyer: submit structured cleaning request. */
+  onSubmitRequest?: (payload: QuoteBuilderPayload) => Promise<void> | void;
   lang?: "es" | "en";
   disabled?: boolean;
   /** Housekeeping: show quick room-type qty picks above the full menu list. */
   quoteLayout?: "default" | "housekeeping";
+  variant?: "seller" | "buyer";
 }) {
   const [qtyBySku, setQtyBySku] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);
   const [visitFrequency, setVisitFrequency] = useState<HousekeepingVisitFrequency>("one_time");
   const [quoteBasis, setQuoteBasis] = useState<HousekeepingQuoteBasis>("per_visit");
+  const [buyerNotes, setBuyerNotes] = useState("");
 
   const cartLines = useMemo(
     () => Object.entries(qtyBySku).map(([sku, qty]) => ({ sku, qty })),
@@ -117,7 +137,51 @@ export default function ServiceMenuQuoteBuilder({
   const applyDisabled = disabled || totalCents <= 0 || busy;
 
   const applyToAgreedPrice = () => {
-    onApplyTotal(String(totalCents / 100));
+    onApplyTotal?.(String(totalCents / 100));
+  };
+
+  const buildPayload = (): QuoteBuilderPayload => {
+    const lineItems = lineItemsFromCart(menu, cartLines);
+    const messageBody = buildMenuQuoteMessage({
+      menu: menu!,
+      lineItems,
+      totalCents,
+      lang,
+      visitFrequency: quoteLayout === "housekeeping" ? visitFrequency : undefined,
+      quoteBasis: quoteLayout === "housekeeping" ? quoteBasis : undefined,
+      headerKind: variant === "buyer" ? "buyer_request" : "provider_quote",
+    });
+    return {
+      totalCents,
+      cartLines,
+      lineItems,
+      visitFrequency,
+      quoteBasis,
+      messageBody,
+      buyerNotes: buyerNotes.trim() || null,
+    };
+  };
+
+  const sendOfficialQuote = async () => {
+    if (!onSendOfficialQuote || selectedLines.length === 0) return;
+    setBusy(true);
+    try {
+      await onSendOfficialQuote(buildPayload());
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitRequest = async () => {
+    if (!onSubmitRequest || selectedLines.length === 0) return;
+    setBusy(true);
+    try {
+      await onSubmitRequest(buildPayload());
+      clearAll();
+      setBuyerNotes("");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const insertAsMessage = async () => {
@@ -173,7 +237,13 @@ export default function ServiceMenuQuoteBuilder({
   return (
     <div className="rounded-lg border border-amber-200 bg-white p-2 space-y-2">
       <p className="text-[11px] font-bold text-[#78350F]">
-        {lang === "en" ? "Build a quote from your menu" : "Arma un presupuesto desde tu menú"}
+        {variant === "buyer"
+          ? lang === "en"
+            ? "What cleaning do you need?"
+            : "¿Qué limpieza necesitas?"
+          : lang === "en"
+            ? "Build a quote from your menu"
+            : "Arma un presupuesto desde tu menú"}
       </p>
       {quickGroups.length > 0 && (
         <div className="rounded-lg border border-amber-100 bg-amber-50/80 p-2 space-y-1.5">
@@ -349,19 +419,69 @@ export default function ServiceMenuQuoteBuilder({
           {formatter.format(totalCents / 100)}
         </span>
       </div>
+      {variant === "buyer" && (
+        <label className="block space-y-1">
+          <span className="text-[10px] font-semibold text-[#92400E]">
+            {lang === "en" ? "Notes (optional)" : "Notas (opcional)"}
+          </span>
+          <textarea
+            value={buyerNotes}
+            onChange={(e) => setBuyerNotes(e.target.value)}
+            disabled={disabled || busy}
+            rows={2}
+            maxLength={500}
+            placeholder={
+              lang === "en"
+                ? "Access instructions, pets, preferred day…"
+                : "Instrucciones de acceso, mascotas, día preferido…"
+            }
+            className="w-full rounded-lg border border-amber-200 px-2 py-1.5 text-[11px] text-[#1C1917] outline-none focus:border-[#B45309] disabled:opacity-50"
+          />
+        </label>
+      )}
       <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={applyToAgreedPrice}
-          disabled={applyDisabled}
-          className="flex-1 min-w-[120px] rounded-lg bg-[#B45309] text-white text-[11px] font-semibold px-2 py-1.5 disabled:opacity-40"
-        >
-          {lang === "en" ? "Apply to agreed price" : "Aplicar al precio acordado"}
-        </button>
-        {onInsertAsMessage && (
+        {variant === "seller" && onSendOfficialQuote && quoteLayout === "housekeeping" ? (
           <button
             type="button"
-            onClick={insertAsMessage}
+            onClick={() => void sendOfficialQuote()}
+            disabled={applyDisabled}
+            className="flex-1 min-w-[140px] rounded-lg bg-[#1B4332] text-white text-[11px] font-semibold px-2 py-1.5 disabled:opacity-40"
+          >
+            {busy
+              ? "…"
+              : lang === "en"
+                ? "Send quote to customer"
+                : "Enviar cotización al cliente"}
+          </button>
+        ) : null}
+        {variant === "buyer" && onSubmitRequest ? (
+          <button
+            type="button"
+            onClick={() => void submitRequest()}
+            disabled={applyDisabled}
+            className="flex-1 min-w-[140px] rounded-lg bg-[#1B4332] text-white text-[11px] font-semibold px-2 py-1.5 disabled:opacity-40"
+          >
+            {busy
+              ? "…"
+              : lang === "en"
+                ? "Send request to provider"
+                : "Enviar solicitud al proveedor"}
+          </button>
+        ) : null}
+        {variant === "seller" && onApplyTotal ? (
+          <button
+            type="button"
+            onClick={applyToAgreedPrice}
+            disabled={applyDisabled}
+            className="flex-1 min-w-[120px] rounded-lg bg-[#B45309] text-white text-[11px] font-semibold px-2 py-1.5 disabled:opacity-40"
+          >
+            {lang === "en" ? "Apply to agreed price" : "Aplicar al precio acordado"}
+          </button>
+        ) : null}
+        {variant === "seller" && onInsertAsMessage && (
+          <button
+            type="button"
+            onClick={() => void insertAsMessage()}
             disabled={applyDisabled}
             className="rounded-lg border border-amber-300 text-[#78350F] text-[11px] font-semibold px-2 py-1.5 disabled:opacity-40"
           >

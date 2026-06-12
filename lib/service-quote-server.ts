@@ -1,0 +1,94 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { idMatchVariantsForIn } from "@/lib/auth-server";
+import { normalizeQuoteStatus, parseQuoteLineItems, parseQuoteMetadata } from "@/lib/service-quote";
+
+export type ServiceQuoteGateRow = {
+  quoteStatus: ReturnType<typeof normalizeQuoteStatus>;
+  agreedSubtotalMxnCents: number | null;
+  sellerSetAgreedPriceAt: string | null;
+  quoteLineItems: ReturnType<typeof parseQuoteLineItems>;
+  quoteMetadata: ReturnType<typeof parseQuoteMetadata>;
+  quoteSentAt: string | null;
+  quoteRespondedAt: string | null;
+};
+
+export async function loadServiceQuoteGate(
+  supabase: SupabaseClient,
+  listingId: string,
+  buyerId: string,
+): Promise<ServiceQuoteGateRow | null> {
+  const listVars = idMatchVariantsForIn(listingId);
+  const buyerVars = idMatchVariantsForIn(buyerId);
+  if (listVars.length === 0 || buyerVars.length === 0) return null;
+
+  const { data: gate } = await supabase
+    .from("listing_service_contact_gate")
+    .select(
+      "agreed_subtotal_mxn_cents,seller_set_agreed_price_at,quote_status,quote_line_items,quote_metadata,quote_sent_at,quote_responded_at",
+    )
+    .in("listing_id", listVars)
+    .in("buyer_id", buyerVars)
+    .maybeSingle();
+
+  if (!gate) {
+    return {
+      quoteStatus: "none",
+      agreedSubtotalMxnCents: null,
+      sellerSetAgreedPriceAt: null,
+      quoteLineItems: null,
+      quoteMetadata: null,
+      quoteSentAt: null,
+      quoteRespondedAt: null,
+    };
+  }
+
+  return {
+    quoteStatus: normalizeQuoteStatus(gate.quote_status),
+    agreedSubtotalMxnCents:
+      gate.agreed_subtotal_mxn_cents != null ? Number(gate.agreed_subtotal_mxn_cents) : null,
+    sellerSetAgreedPriceAt: gate.seller_set_agreed_price_at ?? null,
+    quoteLineItems: parseQuoteLineItems(gate.quote_line_items),
+    quoteMetadata: parseQuoteMetadata(gate.quote_metadata),
+    quoteSentAt: gate.quote_sent_at ?? null,
+    quoteRespondedAt: gate.quote_responded_at ?? null,
+  };
+}
+
+export async function insertListingChatMessage(
+  supabase: SupabaseClient,
+  conversationId: string,
+  senderId: string,
+  body: string,
+): Promise<{ id: string; sender_id: string; body: string; created_at: string } | null> {
+  const { data, error } = await supabase
+    .from("listing_messages")
+    .insert({
+      conversation_id: conversationId,
+      sender_id: senderId,
+      body,
+    })
+    .select("id,sender_id,body,created_at")
+    .single();
+  if (error || !data) {
+    console.error("[service-quote] insert message", error);
+    return null;
+  }
+  return data as { id: string; sender_id: string; body: string; created_at: string };
+}
+
+export async function resolveConversationForBuyer(
+  supabase: SupabaseClient,
+  listingId: string,
+  buyerId: string,
+): Promise<{ id: string; buyer_id: string } | null> {
+  const listVars = idMatchVariantsForIn(listingId);
+  const buyerVars = idMatchVariantsForIn(buyerId);
+  const { data: conv } = await supabase
+    .from("listing_conversations")
+    .select("id,buyer_id")
+    .in("listing_id", listVars)
+    .in("buyer_id", buyerVars)
+    .limit(1)
+    .maybeSingle();
+  return conv?.id ? { id: String(conv.id), buyer_id: String(conv.buyer_id ?? buyerId) } : null;
+}

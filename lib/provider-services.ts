@@ -113,6 +113,13 @@ export function providerServiceSupportsMenu(slug: string | null | undefined): bo
   return typeof slug === "string" && PROVIDER_SERVICES_WITH_MENU.has(slug);
 }
 
+/** Services where checkout requires buyer accept on provider quote before deposit (Phase H4). */
+export const PROVIDER_SERVICES_WITH_QUOTE_ACCEPT = new Set<string>([HOUSEKEEPING_SERVICE]);
+
+export function providerServiceRequiresQuoteAccept(slug: string | null | undefined): boolean {
+  return typeof slug === "string" && PROVIDER_SERVICES_WITH_QUOTE_ACCEPT.has(slug);
+}
+
 export function providerServiceLabels(slangs: string[], lang: "es" | "en"): string {
   const labels = slangs
     .map((v) => PROVIDER_SERVICES.find((s) => s.value === v)?.[lang])
