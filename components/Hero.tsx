@@ -74,7 +74,7 @@ function HeroInner({ initialQuery }: { initialQuery: string }) {
     }
     setPriceMin(min);
     setPriceMax(max);
-  }, [priceKey]);
+  }, [priceKey, params]);
 
   const applyPriceToParams = (p: URLSearchParams) => {
     if (priceMin > 0) p.set("pmin", String(priceMin));

@@ -198,7 +198,7 @@ export function emptyMenu(): ServiceMenu {
   };
 }
 
-export function hasServiceMenu(menu: ServiceMenu | null | undefined): boolean {
+export function hasServiceMenu(menu: ServiceMenu | null | undefined): menu is ServiceMenu {
   return Boolean(menu && Array.isArray(menu.items) && menu.items.length > 0);
 }
 
