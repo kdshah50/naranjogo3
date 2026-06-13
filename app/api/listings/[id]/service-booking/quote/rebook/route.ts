@@ -4,19 +4,16 @@ import {
   getUserIdFromRequest,
   idMatchVariantsForIn,
 } from "@/lib/auth-server";
-import { buyerHasSentInAppMessage, ensureContactGateFromMessages } from "@/lib/contact-gate";
 import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
 import { parseServiceMenu } from "@/lib/listing-service-menu";
 import { providerServiceRequiresQuoteAccept } from "@/lib/provider-services";
 import {
   buildMenuQuoteMessage,
   computeQuoteTotalCents,
-  lineItemsFromCart,
-  parseQuoteMetadata,
-  type ServiceQuoteLineItem,
 } from "@/lib/service-quote";
 import {
   insertListingChatMessage,
+  loadServiceQuoteGate,
   resolveConversationForBuyer,
 } from "@/lib/service-quote-server";
 import { notifySellerBuyerCleaningRequest } from "@/lib/service-quote-notify";
@@ -24,7 +21,7 @@ import { expandUserAccountIdPool, userIsListingSellerAccount } from "@/lib/user-
 
 export const dynamic = "force-dynamic";
 
-/** POST — buyer sends structured cleaning request from menu picker. */
+/** POST — buyer re-sends last cleaning request from saved gate line items (one-tap rebook). */
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const buyerUserId = await getUserIdFromRequest(req);
@@ -34,19 +31,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     if (!listingId) return NextResponse.json({ error: "listingId inválido" }, { status: 400 });
 
     const json = await req.json().catch(() => ({}));
-    const cartLines = Array.isArray((json as { cartLines?: unknown }).cartLines)
-      ? ((json as { cartLines: Array<{ sku?: string; qty?: number }> }).cartLines ?? [])
-          .map((x) => ({ sku: String(x.sku ?? ""), qty: Math.round(Number(x.qty)) }))
-          .filter((x) => x.sku && x.qty > 0)
-      : [];
-    const visitFrequency = (json as { visitFrequency?: string }).visitFrequency;
-    const quoteBasis = (json as { quoteBasis?: string }).quoteBasis;
-    const buyerNotes = String((json as { buyerNotes?: string }).buyerNotes ?? "").trim().slice(0, 500) || null;
     const lang = (json as { lang?: string }).lang === "en" ? "en" : "es";
-
-    if (cartLines.length === 0) {
-      return NextResponse.json({ error: "Selecciona al menos un servicio" }, { status: 400 });
-    }
 
     const supabase = createAdminSupabase();
     const { data: listing, error: le } = await supabase
@@ -61,12 +46,32 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       return NextResponse.json({ error: "Este anuncio no está activo" }, { status: 400 });
     }
     if (await userIsListingSellerAccount(supabase, buyerUserId, listing.seller_id as string)) {
-      return NextResponse.json({ error: "No puedes solicitar tu propio servicio" }, { status: 400 });
+      return NextResponse.json({ error: "No puedes reservar tu propio servicio" }, { status: 400 });
     }
 
     const slug = inferProviderSlugFromListingTitle(listing.title_es as string);
     if (!providerServiceRequiresQuoteAccept(slug)) {
-      return NextResponse.json({ error: "Este anuncio no usa solicitud estructurada" }, { status: 400 });
+      return NextResponse.json({ error: "Rebook no disponible para este anuncio" }, { status: 400 });
+    }
+
+    const buyerPool = await expandUserAccountIdPool(supabase, buyerUserId);
+    let gate = null;
+    for (const bid of buyerPool) {
+      gate = await loadServiceQuoteGate(supabase, listingId, bid);
+      if (gate?.quoteLineItems?.length) break;
+    }
+    const lineItems = gate?.quoteLineItems ?? [];
+    if (lineItems.length === 0) {
+      return NextResponse.json(
+        {
+          error: "no_prior_request",
+          message:
+            lang === "en"
+              ? "No saved cleaning request found — open the listing and send a new request."
+              : "No hay solicitud guardada — abre el anuncio y envía una nueva solicitud.",
+        },
+        { status: 400 },
+      );
     }
 
     const parsedMenu = parseServiceMenu(listing.service_menu);
@@ -74,21 +79,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       return NextResponse.json({ error: "Menú de servicio no disponible" }, { status: 400 });
     }
 
-    const lineItems = lineItemsFromCart(parsedMenu.menu, cartLines);
-    if (lineItems.length === 0) {
-      return NextResponse.json({ error: "Servicios seleccionados inválidos" }, { status: 400 });
-    }
+    const quoteMetadata = gate?.quoteMetadata ?? { kind: "buyer_request" as const, lang };
+    quoteMetadata.kind = "buyer_request";
+    quoteMetadata.lang = lang;
 
+    const cartLines = lineItems.map((x) => ({ sku: x.sku, qty: x.qty }));
     const totalCents = computeQuoteTotalCents({
       menu: parsedMenu.menu,
       cartLines,
-      visitFrequency: visitFrequency as never,
-      quoteBasis: quoteBasis as never,
+      visitFrequency: quoteMetadata.visitFrequency,
+      quoteBasis: quoteMetadata.quoteBasis,
       quoteLayout: "housekeeping",
     });
-    if (totalCents < 100) {
-      return NextResponse.json({ error: "Total estimado inválido" }, { status: 400 });
-    }
 
     let conv = await resolveConversationForBuyer(supabase, listingId, buyerUserId);
     if (!conv) {
@@ -102,37 +104,26 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         .select("id,buyer_id")
         .single();
       if (cErr || !created?.id) {
-        console.error("[service-quote/request] create conv", cErr);
         return NextResponse.json({ error: "No se pudo iniciar conversación" }, { status: 500 });
       }
       conv = { id: String(created.id), buyer_id: String(created.buyer_id ?? buyerUserId) };
     }
-
-    await ensureContactGateFromMessages(supabase, listingId, conv.buyer_id);
-    const sent = await buyerHasSentInAppMessage(supabase, listingId, buyerUserId);
-    if (!sent) {
-      /* first message below will satisfy gate via messages route side effects */
-    }
-
-    const quoteMetadata = parseQuoteMetadata({
-      visitFrequency,
-      quoteBasis,
-      buyerNotes,
-      lang,
-      kind: "buyer_request",
-    }) ?? { kind: "buyer_request" as const, lang, buyerNotes };
 
     let messageBody = buildMenuQuoteMessage({
       menu: parsedMenu.menu,
       lineItems,
       totalCents,
       lang,
-      visitFrequency: visitFrequency as never,
-      quoteBasis: quoteBasis as never,
+      visitFrequency: quoteMetadata.visitFrequency,
+      quoteBasis: quoteMetadata.quoteBasis,
       headerKind: "buyer_request",
     });
-    if (buyerNotes) {
-      messageBody += lang === "en" ? `\n\nNotes: ${buyerNotes}` : `\n\nNotas: ${buyerNotes}`;
+    messageBody +=
+      lang === "en"
+        ? "\n\n🔄 Repeat booking — same services as last time."
+        : "\n\n🔄 Reserva repetida — mismos servicios que la última vez.";
+    if (quoteMetadata.buyerNotes) {
+      messageBody += lang === "en" ? `\n\nNotes: ${quoteMetadata.buyerNotes}` : `\n\nNotas: ${quoteMetadata.buyerNotes}`;
     }
 
     const inserted = await insertListingChatMessage(supabase, conv.id, buyerUserId, messageBody);
@@ -167,9 +158,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       supabase,
       sellerId: String(listing.seller_id),
       listingId,
-      listingTitle: String(listing.title_es ?? "Servicio"),
-      conversationId: conv.id,
+      listingTitle: String(listing.title_es ?? "Limpieza"),
       buyerName: String(buyerRow?.display_name ?? "Cliente"),
+      conversationId: conv.id,
       totalCents,
       lang,
     });
@@ -177,11 +168,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({
       ok: true,
       conversationId: conv.id,
-      estimatedTotalCents: totalCents,
-      message: inserted,
+      listingId,
+      redirectUrl: `/listing/${listingId}?quote=1`,
     });
   } catch (e) {
-    console.error("[service-quote/request] POST", e);
+    console.error("[service-quote/rebook] POST", e);
     return NextResponse.json({ error: "Error del servidor" }, { status: 500 });
   }
 }

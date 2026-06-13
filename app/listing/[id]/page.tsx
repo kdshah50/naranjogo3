@@ -56,7 +56,7 @@ export default async function ListingPage({
   searchParams,
 }: {
   params: { id: string };
-  searchParams?: { chat?: string; lang?: string; quote?: string };
+  searchParams?: { chat?: string; lang?: string; quote?: string; request?: string };
 }) {
   const supaUrl = getSupabaseUrl();
   const h = { ...getServiceRoleRestHeaders(), "Content-Type": "application/json" };
@@ -104,6 +104,7 @@ export default async function ListingPage({
     providerSlug === HOUSEKEEPING_SERVICE ? ("housekeeping" as const) : ("default" as const);
   const requiresQuoteAccept = providerServiceRequiresQuoteAccept(providerSlug);
   const highlightQuote = searchParams?.quote === "1" || searchParams?.quote === "true";
+  const highlightRequest = searchParams?.request === "1" || searchParams?.request === "true";
   const listingLang = langFromParam(searchParams?.lang);
   const listingQueryBase = new URLSearchParams();
   if (listingLang === "en") listingQueryBase.set("lang", "en");
@@ -343,6 +344,7 @@ export default async function ListingPage({
             quoteLayout={menuQuoteLayout}
             requiresQuoteAccept={requiresQuoteAccept}
             highlightQuote={highlightQuote}
+            highlightRequest={highlightRequest}
           />
           <div id="booking-section" className="scroll-mt-28">
             <ServiceBookingBlock

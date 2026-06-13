@@ -7,7 +7,8 @@ import type { ServiceMenu } from "@/lib/listing-service-menu";
 import { hasServiceMenu } from "@/lib/listing-service-menu";
 import ServiceMenuQuoteBuilder, { type QuoteBuilderPayload } from "@/components/ServiceMenuQuoteBuilder";
 import ServiceQuoteBuyerPanel from "@/components/ServiceQuoteBuyerPanel";
-import type { ServiceQuoteStatus } from "@/lib/service-quote";
+import ServiceQuoteSellerRequestPanel from "@/components/ServiceQuoteSellerRequestPanel";
+import type { ServiceQuoteLineItem, ServiceQuoteMetadata, ServiceQuoteStatus } from "@/lib/service-quote";
 
 type Msg = { id: string; sender_id: string; body: string; created_at: string };
 
@@ -30,6 +31,7 @@ export default function ListingChat({
   quoteLayout = "default",
   requiresQuoteAccept = false,
   highlightQuote = false,
+  highlightRequest = false,
 }: {
   listingId: string;
   initialConversationId?: string;
@@ -47,6 +49,8 @@ export default function ListingChat({
   requiresQuoteAccept?: boolean;
   /** Deep link ?quote=1 — scroll quote panel into view. */
   highlightQuote?: boolean;
+  /** Deep link ?request=1 — scroll buyer request breakdown (seller). */
+  highlightRequest?: boolean;
 }) {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -67,7 +71,10 @@ export default function ListingChat({
   const [quoteStatus, setQuoteStatus] = useState<ServiceQuoteStatus>("none");
   const [quoteAgreedCents, setQuoteAgreedCents] = useState<number | null>(null);
   const [quoteSentAt, setQuoteSentAt] = useState<string | null>(null);
+  const [quoteLineItems, setQuoteLineItems] = useState<ServiceQuoteLineItem[] | null>(null);
+  const [quoteMetadata, setQuoteMetadata] = useState<ServiceQuoteMetadata | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
+  const deepLinkConvLoadedRef = useRef(false);
   /** Scroll this pane — `scrollIntoView` on children scrolls the whole page in Chrome (nested overflow). */
   const messagesScrollRef = useRef<HTMLDivElement | null>(null);
   /** Which listing `selectedId` belongs to. If it differs from `listingId`, do not use `selectedId` for sends. */
@@ -88,7 +95,7 @@ export default function ListingChat({
   const loadListingScope = useCallback(async () => {
     setError("");
     const listingChanged = lastScopeListingIdRef.current !== listingId;
-    if (listingChanged) {
+    if (listingChanged && !initialConversationId) {
       lastScopeListingIdRef.current = listingId;
       // Avoid stale thread/messages from another anuncio (SPA navigation) or a buyer id from another listing
       setLoading(true);
@@ -97,6 +104,9 @@ export default function ListingChat({
       setMessages([]);
       setThreads([]);
       conversationListingIdRef.current = null;
+    } else if (listingChanged) {
+      lastScopeListingIdRef.current = listingId;
+      setLoading(true);
     }
 
     const res = await fetch(`/api/conversations?listingId=${encodeURIComponent(listingId)}`, {
@@ -125,7 +135,11 @@ export default function ListingChat({
       }
     }
     setLoading(false);
-  }, [listingId]);
+  }, [listingId, initialConversationId]);
+
+  useEffect(() => {
+    deepLinkConvLoadedRef.current = false;
+  }, [listingId, initialConversationId]);
 
   const loadConversation = useCallback(
     async (conversationId: string, buyerIdHint?: string | null) => {
@@ -206,9 +220,19 @@ export default function ListingChat({
   }, [listingId, loadListingScope, loadConversation, selectedId]);
 
   useEffect(() => {
-    if (!initialConversationId) return;
-    void loadConversation(initialConversationId);
-  }, [initialConversationId, loadConversation]);
+    if (loading || !initialConversationId || deepLinkConvLoadedRef.current) return;
+    if (role === "seller") {
+      const th = threads.find((t) => t.conversationId === initialConversationId);
+      if (!th && threads.length === 0) return;
+      deepLinkConvLoadedRef.current = true;
+      void loadConversation(initialConversationId, th?.buyer_id);
+      return;
+    }
+    if (role === "buyer") {
+      deepLinkConvLoadedRef.current = true;
+      void loadConversation(initialConversationId);
+    }
+  }, [loading, initialConversationId, role, threads, loadConversation]);
 
   // Sellers otherwise see an empty message pane until they click a buyer; they may think no message arrived.
   useEffect(() => {
@@ -314,6 +338,9 @@ export default function ListingChat({
       const cents = (d as { agreedSubtotalMxnCents?: number | null }).agreedSubtotalMxnCents;
       setQuoteAgreedCents(cents != null ? Number(cents) : null);
       setQuoteSentAt((d as { quoteSentAt?: string | null }).quoteSentAt ?? null);
+      const items = (d as { quoteLineItems?: ServiceQuoteLineItem[] | null }).quoteLineItems;
+      setQuoteLineItems(Array.isArray(items) && items.length > 0 ? items : null);
+      setQuoteMetadata((d as { quoteMetadata?: ServiceQuoteMetadata | null }).quoteMetadata ?? null);
     } finally {
       setQuoteLoading(false);
     }
@@ -344,6 +371,14 @@ export default function ListingChat({
     }, 400);
     return () => window.clearTimeout(t);
   }, [highlightQuote, quoteStatus]);
+
+  useEffect(() => {
+    if (!highlightRequest) return;
+    const t = window.setTimeout(() => {
+      document.getElementById("seller-request-panel")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 600);
+    return () => window.clearTimeout(t);
+  }, [highlightRequest, quoteLineItems]);
 
   const sendOfficialQuote = async (payload: QuoteBuilderPayload) => {
     if (role !== "seller" || !agreedPriceBuyerId) return;
@@ -401,6 +436,7 @@ export default function ListingChat({
     }
     if (msg) setMessages((m) => [...m, msg]);
     window.dispatchEvent(new CustomEvent("tianguis:listing-contact"));
+    window.dispatchEvent(new CustomEvent("tianguis:quote-updated", { detail: { listingId } }));
   };
 
   // Poll thread list for new buyers/messages (seller only)
@@ -660,6 +696,18 @@ export default function ListingChat({
             <p className="text-[#A16207]">{lang === "en" ? "Loading thread…" : "Cargando conversación…"}</p>
           ) : null}
           {agreedErr ? <p className="text-red-600">{agreedErr}</p> : null}
+          {requiresQuoteAccept &&
+            quoteStatus === "none" &&
+            quoteLineItems != null &&
+            quoteLineItems.length > 0 &&
+            hasServiceMenu(serviceMenu) && (
+              <ServiceQuoteSellerRequestPanel
+                lineItems={quoteLineItems}
+                metadata={quoteMetadata}
+                menu={serviceMenu}
+                lang={lang === "en" ? "en" : "es"}
+              />
+            )}
           {hasServiceMenu(serviceMenu) && agreedPriceBuyerId && (
             <ServiceMenuQuoteBuilder
               menu={serviceMenu}
@@ -667,6 +715,9 @@ export default function ListingChat({
               quoteLayout={quoteLayout}
               variant="seller"
               disabled={agreedSaving || agreedLoading}
+              initialCartLines={quoteLineItems?.map((x) => ({ sku: x.sku, qty: x.qty }))}
+              initialVisitFrequency={quoteMetadata?.visitFrequency}
+              initialQuoteBasis={quoteMetadata?.quoteBasis}
               onApplyTotal={(pesos) => setAgreedPesos(pesos)}
               onSendOfficialQuote={requiresQuoteAccept ? sendOfficialQuote : undefined}
               onInsertAsMessage={async (body) => {
@@ -738,6 +789,13 @@ export default function ListingChat({
                 currency: "MXN",
                 maximumFractionDigits: 0,
               }).format(quoteAgreedCents / 100)}
+            </p>
+          ) : null}
+          {quoteStatus === "declined" ? (
+            <p className="text-[#B45309] mt-2 leading-snug">
+              {lang === "en"
+                ? "Customer declined — adjust rooms or price in the quote builder below, then tap Send official quote again."
+                : "El cliente rechazó — ajusta habitaciones o precio abajo y vuelve a pulsar «Enviar cotización al cliente»."}
             </p>
           ) : null}
         </div>

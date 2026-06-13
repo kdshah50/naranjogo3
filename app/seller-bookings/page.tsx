@@ -20,6 +20,9 @@ type SellerBooking = {
   paid_at: string | null;
   ticket_code: string | null;
   package_session_count?: number | null;
+  appointment_at?: string | null;
+  balance_due_mxn_cents?: number | null;
+  balance_payment_status?: string | null;
   listing_title: string;
   buyer_name: string;
   has_review?: boolean;
@@ -151,6 +154,13 @@ function SellerBookingsInner() {
     statsListNote: es
       ? "Los totales siguen la misma lógica que la lista (tu seller_id o anuncios que te pertenecen). El cliente ve el estado en «Mis reservas» y en el chat. Si acabas de cobrar, el ticket puede tardar unos segundos. La lista prioriza lo pendiente y se acota si hay muchas filas."
       : "Totals match the list rules (your seller_id or listings you own). Buyers see status in My bookings and Messages. Tickets can take a few seconds right after payment. Pending work sorts to the top; the list caps by recency if you have many rows.",
+    apptLabel: es ? "Fecha y hora de la visita" : "Visit date & time",
+    apptHint: es
+      ? "Opcional pero recomendado — el cliente la verá en Mis reservas."
+      : "Optional but recommended — the buyer sees it in My bookings.",
+    apptSaved: es ? "Cita:" : "Visit:",
+    balancePending: es ? "Saldo pendiente del cliente" : "Buyer balance pending",
+    balancePaid: es ? "Saldo pagado en app" : "Balance paid in app",
   };
 
   const router = useRouter();
@@ -162,6 +172,7 @@ function SellerBookingsInner() {
   const [msg, setMsg] = useState<Record<string, string>>({});
   const [sellerStrikeCount, setSellerStrikeCount] = useState<number | null>(null);
   const [sellerCancelCode, setSellerCancelCode] = useState<Record<string, string>>({});
+  const [appointmentLocal, setAppointmentLocal] = useState<Record<string, string>>({});
 
   const [refreshing, setRefreshing] = useState(false);
   const [lastSyncLabel, setLastSyncLabel] = useState("");
@@ -337,11 +348,18 @@ function SellerBookingsInner() {
     setBusyId(rowKey);
     setMsg((m) => ({ ...m, [rowKey]: "" }));
     try {
+      const payload: Record<string, string> = { status };
+      if (status === "scheduled") {
+        const local = appointmentLocal[rowKey] ?? appointmentLocal[id];
+        if (local?.trim()) {
+          payload.appointmentAt = new Date(local.trim()).toISOString();
+        }
+      }
       const res = await fetch(`/api/bookings/${encodeURIComponent(id)}`, {
         method: "PATCH",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify(payload),
       });
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
@@ -570,9 +588,40 @@ function SellerBookingsInner() {
                   <p className="text-xs text-[#6B7280] mb-3">
                     {t.fee}: {formatCurrencyMXN(b.commission_amount_cents, lang)}
                   </p>
+                  {b.appointment_at ? (
+                    <p className="text-[11px] text-indigo-900 mb-2">
+                      📅 {t.apptSaved}{" "}
+                      {new Date(b.appointment_at).toLocaleString(es ? "es-MX" : "en-MX", {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      })}
+                    </p>
+                  ) : null}
+                  {b.status === "completed" && String(b.balance_payment_status ?? "") === "pending" ? (
+                    <p className="text-[11px] text-amber-900 mb-2">
+                      💳 {t.balancePending}: {formatCurrencyMXN(b.balance_due_mxn_cents ?? 0, lang)}
+                    </p>
+                  ) : null}
+                  {b.status === "completed" && String(b.balance_payment_status ?? "") === "paid" ? (
+                    <p className="text-[11px] text-emerald-800 mb-2">✓ {t.balancePaid}</p>
+                  ) : null}
 
                   {b.status !== "completed" && b.status !== "cancelled" && (
                     <div className="flex flex-col gap-2">
+                      {(b.status === "confirmed" || b.status === "pending") && (
+                        <>
+                          <label className="text-[10px] font-semibold text-[#57534E]">{t.apptLabel}</label>
+                          <input
+                            type="datetime-local"
+                            value={appointmentLocal[rowKey] ?? ""}
+                            onChange={(e) =>
+                              setAppointmentLocal((prev) => ({ ...prev, [rowKey]: e.target.value }))
+                            }
+                            className="w-full border border-[#E5E0D8] rounded-xl px-3 py-2 text-xs text-[#1C1917] bg-white"
+                          />
+                          <p className="text-[10px] text-[#6B7280] leading-snug -mt-1">{t.apptHint}</p>
+                        </>
+                      )}
                       {(b.status === "confirmed" || b.status === "pending") && (
                         <button
                           type="button"

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import GuaranteeBadge from "@/components/GuaranteeBadge";
 import RoutineHabitsCard from "@/components/RoutineHabitsCard";
 import BuyerRetentionPanel from "@/components/BuyerRetentionPanel";
+import HousekeepingBookingPayments from "@/components/HousekeepingBookingPayments";
 import { useAppLang, useAppLangActions } from "@/hooks/use-app-lang";
 import { mergeBookingsListWithDetailTruth } from "@/lib/booking-client-detail-truth";
 import { mergeBookingListAvoidStatusRegression } from "@/lib/booking-list-merge";
@@ -17,6 +18,7 @@ type Booking = {
   seller_id: string;
   commission_amount_cents: number;
   commission_pct?: number | null;
+  pricing_base_mxn_cents?: number | null;
   payment_status: string;
   paid_at: string | null;
   status: string;
@@ -25,6 +27,12 @@ type Booking = {
   has_review?: boolean;
   package_session_count?: number | null;
   cancel_reason_code?: string | null;
+  appointment_at?: string | null;
+  balance_due_mxn_cents?: number | null;
+  balance_payment_status?: string | null;
+  balance_paid_at?: string | null;
+  tip_mxn_cents?: number | null;
+  tip_payment_status?: string | null;
   listing_title: string;
   seller_name: string;
 };
@@ -195,6 +203,8 @@ function MyBookingsPageInner() {
   const [buyerRfc, setBuyerRfc] = useState<string | null>(null);
   const [stripeReceiptBusyId, setStripeReceiptBusyId] = useState<string | null>(null);
   const [stripeReceiptErr, setStripeReceiptErr] = useState<Record<string, string>>({});
+  const [rebookBusyId, setRebookBusyId] = useState<string | null>(null);
+  const [rebookMsg, setRebookMsg] = useState<Record<string, string>>({});
 
   const loadData = useCallback(() => {
     const qp = new URLSearchParams({ status: "paid" });
@@ -386,6 +396,8 @@ function MyBookingsPageInner() {
             "No hay enlace de recibo disponible (pago antiguo o sesión no encontrada). Conserva el ticket y el correo de Stripe si lo recibiste.",
           paymentTaxNote:
             "Esto es comprobante de cobro por la plataforma, no una factura fiscal mexicana (CFDI). Para deducciones específicas consulta a tu contador.",
+          repeatCleaning: "Repetir última limpieza",
+          repeatCleaningBusy: "Enviando solicitud…",
         }
       : {
           back: "← My profile",
@@ -449,6 +461,8 @@ function MyBookingsPageInner() {
             "No Stripe receipt link available (older payment or session missing). Keep your ticket code and any Stripe email you received.",
           paymentTaxNote:
             "This is a payment record for the platform fee, not a Mexican CFDI tax invoice. Ask your accountant for deductible documentation.",
+          repeatCleaning: "Repeat last cleaning",
+          repeatCleaningBusy: "Sending request…",
         };
 
   const openStripeReceipt = async (bookingId: string) => {
@@ -576,6 +590,37 @@ function MyBookingsPageInner() {
         ...prev,
         [booking.id]: e instanceof Error ? e.message : "Error",
       }));
+    }
+  };
+
+  const repeatLastCleaning = async (booking: Booking) => {
+    setRebookBusyId(booking.id);
+    setRebookMsg((m) => ({ ...m, [booking.id]: "" }));
+    try {
+      const res = await fetch(
+        `/api/listings/${encodeURIComponent(booking.listing_id)}/service-booking/quote/rebook`,
+        {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ lang }),
+        },
+      );
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        message?: string;
+        redirectUrl?: string;
+      };
+      if (!res.ok) throw new Error(data.message ?? data.error ?? "Error");
+      const dest = data.redirectUrl ?? `/listing/${booking.listing_id}?quote=1`;
+      router.push(dest);
+    } catch (e) {
+      setRebookMsg((m) => ({
+        ...m,
+        [booking.id]: e instanceof Error ? e.message : "Error",
+      }));
+    } finally {
+      setRebookBusyId(null);
     }
   };
 
@@ -801,6 +846,25 @@ function MyBookingsPageInner() {
                     </details>
                   )}
 
+                  {(b.pricing_base_mxn_cents != null && b.pricing_base_mxn_cents >= 100) ||
+                  b.appointment_at ? (
+                    <HousekeepingBookingPayments
+                      bookingId={b.id}
+                      lang={lang}
+                      pricingBaseMxnCents={b.pricing_base_mxn_cents}
+                      commissionAmountCents={b.commission_amount_cents}
+                      balanceDueMxnCents={b.balance_due_mxn_cents}
+                      balancePaymentStatus={b.balance_payment_status}
+                      balancePaidAt={b.balance_paid_at}
+                      tipMxnCents={b.tip_mxn_cents}
+                      tipPaymentStatus={b.tip_payment_status}
+                      appointmentAt={b.appointment_at}
+                      status={b.status}
+                      paymentStatus={b.payment_status}
+                      onPaid={() => void loadData()}
+                    />
+                  ) : null}
+
                   <div className="flex flex-wrap gap-2">
                     <Link
                       href={`/listing/${b.listing_id}#booking-section`}
@@ -808,7 +872,20 @@ function MyBookingsPageInner() {
                     >
                       {t.rebook}
                     </Link>
+                    {b.status === "completed" && (
+                      <button
+                        type="button"
+                        disabled={rebookBusyId === b.id}
+                        onClick={() => void repeatLastCleaning(b)}
+                        className="flex-1 min-w-[120px] py-2.5 rounded-xl border border-[#1B4332] text-[#1B4332] text-xs font-semibold bg-white hover:bg-[#ECFDF5] disabled:opacity-50"
+                      >
+                        {rebookBusyId === b.id ? t.repeatCleaningBusy : t.repeatCleaning}
+                      </button>
+                    )}
                   </div>
+                  {rebookMsg[b.id] ? (
+                    <p className="text-[10px] text-red-600 mt-1">{rebookMsg[b.id]}</p>
+                  ) : null}
 
                   {canBuyerCancel(b) && (
                     <details className="mt-3 rounded-xl border border-red-100 bg-red-50/40 px-3 py-2">

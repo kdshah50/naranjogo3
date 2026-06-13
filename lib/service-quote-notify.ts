@@ -75,7 +75,7 @@ export async function notifySellerBuyerCleaningRequest(opts: {
 
   const lang = opts.lang ?? "es";
   const appUrl = getPublicAppUrl();
-  const link = `${appUrl}/listing/${opts.listingId}?chat=${opts.conversationId}`;
+  const link = `${appUrl}/listing/${opts.listingId}?chat=${opts.conversationId}&request=1`;
   const total = formatMxn(opts.totalCents, lang);
 
   const msg =

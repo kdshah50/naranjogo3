@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   computeHousekeepingQuoteTotals,
   computeServiceMenuQuoteCents,
@@ -45,6 +45,9 @@ export default function ServiceMenuQuoteBuilder({
   disabled = false,
   quoteLayout = "default",
   variant = "seller",
+  initialCartLines,
+  initialVisitFrequency,
+  initialQuoteBasis,
 }: {
   menu: ServiceMenu | null | undefined;
   /** Called with the running total in pesos (string), to drop into the parent's agreedPesos input. */
@@ -60,12 +63,27 @@ export default function ServiceMenuQuoteBuilder({
   /** Housekeeping: show quick room-type qty picks above the full menu list. */
   quoteLayout?: "default" | "housekeeping";
   variant?: "seller" | "buyer";
+  /** Seller: pre-fill from buyer's saved request. */
+  initialCartLines?: Array<{ sku: string; qty: number }>;
+  initialVisitFrequency?: HousekeepingVisitFrequency;
+  initialQuoteBasis?: HousekeepingQuoteBasis;
 }) {
   const [qtyBySku, setQtyBySku] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);
   const [visitFrequency, setVisitFrequency] = useState<HousekeepingVisitFrequency>("one_time");
   const [quoteBasis, setQuoteBasis] = useState<HousekeepingQuoteBasis>("per_visit");
   const [buyerNotes, setBuyerNotes] = useState("");
+
+  useEffect(() => {
+    if (!initialCartLines?.length) return;
+    const next: Record<string, number> = {};
+    for (const { sku, qty } of initialCartLines) {
+      if (sku && qty > 0) next[sku] = qty;
+    }
+    setQtyBySku(next);
+    if (initialVisitFrequency) setVisitFrequency(initialVisitFrequency);
+    if (initialQuoteBasis) setQuoteBasis(initialQuoteBasis);
+  }, [initialCartLines, initialVisitFrequency, initialQuoteBasis]);
 
   const cartLines = useMemo(
     () => Object.entries(qtyBySku).map(([sku, qty]) => ({ sku, qty })),

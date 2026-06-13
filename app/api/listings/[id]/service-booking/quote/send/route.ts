@@ -19,6 +19,7 @@ import {
   resolveConversationForBuyer,
 } from "@/lib/service-quote-server";
 import { notifyBuyerServiceQuoteSent } from "@/lib/service-quote-notify";
+import { sellerHasConnectForHousekeeping } from "@/lib/housekeeping-payments";
 import { userIsListingSellerAccount } from "@/lib/user-account-pool";
 
 export const dynamic = "force-dynamic";
@@ -62,6 +63,17 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const slug = inferProviderSlugFromListingTitle(listing.title_es as string);
     if (!providerServiceRequiresQuoteAccept(slug)) {
       return NextResponse.json({ error: "Este anuncio no usa flujo de cotización" }, { status: 400 });
+    }
+
+    if (!(await sellerHasConnectForHousekeeping(supabase, String(listing.seller_id)))) {
+      return NextResponse.json(
+        {
+          error: "provider_connect_required",
+          message:
+            "Activa Stripe Connect en tu perfil antes de enviar cotizaciones de limpieza (el saldo se paga en la app).",
+        },
+        { status: 409 },
+      );
     }
 
     const conv = await resolveConversationForBuyer(supabase, listingId, buyerId);

@@ -12,8 +12,8 @@ Mirror format of `docs/TAILORING_PROGRESS.md` and `docs/VETERINARY_PROGRESS.md`.
 | Strategy | Additive: reuse `listings.service_menu` jsonb, enable menu editor for slug `limpieza` in `/unete`, add housekeeping starter template + disclaimer. **Zero changes to SellModal, booking, cart, payment, or webhook code.** |
 | Master kill-switch | Menu editor only renders for slugs in `PROVIDER_SERVICES_WITH_MENU`. Until `limpieza` is added, housekeeping signup behaves like any other service on `main`. |
 | Existing slug | `limpieza` — "Limpieza del hogar" / "House Cleaning" (already in `PROVIDER_SERVICES`) |
-| Latest step completed | **Later phase — profile menu editor + housekeeping quick quote** |
-| Next step | Deploy preview + smoke test (profile menu edit, chat quick quote) |
+| Latest step completed | **Phase H5 — balance checkout, tips, appointment, rebook** |
+| Next step | Run migrations on Supabase + full cleaner E2E test on preview |
 
 ---
 
@@ -77,6 +77,20 @@ Every row is **editable or deletable** at signup. Final total always flows throu
 - [x] Buyer **Accept / Decline** → blocks deposit until accepted
 - [x] Checkout gated: `commission_only` deposit only after `quote_status = accepted` (limpieza only)
 - [x] APIs: `GET/POST .../service-booking/quote/*` (send, request, respond)
+
+## Phase H5 — balance, tips, appointment, rebook (shipped on branch)
+
+- [x] Migration `20260606120000_housekeeping_balance_tip_appointment.sql` — `appointment_at`, balance + tip columns on `service_bookings`
+- [x] On **Completado**: compute `balance_due = pricing_base − deposit`, WhatsApp + in-app **Pay balance**
+- [x] Stripe Connect checkout for balance + tip (`payment_kind` in webhook)
+- [x] **Stripe Connect required** before seller sends official quote (limpieza)
+- [x] Provider sets **visit date/time** when marking Agendado (`/seller-bookings`)
+- [x] Buyer **Mis reservas**: quote total, deposit, balance due, pay balance / tip
+- [x] **Repetir última limpieza** — `POST .../quote/rebook` from completed bookings
+- [x] Homepage hero chip → `/limpieza-del-hogar`
+- [x] Seller hint when quote **declined** (revise + resend)
+
+**Before testing:** run both migrations in Supabase SQL Editor (H4 + H5).
 
 ## Phase H3 — WhatsApp bot (deferred)
 

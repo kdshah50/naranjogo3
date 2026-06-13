@@ -14,6 +14,8 @@ import { appendBookingEvent, BookingLifecycleStatus, canTransitionLifecycle } fr
 import { appendListingChatBookingLifecycleNotice, type BookingChatLifecyclePhase } from "@/lib/listing-chat-booking-notices";
 import { getPublicAppUrl } from "@/lib/app-url";
 import { sellerCanManagePaidBookingRow } from "@/lib/seller-booking-access";
+import { computeBalanceDueCents, listingIsHousekeeping } from "@/lib/housekeeping-payments";
+import { notifyBuyerHousekeepingBalanceDue } from "@/lib/housekeeping-balance-notify";
 
 export const dynamic = "force-dynamic";
 
@@ -86,6 +88,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       cancelNote: booking.cancel_note ?? null,
       commissionAmountCents: booking.commission_amount_cents,
       commissionPct: booking.commission_pct,
+      pricingBaseMxnCents: booking.pricing_base_mxn_cents ?? null,
+      balanceDueMxnCents: booking.balance_due_mxn_cents ?? null,
+      balancePaymentStatus: booking.balance_payment_status ?? "none",
+      balancePaidAt: booking.balance_paid_at ?? null,
+      tipMxnCents: booking.tip_mxn_cents ?? null,
+      tipPaymentStatus: booking.tip_payment_status ?? "none",
+      appointmentAt: booking.appointment_at ?? null,
       paidAt: booking.paid_at,
       createdAt: booking.created_at,
       isBuyer,
@@ -281,7 +290,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     const { data: booking, error: fetchErr } = await supabase
       .from("service_bookings")
-      .select("id,buyer_id,seller_id,listing_id,payment_status,status,ticket_code")
+      .select(
+        "id,buyer_id,seller_id,listing_id,payment_status,status,ticket_code,pricing_base_mxn_cents,commission_amount_cents",
+      )
       .in("id", lifeIdVars)
       .maybeSingle();
 
@@ -331,13 +342,36 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     const fromStatus = String(booking.status);
     const now = new Date().toISOString();
+
+    const appointmentRaw = body?.appointmentAt ?? body?.appointment_at;
+    const updatePayload: Record<string, unknown> = { status: nextStatus, updated_at: now };
+
+    if (nextStatus === "scheduled" && typeof appointmentRaw === "string" && appointmentRaw.trim()) {
+      const appt = new Date(appointmentRaw.trim());
+      if (!Number.isNaN(appt.getTime())) {
+        updatePayload.appointment_at = appt.toISOString();
+      }
+    }
+
+    if (nextStatus === "completed") {
+      const isHk = await listingIsHousekeeping(supabase, String(booking.listing_id));
+      if (isHk) {
+        const balanceDue = computeBalanceDueCents({
+          pricing_base_mxn_cents: booking.pricing_base_mxn_cents,
+          commission_amount_cents: booking.commission_amount_cents,
+        });
+        updatePayload.balance_due_mxn_cents = balanceDue;
+        updatePayload.balance_payment_status = balanceDue >= 100 ? "pending" : "waived";
+      }
+    }
+
     const { data: updated, error: upErr } = await supabase
       .from("service_bookings")
-      .update({ status: nextStatus, updated_at: now })
+      .update(updatePayload)
       .eq("id", rowId)
       .eq("payment_status", "paid")
       .eq("status", fromStatus)
-      .select("id,status")
+      .select("id,status,balance_due_mxn_cents,balance_payment_status")
       .maybeSingle();
 
     if (upErr || !updated) {
@@ -388,6 +422,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       } catch (e) {
         console.error("[bookings/:id] PATCH review WhatsApp failed (non-fatal)", e);
         buyerPhaseWhatsApp = { delivered: false, reason: "send_failed" };
+      }
+      const balDue = Math.round(Number(updated?.balance_due_mxn_cents ?? 0));
+      if (String(updated?.balance_payment_status ?? "") === "pending" && balDue >= 100) {
+        try {
+          await notifyBuyerHousekeepingBalanceDue(supabase, rowId, balDue, "es");
+        } catch (e) {
+          console.error("[bookings/:id] balance due WhatsApp (non-fatal)", e);
+        }
       }
     }
 

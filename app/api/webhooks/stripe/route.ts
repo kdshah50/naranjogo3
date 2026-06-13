@@ -38,6 +38,46 @@ export async function POST(req: NextRequest) {
     const supabase = createAdminSupabase();
     const now = new Date().toISOString();
     const intentId = stripePaymentIntentId(session.payment_intent);
+    const paymentKind = String(session.metadata?.payment_kind ?? "deposit").trim().toLowerCase();
+
+    if (paymentKind === "balance" || paymentKind === "tip") {
+      const bookingIdMeta = session.metadata?.booking_id?.trim() ?? "";
+      if (!bookingIdMeta) {
+        console.error("[stripe-webhook] balance/tip missing booking_id");
+        return NextResponse.json({ received: true });
+      }
+      const bookingIdVars = idMatchVariantsForIn(bookingIdMeta);
+
+      if (paymentKind === "balance") {
+        const { error: balErr } = await supabase
+          .from("service_bookings")
+          .update({
+            balance_payment_status: "paid",
+            balance_paid_at: now,
+            updated_at: now,
+          })
+          .in("id", bookingIdVars)
+          .eq("balance_payment_status", "pending");
+
+        if (balErr) console.error("[stripe-webhook] balance update", balErr);
+      } else {
+        const tipCents = Math.round(Number(session.metadata?.tip_mxn_cents ?? session.amount_total ?? 0));
+        const { error: tipErr } = await supabase
+          .from("service_bookings")
+          .update({
+            tip_payment_status: "paid",
+            tip_paid_at: now,
+            tip_mxn_cents: tipCents > 0 ? tipCents : undefined,
+            updated_at: now,
+          })
+          .in("id", bookingIdVars)
+          .in("tip_payment_status", ["none", "pending"]);
+
+        if (tipErr) console.error("[stripe-webhook] tip update", tipErr);
+      }
+
+      return NextResponse.json({ received: true });
+    }
 
     if (session.metadata?.order_kind === "marketplace" && session.metadata?.marketplace_order_id) {
       const orderId = session.metadata.marketplace_order_id;
