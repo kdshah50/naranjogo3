@@ -40,6 +40,7 @@ type BookingState = {
   sellerConnectReady?: boolean;
   requiresQuoteAccept?: boolean;
   quoteStatus?: string | null;
+  quoteAwaitingProvider?: boolean;
   canPayDeposit?: boolean;
   fullConnectPreview?: {
     subtotalCents: number;
@@ -675,6 +676,20 @@ export default function ServiceBookingBlock({
                 listingLang === "en"
                   ? "You declined the quote. Wait for a revised quote from your provider, or send a new request in chat."
                   : "Rechazaste la cotización. Espera una cotización revisada o envía una nueva solicitud en el chat."
+              ) : booking.quoteAwaitingProvider ? (
+                listingLang === "en" ? (
+                  <>
+                    <strong>Step 2 — waiting:</strong> Your cleaning request was sent. The provider must tap{" "}
+                    <strong>Send quote to customer</strong> in Messages above. When you receive it, tap{" "}
+                    <strong>Accept quote</strong>, then the pay button appears here.
+                  </>
+                ) : (
+                  <>
+                    <strong>Paso 2 — en espera:</strong> Ya enviaste tu solicitud. El proveedor debe pulsar{" "}
+                    <strong>Enviar cotización al cliente</strong> en Mensajes arriba. Cuando la recibas, pulsa{" "}
+                    <strong>Aceptar cotización</strong>; entonces aparecerá el botón de pago aquí.
+                  </>
+                )
               ) : listingLang === "en" ? (
                 <>
                   <strong>Step 2:</strong> Send your cleaning request in <strong>Messages</strong> above. When the provider

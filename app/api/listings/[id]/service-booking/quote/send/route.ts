@@ -65,16 +65,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       return NextResponse.json({ error: "Este anuncio no usa flujo de cotización" }, { status: 400 });
     }
 
-    if (!(await sellerHasConnectForHousekeeping(supabase, String(listing.seller_id)))) {
-      return NextResponse.json(
-        {
-          error: "provider_connect_required",
-          message:
-            "Activa Stripe Connect en tu perfil antes de enviar cotizaciones de limpieza (el saldo se paga en la app).",
-        },
-        { status: 409 },
-      );
-    }
+    const sellerConnectReady = await sellerHasConnectForHousekeeping(supabase, String(listing.seller_id));
 
     const conv = await resolveConversationForBuyer(supabase, listingId, buyerId);
     if (!conv) {
@@ -153,6 +144,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       agreedSubtotalMxnCents,
       message: inserted,
       conversationId: conv.id,
+      sellerConnectReady,
+      connectWarning: sellerConnectReady
+        ? null
+        : lang === "en"
+          ? "Quote sent. Activate Stripe Connect in Profile before the job balance can be paid in-app after completion."
+          : "Cotización enviada. Activa Stripe Connect en Mi perfil para que el cliente pueda pagar el saldo en la app al terminar el servicio.",
     });
   } catch (e) {
     console.error("[service-quote/send] POST", e);

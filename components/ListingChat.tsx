@@ -402,8 +402,12 @@ export default function ListingChat({
       }),
     });
     const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error((d as { error?: string }).error ?? "No se pudo enviar cotización");
+    if (!r.ok) throw new Error((d as { error?: string; message?: string }).message ?? (d as { error?: string }).error ?? "No se pudo enviar cotización");
     setAgreedPesos(String(payload.totalCents / 100));
+    const connectWarning = (d as { connectWarning?: string | null }).connectWarning;
+    if (connectWarning) {
+      setAgreedErr(connectWarning);
+    }
     const msg = (d as { message?: Msg }).message;
     if (msg) setMessages((m) => [...m, msg]);
     window.dispatchEvent(new CustomEvent("tianguis:quote-updated", { detail: { listingId } }));
@@ -732,7 +736,19 @@ export default function ListingChat({
         </div>
       )}
 
-      {role === "buyer" && requiresQuoteAccept && hasServiceMenu(serviceMenu) && (quoteStatus === "none" || quoteStatus === "declined") && (
+      {role === "buyer" && requiresQuoteAccept && hasServiceMenu(serviceMenu) && quoteStatus === "none" && (quoteLineItems?.length ?? 0) > 0 && (
+        <div className="px-4 py-2 border-b border-[#E5E0D8] bg-blue-50 text-xs text-blue-900">
+          {lang === "en"
+            ? "✓ Request sent — waiting for your provider’s official quote. You’ll get Accept / Decline buttons here when they send it."
+            : "✓ Solicitud enviada — esperando la cotización oficial del proveedor. Verás Aceptar / Rechazar aquí cuando la envíe."}
+        </div>
+      )}
+
+      {role === "buyer" &&
+        requiresQuoteAccept &&
+        hasServiceMenu(serviceMenu) &&
+        (quoteStatus === "none" || quoteStatus === "declined") &&
+        !(quoteStatus === "none" && (quoteLineItems?.length ?? 0) > 0) && (
         <div className="px-4 py-2 border-b border-[#E5E0D8] bg-[#FFFBEB]">
           <ServiceMenuQuoteBuilder
             menu={serviceMenu}

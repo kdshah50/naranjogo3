@@ -6,7 +6,7 @@ import {
 } from "@/lib/auth-server";
 import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
 import { providerServiceRequiresQuoteAccept } from "@/lib/provider-services";
-import { loadServiceQuoteGate } from "@/lib/service-quote-server";
+import { loadServiceQuoteGate, loadServiceQuoteGateForBuyerPool } from "@/lib/service-quote-server";
 import { expandUserAccountIdPool, userIsListingSellerAccount } from "@/lib/user-account-pool";
 
 export const dynamic = "force-dynamic";
@@ -46,7 +46,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
 
-    const gate = await loadServiceQuoteGate(supabase, listingId, buyerId);
+    const gate = isSeller
+      ? await loadServiceQuoteGate(supabase, listingId, buyerId)
+      : await loadServiceQuoteGateForBuyerPool(
+          supabase,
+          listingId,
+          await expandUserAccountIdPool(supabase, userId),
+        );
 
     return NextResponse.json({
       requiresQuoteAccept,

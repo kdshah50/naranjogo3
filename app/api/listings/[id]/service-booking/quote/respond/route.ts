@@ -6,7 +6,7 @@ import {
 } from "@/lib/auth-server";
 import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
 import { providerServiceRequiresQuoteAccept } from "@/lib/provider-services";
-import { loadServiceQuoteGate, insertListingChatMessage, resolveConversationForBuyer } from "@/lib/service-quote-server";
+import { loadServiceQuoteGateForBuyerPool, insertListingChatMessage, resolveConversationForBuyer } from "@/lib/service-quote-server";
 import { notifySellerQuoteResponded } from "@/lib/service-quote-notify";
 import { expandUserAccountIdPool, userIsListingSellerAccount } from "@/lib/user-account-pool";
 
@@ -49,7 +49,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     }
 
     const myPool = await expandUserAccountIdPool(supabase, buyerUserId);
-    const gate = await loadServiceQuoteGate(supabase, listingId, buyerUserId);
+    const gate = await loadServiceQuoteGateForBuyerPool(supabase, listingId, myPool);
     if (!gate || gate.quoteStatus !== "pending") {
       return NextResponse.json({ error: "No hay cotización pendiente para responder" }, { status: 400 });
     }

@@ -54,6 +54,37 @@ export async function loadServiceQuoteGate(
   };
 }
 
+/** Linked buyer accounts (same WhatsApp) may have gate rows under a sibling user id. */
+export async function loadServiceQuoteGateForBuyerPool(
+  supabase: SupabaseClient,
+  listingId: string,
+  buyerPool: string[],
+): Promise<ServiceQuoteGateRow | null> {
+  const unique = [...new Set(buyerPool.map((id) => String(id).trim()).filter(Boolean))];
+  if (unique.length === 0) return null;
+
+  let best: ServiceQuoteGateRow | null = null;
+  for (const bid of unique) {
+    const row = await loadServiceQuoteGate(supabase, listingId, bid);
+    if (!row) continue;
+    if (row.quoteStatus === "pending" || row.quoteStatus === "accepted") return row;
+    if (!best) {
+      best = row;
+      continue;
+    }
+    const rank = (s: string) =>
+      s === "declined" ? 2 : s === "none" ? 1 : 0;
+    if (rank(row.quoteStatus) > rank(best.quoteStatus)) best = row;
+    else if (
+      row.quoteStatus === best.quoteStatus &&
+      (row.quoteLineItems?.length ?? 0) > (best.quoteLineItems?.length ?? 0)
+    ) {
+      best = row;
+    }
+  }
+  return best;
+}
+
 export async function insertListingChatMessage(
   supabase: SupabaseClient,
   conversationId: string,

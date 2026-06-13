@@ -24,7 +24,7 @@ import {
 import { applyServiceBookingStatusTruthPass } from "@/lib/booking-status-truth";
 import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
 import { providerServiceRequiresQuoteAccept } from "@/lib/provider-services";
-import { loadServiceQuoteGate } from "@/lib/service-quote-server";
+import { loadServiceQuoteGateForBuyerPool } from "@/lib/service-quote-server";
 
 export const dynamic = "force-dynamic";
 
@@ -329,10 +329,14 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     const slug = inferProviderSlugFromListingTitle(String(listing.title_es ?? ""));
     const requiresQuoteAccept = providerServiceRequiresQuoteAccept(slug);
     const quoteGate = requiresQuoteAccept
-      ? await loadServiceQuoteGate(supabase, listingId, userId)
+      ? await loadServiceQuoteGateForBuyerPool(supabase, listingId, myPool)
       : null;
     const quoteStatus = quoteGate?.quoteStatus ?? "none";
     const canPayDeposit = requiresQuoteAccept ? quoteStatus === "accepted" : true;
+    const quoteAwaitingProvider =
+      requiresQuoteAccept &&
+      quoteStatus === "none" &&
+      (quoteGate?.quoteLineItems?.length ?? 0) > 0;
 
     return NextResponse.json(
       {
@@ -344,6 +348,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         quoteStatus,
         quoteSentAt: quoteGate?.quoteSentAt ?? null,
         quoteRespondedAt: quoteGate?.quoteRespondedAt ?? null,
+        quoteAwaitingProvider,
         canPayDeposit,
         checkoutBlocked,
         paidBookingId: latestPaid?.id ?? null,
