@@ -11,12 +11,19 @@ import {
   type ServiceQuoteMetadata,
 } from "@/lib/service-quote";
 import { buyerContactFromMetadata } from "@/lib/buyer-quote-contact";
+import {
+  preferredDatetimeLabel,
+  sellerRequestPanelTitle,
+  type ServiceQuoteLayout,
+} from "@/lib/service-quote-vertical";
 
 type Props = {
   lineItems: ServiceQuoteLineItem[];
   metadata: ServiceQuoteMetadata | null;
   menu: ServiceMenu;
   lang: "es" | "en";
+  quoteLayout?: ServiceQuoteLayout;
+  providerSlug?: string | null;
 };
 
 function formatPreferredAt(iso: string, lang: "es" | "en"): string {
@@ -32,8 +39,15 @@ function formatPreferredAt(iso: string, lang: "es" | "en"): string {
   });
 }
 
-/** Read-only buyer cleaning request — shown to provider before they send official quote. */
-export default function ServiceQuoteSellerRequestPanel({ lineItems, metadata, menu, lang }: Props) {
+/** Read-only buyer service request — shown to provider before they send official quote. */
+export default function ServiceQuoteSellerRequestPanel({
+  lineItems,
+  metadata,
+  menu,
+  lang,
+  quoteLayout = "default",
+  providerSlug = null,
+}: Props) {
   const es = lang === "es";
   const freq = metadata?.visitFrequency
     ? HOUSEKEEPING_VISIT_FREQUENCIES.find((f) => f.id === metadata.visitFrequency)
@@ -45,7 +59,7 @@ export default function ServiceQuoteSellerRequestPanel({ lineItems, metadata, me
     cartLines: lineItems.map((x) => ({ sku: x.sku, qty: x.qty })),
     visitFrequency: metadata?.visitFrequency,
     quoteBasis: metadata?.quoteBasis,
-    quoteLayout: "housekeeping",
+    quoteLayout,
   });
 
   return (
@@ -54,7 +68,7 @@ export default function ServiceQuoteSellerRequestPanel({ lineItems, metadata, me
       className="rounded-xl border border-[#A7F3D0] bg-[#ECFDF5] px-3 py-3 space-y-2"
     >
       <p className="text-xs font-bold text-[#065F46]">
-        {es ? "🧹 Solicitud del cliente (detalle)" : "🧹 Customer request (breakdown)"}
+        {sellerRequestPanelTitle(providerSlug, lang)}
       </p>
       {contact ? (
         <div className="rounded-lg border border-emerald-200 bg-white/80 px-2 py-2 space-y-1 text-[11px] text-[#065F46]">
@@ -74,7 +88,7 @@ export default function ServiceQuoteSellerRequestPanel({ lineItems, metadata, me
             {es ? "Dirección" : "Address"}: {contact.serviceAddress}
           </p>
           <p>
-            {es ? "Visita preferida" : "Preferred visit"}: {formatPreferredAt(contact.preferredAt, lang)}
+            {preferredDatetimeLabel(providerSlug, lang)}: {formatPreferredAt(contact.preferredAt, lang)}
           </p>
         </div>
       ) : null}

@@ -136,6 +136,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       conversationId: conv.id,
       totalCents: agreedSubtotalMxnCents,
       lang,
+      providerSlug: slug,
     });
 
     return NextResponse.json({

@@ -12,8 +12,8 @@ Mirror format of `docs/TAILORING_PROGRESS.md`. Keep updating after every step.
 | Branch | `veterinary-service` (forked from `main`) |
 | Strategy | Additive: reuse existing `service_menu` jsonb on `listings`, enable menu editor for slug `veterinaria` in `/unete`, add a veterinary starter template + disclaimer. **Zero changes to sell/buy `SellModal`, booking, cart, payment, or webhook code.** |
 | Master kill-switch | Menu editor only renders for slugs in `PROVIDER_SERVICES_WITH_MENU`. Until `veterinaria` is added to that set, vet signup behaves exactly like any other service on `main`. |
-| Latest step completed | **Phase V2 — `/veterinaria` landing page (links to `/unete?service=veterinaria`)** |
-| Next step | Deploy preview + full smoke test (landing → signup → listing → chat quote) |
+| Latest step completed | **Phase V3 — Quote-accept gate + buyer contact form (same as housekeeping H4/H5 deposit flow)** |
+| Next step | Deploy preview + smoke test (landing → signup → contact form → quote → accept → deposit) |
 
 ---
 
@@ -30,7 +30,7 @@ Same model as tailoring (`arreglos_de_ropa`):
 
 **Existing slug:** `veterinaria` is already in `PROVIDER_SERVICES` (`lib/provider-services.ts`). Phase V1 only wires the **menu vertical** — not a new signup category.
 
-**Related pet slugs (unchanged in V1):** `paseador`, `pet_sitting`, `estetica_canina` remain separate simple signups without menus unless we expand later.
+**Related pet slugs:** `paseador`, `pet_sitting`, `estetica_canina` now have menus + quote gate — see `docs/PET_CARE_PROGRESS.md`.
 
 ---
 

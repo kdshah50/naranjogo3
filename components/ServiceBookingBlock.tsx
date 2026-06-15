@@ -3,6 +3,11 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Lang } from "@/lib/i18n-lang";
+import {
+  quoteAwaitingProviderLine,
+  quoteSendRequestLine,
+  serviceDepositConfirmLine,
+} from "@/lib/service-quote-vertical";
 
 type BookingState = {
   isService: boolean;
@@ -89,6 +94,7 @@ export default function ServiceBookingBlock({
   isService,
   sellerId,
   listingLang = "es",
+  providerSlug = null,
   liveAvailability,
   loginReturnTo,
 }: {
@@ -97,6 +103,7 @@ export default function ServiceBookingBlock({
   sellerId: string | null;
   /** From listing page `?lang=` — affects booking note copy only. */
   listingLang?: Lang;
+  providerSlug?: string | null;
   /** When the listing shows synced / live openings (informational; flow unchanged). */
   liveAvailability?: { syncEnabled: boolean; upcomingSlotCount: number };
   /** Full listing URL for post-login redirect (preserve `?lang=` / `?chat=`). */
@@ -679,26 +686,20 @@ export default function ServiceBookingBlock({
               ) : booking.quoteAwaitingProvider ? (
                 listingLang === "en" ? (
                   <>
-                    <strong>Step 2 — waiting:</strong> Your cleaning request was sent. The provider must tap{" "}
-                    <strong>Send quote to customer</strong> in Messages above. When you receive it, tap{" "}
-                    <strong>Accept quote</strong>, then the pay button appears here.
+                    <strong>Step 2 — waiting:</strong> {quoteAwaitingProviderLine(providerSlug, "en")}
                   </>
                 ) : (
                   <>
-                    <strong>Paso 2 — en espera:</strong> Ya enviaste tu solicitud. El proveedor debe pulsar{" "}
-                    <strong>Enviar cotización al cliente</strong> en Mensajes arriba. Cuando la recibas, pulsa{" "}
-                    <strong>Aceptar cotización</strong>; entonces aparecerá el botón de pago aquí.
+                    <strong>Paso 2 — en espera:</strong> {quoteAwaitingProviderLine(providerSlug, "es")}
                   </>
                 )
               ) : listingLang === "en" ? (
                 <>
-                  <strong>Step 2:</strong> Send your cleaning request in <strong>Messages</strong> above. When the provider
-                  sends a quote, accept it here to pay the deposit.
+                  <strong>Step 2:</strong> {quoteSendRequestLine(providerSlug, "en")}
                 </>
               ) : (
                 <>
-                  <strong>Paso 2:</strong> Envía tu solicitud de limpieza en <strong>Mensajes</strong> arriba. Cuando el
-                  proveedor envíe la cotización, acéptala para pagar el depósito.
+                  <strong>Paso 2:</strong> {quoteSendRequestLine(providerSlug, "es")}
                 </>
               )}
             </p>
@@ -722,9 +723,7 @@ export default function ServiceBookingBlock({
             <p className="text-xs text-amber-800">
               <strong>{listingLang === "en" ? "Step 2:" : "Paso 2:"}</strong>{" "}
               {requiresQuote
-                ? listingLang === "en"
-                  ? "Pay the deposit (platform fee) below to confirm your cleaning service."
-                  : "Paga el depósito (tarifa de plataforma) abajo para confirmar tu servicio de limpieza."
+                ? serviceDepositConfirmLine(providerSlug, listingLang)
                 : isService
                   ? listingLang === "en"
                     ? "Pay the service fee below to continue."

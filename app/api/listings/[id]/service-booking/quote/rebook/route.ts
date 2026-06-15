@@ -20,7 +20,8 @@ import {
   loadServiceQuoteGate,
   resolveConversationForBuyer,
 } from "@/lib/service-quote-server";
-import { notifySellerBuyerCleaningRequest } from "@/lib/service-quote-notify";
+import { notifySellerBuyerServiceRequest } from "@/lib/service-quote-notify";
+import { quoteLayoutForSlug } from "@/lib/service-quote-vertical";
 import { expandUserAccountIdPool, userIsListingSellerAccount } from "@/lib/user-account-pool";
 
 export const dynamic = "force-dynamic";
@@ -93,7 +94,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       cartLines,
       visitFrequency: quoteMetadata.visitFrequency,
       quoteBasis: quoteMetadata.quoteBasis,
-      quoteLayout: "housekeeping",
+      quoteLayout: quoteLayoutForSlug(slug),
     });
 
     let conv = await resolveConversationForBuyer(supabase, listingId, buyerUserId);
@@ -162,17 +163,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       .in("id", idMatchVariantsForIn(buyerUserId))
       .maybeSingle();
 
-    void notifySellerBuyerCleaningRequest({
+    void notifySellerBuyerServiceRequest({
       supabase,
       sellerId: String(listing.seller_id),
       listingId,
-      listingTitle: String(listing.title_es ?? "Limpieza"),
+      listingTitle: String(listing.title_es ?? "Servicio"),
       buyerName: savedContact
         ? `${savedContact.firstName} ${savedContact.lastName}`.trim()
         : String(buyerRow?.display_name ?? "Cliente"),
       conversationId: conv.id,
       totalCents,
       lang,
+      providerSlug: slug,
     });
 
     return NextResponse.json({

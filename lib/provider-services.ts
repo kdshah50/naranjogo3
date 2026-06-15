@@ -102,19 +102,37 @@ export const PROVIDER_SERVICES = [
 export const TAILORING_SERVICE = "arreglos_de_ropa";
 export const VETERINARY_SERVICE = "veterinaria";
 export const HOUSEKEEPING_SERVICE = "limpieza";
+export const PET_WALKING_SERVICE = "paseador";
+export const PET_SITTING_SERVICE = "pet_sitting";
+export const DOG_GROOMING_SERVICE = "estetica_canina";
+
+export const PET_CARE_SERVICES = new Set<string>([
+  PET_WALKING_SERVICE,
+  PET_SITTING_SERVICE,
+  DOG_GROOMING_SERVICE,
+]);
 
 export const PROVIDER_SERVICES_WITH_MENU = new Set<string>([
   TAILORING_SERVICE,
   VETERINARY_SERVICE,
   HOUSEKEEPING_SERVICE,
+  PET_WALKING_SERVICE,
+  PET_SITTING_SERVICE,
+  DOG_GROOMING_SERVICE,
 ]);
 
 export function providerServiceSupportsMenu(slug: string | null | undefined): boolean {
   return typeof slug === "string" && PROVIDER_SERVICES_WITH_MENU.has(slug);
 }
 
-/** Services where checkout requires buyer accept on provider quote before deposit (Phase H4). */
-export const PROVIDER_SERVICES_WITH_QUOTE_ACCEPT = new Set<string>([HOUSEKEEPING_SERVICE]);
+/** Services where checkout requires buyer accept on provider quote before deposit (Phase H4+). */
+export const PROVIDER_SERVICES_WITH_QUOTE_ACCEPT = new Set<string>([
+  HOUSEKEEPING_SERVICE,
+  VETERINARY_SERVICE,
+  PET_WALKING_SERVICE,
+  PET_SITTING_SERVICE,
+  DOG_GROOMING_SERVICE,
+]);
 
 export function providerServiceRequiresQuoteAccept(slug: string | null | undefined): boolean {
   return typeof slug === "string" && PROVIDER_SERVICES_WITH_QUOTE_ACCEPT.has(slug);

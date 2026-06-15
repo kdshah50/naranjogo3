@@ -27,7 +27,8 @@ import { parseBeforeAfterPhotoUrls } from "@/lib/provider-trust";
 import ListingTrustStrip from "@/components/ListingTrustStrip";
 import ListingBeforeAfterSection from "@/components/ListingBeforeAfterSection";
 import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
-import { HOUSEKEEPING_SERVICE, providerServiceRequiresQuoteAccept } from "@/lib/provider-services";
+import { providerServiceRequiresQuoteAccept } from "@/lib/provider-services";
+import { quoteLayoutForSlug } from "@/lib/service-quote-vertical";
 
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
   const supaUrl = getSupabaseUrl();
@@ -100,8 +101,7 @@ export default async function ListingPage({
   const price = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 0 }).format(listing.price_mxn / 100);
   const isServiceListing = isServicesListing(listing);
   const providerSlug = inferProviderSlugFromListingTitle(listing.title_es);
-  const menuQuoteLayout =
-    providerSlug === HOUSEKEEPING_SERVICE ? ("housekeeping" as const) : ("default" as const);
+  const menuQuoteLayout = quoteLayoutForSlug(providerSlug);
   const requiresQuoteAccept = providerServiceRequiresQuoteAccept(providerSlug);
   const highlightQuote = searchParams?.quote === "1" || searchParams?.quote === "true";
   const highlightRequest = searchParams?.request === "1" || searchParams?.request === "true";
@@ -342,6 +342,7 @@ export default async function ListingPage({
                 : null
             }
             quoteLayout={menuQuoteLayout}
+            providerSlug={providerSlug}
             requiresQuoteAccept={requiresQuoteAccept}
             highlightQuote={highlightQuote}
             highlightRequest={highlightRequest}
@@ -352,6 +353,7 @@ export default async function ListingPage({
               isService={isServiceListing}
               sellerId={listing.seller_id ?? null}
               listingLang={listingLang}
+              providerSlug={providerSlug}
               loginReturnTo={listingReturnPath}
               liveAvailability={
                 isServiceListing

@@ -70,8 +70,16 @@ const TRADE_HINTS: { re: RegExp; terms: string[] }[] = [
     ],
   },
   {
-    re: /\b(dog|dogs|puppy|puppies|cat|cats|pet\b|pets?|animal|walk(er|ers|ing)?\s+dog|dog\s+walk(er|ers|ing)?|petsit|pet-?sit|paseador|paseadores|paseo\s+(de\s+)?perros?|cuidado\s+de\s+mascotas)\b/i,
-    terms: ["paseador", "perros", "mascotas", "cuidado de mascotas", "paseo de mascotas"],
+    re: /\b(dog|dogs|puppy|puppies|cat|cats|pet\b|pets?|animal|walk(er|ers|ing)?\s+dog|dog\s+walk(er|ers|ing)?|petsit|pet-?sit|pet\s+sitting|groom(er|ing)?|grooming|est[eé]tica\s+canina|paseador|paseadores|paseo\s+(de\s+)?perros?|cuidado\s+de\s+mascotas|hospedaje\s+mascotas?|boarding\s+pet)\b/i,
+    terms: [
+      "paseador",
+      "pet sitting",
+      "estética canina",
+      "perros",
+      "mascotas",
+      "cuidado de mascotas",
+      "paseo de mascotas",
+    ],
   },
 ];
 

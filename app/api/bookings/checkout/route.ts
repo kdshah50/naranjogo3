@@ -18,6 +18,7 @@ import {
 import { resolveServicePricingBaseMxnCents } from "@/lib/service-booking-pricing";
 import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
 import { providerServiceRequiresQuoteAccept } from "@/lib/provider-services";
+import { checkoutFullConnectBlockedMessage } from "@/lib/service-quote-vertical";
 import { loadServiceQuoteGate } from "@/lib/service-quote-server";
 
 export const dynamic = "force-dynamic";
@@ -124,8 +125,7 @@ export async function POST(req: NextRequest) {
     if (requiresQuoteAccept && checkoutMode === "full_connect") {
       return NextResponse.json(
         {
-          error:
-            "Para limpieza del hogar, paga primero el depósito (tarifa de plataforma). El saldo del servicio se liquida al completar.",
+          error: checkoutFullConnectBlockedMessage(slug, "es"),
         },
         { status: 400 },
       );

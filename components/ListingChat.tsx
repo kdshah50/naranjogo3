@@ -30,6 +30,7 @@ export default function ListingChat({
   lang = "es",
   serviceMenu = null,
   quoteLayout = "default",
+  providerSlug = null,
   requiresQuoteAccept = false,
   highlightQuote = false,
   highlightRequest = false,
@@ -46,7 +47,8 @@ export default function ListingChat({
   serviceMenu?: ServiceMenu | null;
   /** Housekeeping listings get quick room-type qty picks in the quote builder. */
   quoteLayout?: "default" | "housekeeping";
-  /** Housekeeping: gated quote accept before deposit checkout. */
+  providerSlug?: string | null;
+  /** Gated quote accept before deposit checkout. */
   requiresQuoteAccept?: boolean;
   /** Deep link ?quote=1 — scroll quote panel into view. */
   highlightQuote?: boolean;
@@ -754,6 +756,8 @@ export default function ListingChat({
                 metadata={quoteMetadata}
                 menu={serviceMenu}
                 lang={lang === "en" ? "en" : "es"}
+                quoteLayout={quoteLayout}
+                providerSlug={providerSlug}
               />
             )}
           {hasServiceMenu(serviceMenu) && agreedPriceBuyerId && (
@@ -761,6 +765,8 @@ export default function ListingChat({
               menu={serviceMenu}
               lang={lang === "en" ? "en" : "es"}
               quoteLayout={quoteLayout}
+              requiresBuyerContact={requiresQuoteAccept}
+              providerSlug={providerSlug}
               variant="seller"
               disabled={agreedSaving || agreedLoading}
               initialCartLines={quoteLineItems?.map((x) => ({ sku: x.sku, qty: x.qty }))}
@@ -798,6 +804,8 @@ export default function ListingChat({
             menu={serviceMenu}
             lang={lang === "en" ? "en" : "es"}
             quoteLayout={quoteLayout}
+            requiresBuyerContact={requiresQuoteAccept}
+            providerSlug={providerSlug}
             variant="buyer"
             disabled={sending || quoteLoading}
             initialBuyerContact={buyerContactPrefill}

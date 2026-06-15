@@ -22,6 +22,11 @@ import {
   type BuyerQuoteContact,
   validateBuyerQuoteContact,
 } from "@/lib/buyer-quote-contact";
+import {
+  buyerMenuPickerTitle,
+  preferredDatetimeLabel,
+  serviceAddressLabel,
+} from "@/lib/service-quote-vertical";
 
 export type QuoteBuilderPayload = {
   totalCents: number;
@@ -49,6 +54,8 @@ export default function ServiceMenuQuoteBuilder({
   lang = "es",
   disabled = false,
   quoteLayout = "default",
+  requiresBuyerContact = false,
+  providerSlug = null,
   variant = "seller",
   initialCartLines,
   initialVisitFrequency,
@@ -68,6 +75,9 @@ export default function ServiceMenuQuoteBuilder({
   disabled?: boolean;
   /** Housekeeping: show quick room-type qty picks above the full menu list. */
   quoteLayout?: "default" | "housekeeping";
+  /** Buyer must fill contact form before submitting quote request. */
+  requiresBuyerContact?: boolean;
+  providerSlug?: string | null;
   variant?: "seller" | "buyer";
   /** Seller: pre-fill from buyer's saved request. */
   initialCartLines?: Array<{ sku: string; qty: number }>;
@@ -91,14 +101,14 @@ export default function ServiceMenuQuoteBuilder({
   const [contactErr, setContactErr] = useState("");
 
   useEffect(() => {
-    if (variant !== "buyer" || quoteLayout !== "housekeeping" || !initialBuyerContact) return;
+    if (variant !== "buyer" || !requiresBuyerContact || !initialBuyerContact) return;
     if (initialBuyerContact.firstName && !contactFirstName) setContactFirstName(initialBuyerContact.firstName);
     if (initialBuyerContact.lastName && !contactLastName) setContactLastName(initialBuyerContact.lastName);
     if (initialBuyerContact.contactPhone && !contactPhone) setContactPhone(initialBuyerContact.contactPhone);
     if (initialBuyerContact.serviceAddress && !serviceAddress) setServiceAddress(initialBuyerContact.serviceAddress);
   }, [
     variant,
-    quoteLayout,
+    requiresBuyerContact,
     initialBuyerContact,
     contactFirstName,
     contactLastName,
@@ -191,7 +201,7 @@ export default function ServiceMenuQuoteBuilder({
   };
 
   const buildBuyerContact = (): BuyerQuoteContact | null => {
-    if (variant !== "buyer" || quoteLayout !== "housekeeping") return null;
+    if (variant !== "buyer" || !requiresBuyerContact) return null;
     const preferredAt = preferredAtLocal.trim()
       ? new Date(preferredAtLocal).toISOString()
       : "";
@@ -240,7 +250,7 @@ export default function ServiceMenuQuoteBuilder({
 
   const submitRequest = async () => {
     if (!onSubmitRequest || selectedLines.length === 0) return;
-    if (variant === "buyer" && quoteLayout === "housekeeping") {
+    if (variant === "buyer" && requiresBuyerContact) {
       const contact = buildBuyerContact();
       const err = contact ? validateBuyerQuoteContact(contact, lang) : lang === "en" ? "Complete your contact details." : "Completa tus datos de contacto.";
       if (err) {
@@ -320,14 +330,12 @@ export default function ServiceMenuQuoteBuilder({
     <div className="rounded-lg border border-amber-200 bg-white p-2 space-y-2">
       <p className="text-[11px] font-bold text-[#78350F]">
         {variant === "buyer"
-          ? lang === "en"
-            ? "What cleaning do you need?"
-            : "¿Qué limpieza necesitas?"
+          ? buyerMenuPickerTitle(providerSlug, lang)
           : lang === "en"
             ? "Build a quote from your menu"
             : "Arma un presupuesto desde tu menú"}
       </p>
-      {variant === "buyer" && quoteLayout === "housekeeping" && (
+      {variant === "buyer" && requiresBuyerContact && (
         <div className="rounded-lg border border-[#BFDBFE] bg-[#EFF6FF] p-2 space-y-2">
           <p className="text-[10px] font-bold text-[#1E40AF]">
             {lang === "en" ? "Your contact details (required before quote)" : "Tus datos de contacto (obligatorio antes de la cotización)"}
@@ -397,7 +405,7 @@ export default function ServiceMenuQuoteBuilder({
           ) : null}
           <label className="block space-y-0.5">
             <span className="text-[10px] font-semibold text-[#1E3A8A]">
-              {lang === "en" ? "Service address" : "Dirección del servicio"} *
+              {serviceAddressLabel(providerSlug, lang)} *
             </span>
             <textarea
               value={serviceAddress}
@@ -415,7 +423,7 @@ export default function ServiceMenuQuoteBuilder({
           </label>
           <label className="block space-y-0.5">
             <span className="text-[10px] font-semibold text-[#1E3A8A]">
-              {lang === "en" ? "Preferred visit day & time" : "Día y hora preferidos de la visita"} *
+              {preferredDatetimeLabel(providerSlug, lang)} *
             </span>
             <input
               type="datetime-local"

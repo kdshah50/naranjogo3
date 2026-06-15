@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getPublicAppUrl } from "@/lib/app-url";
 import { formatMxn, type ServiceQuoteStatus } from "@/lib/service-quote";
+import { notifyBuyerRequestTitle, notifyQuoteSentTitle } from "@/lib/service-quote-vertical";
 import { phoneDigitsForAccountPool } from "@/lib/user-phone-notify";
 import { sendWhatsAppToE164Digits, isTwilioWhatsAppConfigured } from "@/lib/twilio";
 
@@ -16,6 +17,7 @@ export async function notifyBuyerServiceQuoteSent(opts: {
   conversationId: string;
   totalCents: number;
   lang?: "es" | "en";
+  providerSlug?: string | null;
 }): Promise<void> {
   if (!isTwilioWhatsAppConfigured()) return;
   const digits = await loadUserPhone(opts.supabase, opts.buyerId);
@@ -25,11 +27,12 @@ export async function notifyBuyerServiceQuoteSent(opts: {
   const appUrl = getPublicAppUrl();
   const link = `${appUrl}/listing/${opts.listingId}?chat=${opts.conversationId}&quote=1`;
   const total = formatMxn(opts.totalCents, lang);
+  const title = notifyQuoteSentTitle(opts.providerSlug, lang);
 
   const msg =
     lang === "en"
       ? [
-          "📋 *New cleaning quote — Naranjogo*",
+          title,
           "",
           `Service: *${opts.listingTitle}*`,
           `Total: *${total}*`,
@@ -39,7 +42,7 @@ export async function notifyBuyerServiceQuoteSent(opts: {
           link,
         ].join("\n")
       : [
-          "📋 *Nueva cotización de limpieza — Naranjogo*",
+          title,
           "",
           `Servicio: *${opts.listingTitle}*`,
           `Total: *${total}*`,
@@ -52,7 +55,7 @@ export async function notifyBuyerServiceQuoteSent(opts: {
   await sendWhatsAppToE164Digits(digits, msg);
 }
 
-export async function notifySellerBuyerCleaningRequest(opts: {
+export async function notifySellerBuyerServiceRequest(opts: {
   supabase: SupabaseClient;
   sellerId: string;
   listingId: string;
@@ -61,6 +64,7 @@ export async function notifySellerBuyerCleaningRequest(opts: {
   buyerName: string;
   totalCents: number;
   lang?: "es" | "en";
+  providerSlug?: string | null;
 }): Promise<void> {
   if (!isTwilioWhatsAppConfigured()) return;
   const digits = await loadUserPhone(opts.supabase, opts.sellerId);
@@ -70,11 +74,12 @@ export async function notifySellerBuyerCleaningRequest(opts: {
   const appUrl = getPublicAppUrl();
   const link = `${appUrl}/listing/${opts.listingId}?chat=${opts.conversationId}&request=1`;
   const total = formatMxn(opts.totalCents, lang);
+  const title = notifyBuyerRequestTitle(opts.providerSlug, lang);
 
   const msg =
     lang === "en"
       ? [
-          "🧹 *New cleaning request — Naranjogo*",
+          title,
           "",
           `From: *${opts.buyerName}*`,
           `Listing: *${opts.listingTitle}*`,
@@ -85,7 +90,7 @@ export async function notifySellerBuyerCleaningRequest(opts: {
           link,
         ].join("\n")
       : [
-          "🧹 *Nueva solicitud de limpieza — Naranjogo*",
+          title,
           "",
           `De: *${opts.buyerName}*`,
           `Anuncio: *${opts.listingTitle}*`,
@@ -98,6 +103,9 @@ export async function notifySellerBuyerCleaningRequest(opts: {
 
   await sendWhatsAppToE164Digits(digits, msg);
 }
+
+/** @deprecated Use notifySellerBuyerServiceRequest */
+export const notifySellerBuyerCleaningRequest = notifySellerBuyerServiceRequest;
 
 export async function notifySellerQuoteResponded(opts: {
   supabase: SupabaseClient;

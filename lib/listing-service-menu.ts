@@ -39,6 +39,21 @@ export const DEFAULT_HOUSEKEEPING_DISCLAIMER_ES =
 export const DEFAULT_HOUSEKEEPING_DISCLAIMER_EN =
   "Price may vary based on home condition, actual size, and access. Confirmed on visit or by message.";
 
+export const DEFAULT_PET_WALKING_DISCLAIMER_ES =
+  "El precio puede variar según tamaño, temperamento, distancia y número de perros. Se confirma antes del paseo.";
+export const DEFAULT_PET_WALKING_DISCLAIMER_EN =
+  "Price may vary by size, temperament, distance, and number of dogs. Confirmed before the walk.";
+
+export const DEFAULT_PET_SITTING_DISCLAIMER_ES =
+  "El precio puede variar según especie, número de mascotas, medicación y duración. Se confirma en mensaje o visita.";
+export const DEFAULT_PET_SITTING_DISCLAIMER_EN =
+  "Price may vary by species, number of pets, medication needs, and duration. Confirmed by message or visit.";
+
+export const DEFAULT_DOG_GROOMING_DISCLAIMER_ES =
+  "El precio puede variar según raza, peso, estado del pelaje y comportamiento. Se confirma al revisar a la mascota.";
+export const DEFAULT_DOG_GROOMING_DISCLAIMER_EN =
+  "Price may vary by breed, weight, coat condition, and behavior. Confirmed when the pet is assessed.";
+
 export type ServiceMenuItem = {
   sku: string;
   name_es: string;
@@ -498,6 +513,97 @@ export function housekeepingStarterMenu(): ServiceMenu {
   };
 }
 
+/** Pre-filled starter menu for dog walking (Mexico, neighborhood tier). */
+export function dogWalkingStarterMenu(): ServiceMenu {
+  const items: ServiceMenuItem[] = [
+    { sku: "walk_30", name_es: "Paseo 30 minutos", name_en: "30-minute walk", price_mxn_cents: 15000 },
+    { sku: "walk_45", name_es: "Paseo 45 minutos", name_en: "45-minute walk", price_mxn_cents: 20000 },
+    { sku: "walk_60", name_es: "Paseo 60 minutos", name_en: "60-minute walk", price_mxn_cents: 25000 },
+    { sku: "walk_extra_dog", name_es: "Perro adicional (mismo paseo)", name_en: "Additional dog (same walk)", price_mxn_cents: 8000 },
+    { sku: "walk_puppy", name_es: "Paseo cachorro (20 min)", name_en: "Puppy walk (20 min)", price_mxn_cents: 12000 },
+    { sku: "walk_group", name_es: "Paseo grupal (por perro)", name_en: "Group walk (per dog)", price_mxn_cents: 12000 },
+    { sku: "walk_weekend", name_es: "Recargo fin de semana / festivo", name_en: "Weekend / holiday surcharge", price_mxn_cents: 5000 },
+    { sku: "walk_pickup", name_es: "Recogida y entrega a domicilio", name_en: "Home pickup and drop-off", price_mxn_cents: 8000 },
+    { sku: "walk_park_visit", name_es: "Visita al parque (60 min)", name_en: "Dog park visit (60 min)", price_mxn_cents: 28000 },
+    { sku: "walk_weekly_5", name_es: "Paquete 5 paseos / semana", name_en: "5 walks per week package", price_mxn_cents: 110000 },
+    { sku: "walk_medication", name_es: "Administración de medicamento en paseo", name_en: "Medication during walk", price_mxn_cents: 5000 },
+    { sku: "walk_photo_update", name_es: "Reporte con fotos en WhatsApp", name_en: "Photo update via WhatsApp", price_mxn_cents: 0 },
+  ];
+  return {
+    version: 1,
+    currency: "MXN",
+    items,
+    disclaimer_es: DEFAULT_PET_WALKING_DISCLAIMER_ES,
+    disclaimer_en: DEFAULT_PET_WALKING_DISCLAIMER_EN,
+  };
+}
+
+/** Pre-filled starter menu for pet sitting / boarding. */
+export function petSittingStarterMenu(): ServiceMenu {
+  const items: ServiceMenuItem[] = [
+    { sku: "visit_30", name_es: "Visita de chequeo (30 min)", name_en: "Check-in visit (30 min)", price_mxn_cents: 18000 },
+    { sku: "visit_60", name_es: "Visita extendida (60 min)", name_en: "Extended visit (60 min)", price_mxn_cents: 28000 },
+    { sku: "sit_half_day", name_es: "Cuidado medio día (4 h)", name_en: "Half-day sitting (4 h)", price_mxn_cents: 45000 },
+    { sku: "sit_full_day", name_es: "Cuidado día completo (8 h)", name_en: "Full-day sitting (8 h)", price_mxn_cents: 75000 },
+    { sku: "sit_overnight_home", name_es: "Noche en casa del cliente", name_en: "Overnight at client's home", price_mxn_cents: 90000 },
+    { sku: "board_per_night", name_es: "Hospedaje por noche (casa del cuidador)", name_en: "Boarding per night (sitter's home)", price_mxn_cents: 85000 },
+    { sku: "sit_extra_pet", name_es: "Mascota adicional", name_en: "Additional pet", price_mxn_cents: 15000 },
+    { sku: "sit_medication", name_es: "Administración de medicamento", name_en: "Medication administration", price_mxn_cents: 8000 },
+    { sku: "sit_holiday", name_es: "Recargo temporada alta / festivo", name_en: "Peak season / holiday surcharge", price_mxn_cents: 20000 },
+    { sku: "sit_plants_mail", name_es: "Plantas / correo / llaves extra", name_en: "Plants / mail / keys check", price_mxn_cents: 10000 },
+    { sku: "sit_cat_only", name_es: "Visita solo gato (30 min)", name_en: "Cat-only visit (30 min)", price_mxn_cents: 20000 },
+    { sku: "sit_exotic", name_es: "Cuidado animales exóticos (referencia)", name_en: "Exotic pet care (reference)", price_mxn_cents: 55000 },
+  ];
+  return {
+    version: 1,
+    currency: "MXN",
+    items,
+    disclaimer_es: DEFAULT_PET_SITTING_DISCLAIMER_ES,
+    disclaimer_en: DEFAULT_PET_SITTING_DISCLAIMER_EN,
+  };
+}
+
+/** Pre-filled starter menu for dog grooming / estética canina. */
+export function dogGroomingStarterMenu(): ServiceMenu {
+  const items: ServiceMenuItem[] = [
+    { sku: "bath_small", name_es: "Baño perro pequeño (hasta 10 kg)", name_en: "Bath small dog (up to 10 kg)", price_mxn_cents: 35000 },
+    { sku: "bath_medium", name_es: "Baño perro mediano (10–25 kg)", name_en: "Bath medium dog (10–25 kg)", price_mxn_cents: 45000 },
+    { sku: "bath_large", name_es: "Baño perro grande (25+ kg)", name_en: "Bath large dog (25+ kg)", price_mxn_cents: 60000 },
+    { sku: "groom_full_small", name_es: "Estética completa perro pequeño", name_en: "Full groom small dog", price_mxn_cents: 55000 },
+    { sku: "groom_full_medium", name_es: "Estética completa perro mediano", name_en: "Full groom medium dog", price_mxn_cents: 75000 },
+    { sku: "groom_full_large", name_es: "Estética completa perro grande", name_en: "Full groom large dog", price_mxn_cents: 95000 },
+    { sku: "nail_trim", name_es: "Corte de uñas", name_en: "Nail trim", price_mxn_cents: 12000 },
+    { sku: "ear_clean", name_es: "Limpieza de oídos", name_en: "Ear cleaning", price_mxn_cents: 15000 },
+    { sku: "deshedding", name_es: "Deslanado / cardado", name_en: "Deshedding / brushing", price_mxn_cents: 25000 },
+    { sku: "flea_bath", name_es: "Baño antipulgas", name_en: "Flea bath", price_mxn_cents: 40000 },
+    { sku: "teeth_brush", name_es: "Cepillado dental", name_en: "Teeth brushing", price_mxn_cents: 10000 },
+    { sku: "mobile_visit", name_es: "Visita a domicilio (zona local)", name_en: "Mobile visit (local zone)", price_mxn_cents: 20000 },
+    { sku: "matting_surcharge", name_es: "Recargo nudos / pelaje muy enredado", name_en: "Matting / heavy tangle surcharge", price_mxn_cents: 30000 },
+    { sku: "puppy_intro", name_es: "Primera estética cachorro", name_en: "Puppy intro groom", price_mxn_cents: 40000 },
+  ];
+  return {
+    version: 1,
+    currency: "MXN",
+    items,
+    disclaimer_es: DEFAULT_DOG_GROOMING_DISCLAIMER_ES,
+    disclaimer_en: DEFAULT_DOG_GROOMING_DISCLAIMER_EN,
+  };
+}
+
+/** Sample menu for pet-care landing page (mix of common items). */
+export function petCareLandingSampleMenu(): ServiceMenu {
+  const walk = dogWalkingStarterMenu().items.slice(0, 4);
+  const sit = petSittingStarterMenu().items.slice(0, 4);
+  const groom = dogGroomingStarterMenu().items.slice(0, 4);
+  return {
+    version: 1,
+    currency: "MXN",
+    items: [...walk, ...sit, ...groom],
+    disclaimer_es: DEFAULT_PET_SITTING_DISCLAIMER_ES,
+    disclaimer_en: DEFAULT_PET_SITTING_DISCLAIMER_EN,
+  };
+}
+
 /** Starter template for menu-enabled provider slugs (tailoring, veterinary, …). */
 export function starterMenuForProviderSlug(
   slug: string | null | undefined,
@@ -509,6 +615,12 @@ export function starterMenuForProviderSlug(
       return veterinaryStarterMenu();
     case "limpieza":
       return housekeepingStarterMenu();
+    case "paseador":
+      return dogWalkingStarterMenu();
+    case "pet_sitting":
+      return petSittingStarterMenu();
+    case "estetica_canina":
+      return dogGroomingStarterMenu();
     default:
       return null;
   }

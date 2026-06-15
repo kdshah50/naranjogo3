@@ -84,7 +84,8 @@ const COPY: Record<
     how3Title: "3. Te aprobamos en 24 h",
     how3Body: "Revisamos tu perfil manualmente y te avisamos por WhatsApp. Luego apareces en el directorio.",
     how4Title: "4. Atiendes y cobras",
-    how4Body: "El dueño te escribe en la app, arman el presupuesto con tu menú, paga en línea, y tú confirmas el servicio.",
+    how4Body:
+      "El dueño solicita cotización en el chat (con datos de contacto), acepta tu presupuesto oficial, paga el depósito y coordinan la cita.",
     menuTitle: "Ejemplo de menú (precios de referencia)",
     menuSub: "Esta plantilla se carga al registrarte. Editas cada precio según tu clínica y zona. Naranjogo no te impone precios.",
     menuNote: "El precio puede ajustarse después del examen físico y según peso, edad o condición del paciente — aparece en cada cotización.",
@@ -135,7 +136,8 @@ const COPY: Record<
     how3Title: "3. We approve you within 24h",
     how3Body: "Manual profile review and WhatsApp ping. Then you appear in the directory.",
     how4Title: "4. You treat and get paid",
-    how4Body: "The owner messages you in the app, you build a quote from your menu, they pay online, you confirm service.",
+    how4Body:
+      "The owner requests a quote in chat (with contact details), accepts your official quote, pays the deposit, and you coordinate the appointment.",
     menuTitle: "Sample menu (reference prices)",
     menuSub: "This template loads at signup. Edit every price for your clinic and area. Naranjogo doesn't set prices for you.",
     menuNote: "Price may change after physical exam and depending on the patient's weight, age, or condition — shown on every quote.",

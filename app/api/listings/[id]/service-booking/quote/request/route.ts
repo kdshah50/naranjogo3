@@ -25,7 +25,8 @@ import {
   insertListingChatMessage,
   resolveConversationForBuyer,
 } from "@/lib/service-quote-server";
-import { notifySellerBuyerCleaningRequest } from "@/lib/service-quote-notify";
+import { notifySellerBuyerServiceRequest } from "@/lib/service-quote-notify";
+import { quoteLayoutForSlug } from "@/lib/service-quote-vertical";
 import { expandUserAccountIdPool, userIsListingSellerAccount } from "@/lib/user-account-pool";
 
 export const dynamic = "force-dynamic";
@@ -111,7 +112,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       cartLines,
       visitFrequency: visitFrequency as never,
       quoteBasis: quoteBasis as never,
-      quoteLayout: "housekeeping",
+      quoteLayout: quoteLayoutForSlug(slug),
     });
     if (totalCents < 100) {
       return NextResponse.json({ error: "Total estimado inválido" }, { status: 400 });
@@ -186,7 +187,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       { onConflict: "listing_id,buyer_id" },
     );
 
-    void notifySellerBuyerCleaningRequest({
+    void notifySellerBuyerServiceRequest({
       supabase,
       sellerId: String(listing.seller_id),
       listingId,
@@ -195,6 +196,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       buyerName: `${buyerContact.firstName} ${buyerContact.lastName}`.trim(),
       totalCents,
       lang,
+      providerSlug: slug,
     });
 
     return NextResponse.json({
