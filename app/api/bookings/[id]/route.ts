@@ -10,7 +10,7 @@ import {
 } from "@/lib/booking-cancellation";
 import { notifyBuyerCompletedReviewPrompt } from "@/lib/buyer-completed-review-notify";
 import { notifyBuyerLifecyclePhase, type BuyerPhaseWhatsAppResult } from "@/lib/buyer-phase-notify";
-import { notifySellerLifecyclePhase, type SellerPhaseWhatsAppResult } from "@/lib/seller-phase-notify";
+import { notifySellerLifecyclePhase, notifySellerBookingCompleted, type SellerPhaseWhatsAppResult } from "@/lib/seller-phase-notify";
 import { appendBookingEvent, BookingLifecycleStatus, canTransitionLifecycle } from "@/lib/booking-lifecycle";
 import { appendListingChatBookingLifecycleNotice, type BookingChatLifecyclePhase } from "@/lib/listing-chat-booking-notices";
 import { getPublicAppUrl } from "@/lib/app-url";
@@ -334,13 +334,26 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     if (booking.status === "completed" && nextStatus === "completed") {
       let buyerPhaseWhatsApp: BuyerPhaseWhatsAppResult | undefined;
+      let sellerPhaseWhatsApp: SellerPhaseWhatsAppResult | undefined;
       try {
         buyerPhaseWhatsApp = await notifyBuyerCompletedReviewPrompt(supabase, rowId);
       } catch (e) {
         console.error("[bookings/:id] PATCH re-notify review prompt failed (non-fatal)", e);
         buyerPhaseWhatsApp = { delivered: false, reason: "send_failed" };
       }
-      return NextResponse.json({ ok: true, alreadyCompleted: true, status: "completed", buyerPhaseWhatsApp });
+      try {
+        sellerPhaseWhatsApp = await notifySellerBookingCompleted(supabase, rowId);
+      } catch (e) {
+        console.error("[bookings/:id] PATCH re-notify seller completed failed (non-fatal)", e);
+        sellerPhaseWhatsApp = { delivered: false, reason: "send_failed" };
+      }
+      return NextResponse.json({
+        ok: true,
+        alreadyCompleted: true,
+        status: "completed",
+        buyerPhaseWhatsApp,
+        sellerPhaseWhatsApp,
+      });
     }
 
     if (booking.status === nextStatus) {
@@ -373,6 +386,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           sellerPhaseWhatsApp = await notifySellerLifecyclePhase(supabase, rowId, lifecyclePhase);
         } else if (nextStatus === "completed") {
           buyerPhaseWhatsApp = await notifyBuyerCompletedReviewPrompt(supabase, rowId);
+          sellerPhaseWhatsApp = await notifySellerBookingCompleted(supabase, rowId);
         }
       } catch (e) {
         console.error("[bookings/:id] PATCH unchanged side-effects (non-fatal)", e);
@@ -489,6 +503,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       } catch (e) {
         console.error("[bookings/:id] PATCH review WhatsApp failed (non-fatal)", e);
         buyerPhaseWhatsApp = { delivered: false, reason: "send_failed" };
+      }
+      try {
+        sellerPhaseWhatsApp = await notifySellerBookingCompleted(supabase, rowId);
+      } catch (e) {
+        console.error("[bookings/:id] PATCH seller completed WhatsApp failed (non-fatal)", e);
+        sellerPhaseWhatsApp = { delivered: false, reason: "send_failed" };
       }
       const balDue = Math.round(Number(updated?.balance_due_mxn_cents ?? 0));
       if (String(updated?.balance_payment_status ?? "") === "pending" && balDue >= 100) {

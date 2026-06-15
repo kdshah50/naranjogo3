@@ -139,13 +139,13 @@ function SellerBookingsInner() {
         : `✓ In progress saved in the app — the buyer sees updates in Messages and My bookings. (Automatic WhatsApp not sent: ${detail} — you can message them on the listing thread.)`,
     notifyCompleteOk:
       es
-        ? "✓ Completado guardado y WhatsApp de reseña enviado al comprador."
-        : "✓ Completed saved and review WhatsApp sent to the buyer.",
+        ? "✓ Completado guardado. WhatsApp enviado a ti y al cliente (enlaces a la reserva y reseña)."
+        : "✓ Completed saved. WhatsApp sent to you and the buyer (booking and review links).",
     /** Success-first copy when complete; only the optional review WhatsApp nudge failed. */
     notifyCompleteSavedWhatsAppFailed: (detail: string) =>
       es
-        ? `✓ Completado en la app: el cliente lo ve en «Mensajes» y «Mis reservas». (WhatsApp de reseña no enviado: ${detail} — puede avisarle por el chat del anuncio si hace falta.)`
-        : `✓ Marked complete in the app — the buyer sees this in Messages and My bookings. (Review WhatsApp was not sent: ${detail} — you can message them on the listing thread if needed.)`,
+        ? `✓ Completado en la app. (WhatsApp no enviado: ${detail} — revisa tu teléfono en el perfil.)`
+        : `✓ Marked complete in the app. (WhatsApp not sent: ${detail} — check your phone on profile.)`,
     updated: es ? "✓ Actualizado" : "✓ Updated",
     cancelOk:
       es
@@ -378,7 +378,7 @@ function SellerBookingsInner() {
 
       let feedback: string;
       if (status === "completed") {
-        const w = data.buyerPhaseWhatsApp;
+        const w = data.sellerPhaseWhatsApp ?? data.buyerPhaseWhatsApp;
         if (w?.delivered === true) {
           feedback = t.notifyCompleteOk;
         } else if (w && w.delivered === false) {

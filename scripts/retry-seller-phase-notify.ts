@@ -8,7 +8,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-import { notifySellerLifecyclePhase } from "../lib/seller-phase-notify";
+import { notifySellerLifecyclePhase, notifySellerBookingCompleted } from "../lib/seller-phase-notify";
 import { phoneDigitsForAccountPool } from "../lib/user-phone-notify";
 import { e164DigitsForWhatsAppRecipient } from "../lib/phone";
 
@@ -39,10 +39,10 @@ async function main() {
   const args = process.argv.slice(2).filter((a) => a !== "--force");
   const force = process.argv.includes("--force");
   const ref = args[0]?.trim();
-  const phase = (args[1]?.trim() ?? "scheduled") as "scheduled" | "in_progress";
-  if (!ref || (phase !== "scheduled" && phase !== "in_progress")) {
+  const phase = (args[1]?.trim() ?? "scheduled") as "scheduled" | "in_progress" | "completed";
+  if (!ref || (phase !== "scheduled" && phase !== "in_progress" && phase !== "completed")) {
     console.error(
-      "Usage: npx tsx scripts/retry-seller-phase-notify.ts <ticket-or-uuid> [scheduled|in_progress] [--force]",
+      "Usage: npx tsx scripts/retry-seller-phase-notify.ts <ticket-or-uuid> [scheduled|in_progress|completed] [--force]",
     );
     process.exit(1);
   }
@@ -93,7 +93,10 @@ async function main() {
     console.log("\n--force: cleared seller_whatsapp_phase dedupe event.");
   }
 
-  const result = await notifySellerLifecyclePhase(supabase, String(booking.id), phase);
+  const result =
+    phase === "completed"
+      ? await notifySellerBookingCompleted(supabase, String(booking.id))
+      : await notifySellerLifecyclePhase(supabase, String(booking.id), phase);
   console.log("\nResult:", result);
 }
 
