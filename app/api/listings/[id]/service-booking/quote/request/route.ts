@@ -16,6 +16,12 @@ import {
   type ServiceQuoteLineItem,
 } from "@/lib/service-quote";
 import {
+  formatBuyerContactBlock,
+  metadataFromBuyerContact,
+  parseBuyerQuoteContactFromBody,
+  validateBuyerQuoteContact,
+} from "@/lib/buyer-quote-contact";
+import {
   insertListingChatMessage,
   resolveConversationForBuyer,
 } from "@/lib/service-quote-server";
@@ -43,6 +49,27 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const quoteBasis = (json as { quoteBasis?: string }).quoteBasis;
     const buyerNotes = String((json as { buyerNotes?: string }).buyerNotes ?? "").trim().slice(0, 500) || null;
     const lang = (json as { lang?: string }).lang === "en" ? "en" : "es";
+
+    const buyerContact = parseBuyerQuoteContactFromBody((json as { buyerContact?: unknown }).buyerContact);
+    if (!buyerContact) {
+      const partial = (json as { buyerContact?: Record<string, unknown> }).buyerContact ?? {};
+      const errMsg =
+        validateBuyerQuoteContact(
+          {
+            firstName: String(partial.firstName ?? ""),
+            lastName: String(partial.lastName ?? ""),
+            contactPhone: String(partial.contactPhone ?? ""),
+            whatsappPhone: partial.whatsappPhone != null ? String(partial.whatsappPhone) : null,
+            serviceAddress: String(partial.serviceAddress ?? ""),
+            preferredAt: partial.preferredAt ? String(partial.preferredAt) : "",
+          },
+          lang,
+        ) ??
+        (lang === "en"
+          ? "Complete all required contact fields before requesting a quote."
+          : "Completa todos los datos de contacto antes de solicitar cotización.");
+      return NextResponse.json({ error: errMsg }, { status: 400 });
+    }
 
     if (cartLines.length === 0) {
       return NextResponse.json({ error: "Selecciona al menos un servicio" }, { status: 400 });
@@ -120,7 +147,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       buyerNotes,
       lang,
       kind: "buyer_request",
-    }) ?? { kind: "buyer_request" as const, lang, buyerNotes };
+      ...metadataFromBuyerContact(buyerContact),
+    }) ?? { kind: "buyer_request" as const, lang, buyerNotes, ...metadataFromBuyerContact(buyerContact) };
 
     let messageBody = buildMenuQuoteMessage({
       menu: parsedMenu.menu,
@@ -131,6 +159,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       quoteBasis: quoteBasis as never,
       headerKind: "buyer_request",
     });
+    messageBody += `\n\n${formatBuyerContactBlock(buyerContact, lang)}`;
     if (buyerNotes) {
       messageBody += lang === "en" ? `\n\nNotes: ${buyerNotes}` : `\n\nNotas: ${buyerNotes}`;
     }
@@ -157,19 +186,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       { onConflict: "listing_id,buyer_id" },
     );
 
-    const { data: buyerRow } = await supabase
-      .from("users")
-      .select("display_name")
-      .in("id", idMatchVariantsForIn(buyerUserId))
-      .maybeSingle();
-
     void notifySellerBuyerCleaningRequest({
       supabase,
       sellerId: String(listing.seller_id),
       listingId,
       listingTitle: String(listing.title_es ?? "Servicio"),
       conversationId: conv.id,
-      buyerName: String(buyerRow?.display_name ?? "Cliente"),
+      buyerName: `${buyerContact.firstName} ${buyerContact.lastName}`.trim(),
       totalCents,
       lang,
     });

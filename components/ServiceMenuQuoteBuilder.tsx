@@ -18,6 +18,10 @@ import {
   lineItemsFromCart,
   type ServiceQuoteLineItem,
 } from "@/lib/service-quote";
+import {
+  type BuyerQuoteContact,
+  validateBuyerQuoteContact,
+} from "@/lib/buyer-quote-contact";
 
 export type QuoteBuilderPayload = {
   totalCents: number;
@@ -27,6 +31,7 @@ export type QuoteBuilderPayload = {
   quoteBasis: HousekeepingQuoteBasis;
   messageBody: string;
   buyerNotes?: string | null;
+  buyerContact?: BuyerQuoteContact;
 };
 
 /**
@@ -48,6 +53,7 @@ export default function ServiceMenuQuoteBuilder({
   initialCartLines,
   initialVisitFrequency,
   initialQuoteBasis,
+  initialBuyerContact,
 }: {
   menu: ServiceMenu | null | undefined;
   /** Called with the running total in pesos (string), to drop into the parent's agreedPesos input. */
@@ -67,12 +73,38 @@ export default function ServiceMenuQuoteBuilder({
   initialCartLines?: Array<{ sku: string; qty: number }>;
   initialVisitFrequency?: HousekeepingVisitFrequency;
   initialQuoteBasis?: HousekeepingQuoteBasis;
+  /** Buyer: pre-fill name/phone from profile */
+  initialBuyerContact?: Partial<BuyerQuoteContact>;
 }) {
   const [qtyBySku, setQtyBySku] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);
   const [visitFrequency, setVisitFrequency] = useState<HousekeepingVisitFrequency>("one_time");
   const [quoteBasis, setQuoteBasis] = useState<HousekeepingQuoteBasis>("per_visit");
   const [buyerNotes, setBuyerNotes] = useState("");
+  const [contactFirstName, setContactFirstName] = useState("");
+  const [contactLastName, setContactLastName] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+  const [whatsappDifferent, setWhatsappDifferent] = useState(false);
+  const [whatsappPhone, setWhatsappPhone] = useState("");
+  const [serviceAddress, setServiceAddress] = useState("");
+  const [preferredAtLocal, setPreferredAtLocal] = useState("");
+  const [contactErr, setContactErr] = useState("");
+
+  useEffect(() => {
+    if (variant !== "buyer" || quoteLayout !== "housekeeping" || !initialBuyerContact) return;
+    if (initialBuyerContact.firstName && !contactFirstName) setContactFirstName(initialBuyerContact.firstName);
+    if (initialBuyerContact.lastName && !contactLastName) setContactLastName(initialBuyerContact.lastName);
+    if (initialBuyerContact.contactPhone && !contactPhone) setContactPhone(initialBuyerContact.contactPhone);
+    if (initialBuyerContact.serviceAddress && !serviceAddress) setServiceAddress(initialBuyerContact.serviceAddress);
+  }, [
+    variant,
+    quoteLayout,
+    initialBuyerContact,
+    contactFirstName,
+    contactLastName,
+    contactPhone,
+    serviceAddress,
+  ]);
 
   useEffect(() => {
     if (!initialCartLines?.length) return;
@@ -158,6 +190,21 @@ export default function ServiceMenuQuoteBuilder({
     onApplyTotal?.(String(totalCents / 100));
   };
 
+  const buildBuyerContact = (): BuyerQuoteContact | null => {
+    if (variant !== "buyer" || quoteLayout !== "housekeeping") return null;
+    const preferredAt = preferredAtLocal.trim()
+      ? new Date(preferredAtLocal).toISOString()
+      : "";
+    return {
+      firstName: contactFirstName.trim(),
+      lastName: contactLastName.trim(),
+      contactPhone: contactPhone.trim(),
+      whatsappPhone: whatsappDifferent && whatsappPhone.trim() ? whatsappPhone.trim() : null,
+      serviceAddress: serviceAddress.trim(),
+      preferredAt,
+    };
+  };
+
   const buildPayload = (): QuoteBuilderPayload => {
     const lineItems = lineItemsFromCart(menu, cartLines);
     const messageBody = buildMenuQuoteMessage({
@@ -177,6 +224,7 @@ export default function ServiceMenuQuoteBuilder({
       quoteBasis,
       messageBody,
       buyerNotes: buyerNotes.trim() || null,
+      buyerContact: buildBuyerContact() ?? undefined,
     };
   };
 
@@ -192,11 +240,27 @@ export default function ServiceMenuQuoteBuilder({
 
   const submitRequest = async () => {
     if (!onSubmitRequest || selectedLines.length === 0) return;
+    if (variant === "buyer" && quoteLayout === "housekeeping") {
+      const contact = buildBuyerContact();
+      const err = contact ? validateBuyerQuoteContact(contact, lang) : lang === "en" ? "Complete your contact details." : "Completa tus datos de contacto.";
+      if (err) {
+        setContactErr(err);
+        return;
+      }
+      setContactErr("");
+    }
     setBusy(true);
     try {
       await onSubmitRequest(buildPayload());
       clearAll();
       setBuyerNotes("");
+      setContactFirstName("");
+      setContactLastName("");
+      setContactPhone("");
+      setWhatsappDifferent(false);
+      setWhatsappPhone("");
+      setServiceAddress("");
+      setPreferredAtLocal("");
     } finally {
       setBusy(false);
     }
@@ -263,6 +327,108 @@ export default function ServiceMenuQuoteBuilder({
             ? "Build a quote from your menu"
             : "Arma un presupuesto desde tu menú"}
       </p>
+      {variant === "buyer" && quoteLayout === "housekeeping" && (
+        <div className="rounded-lg border border-[#BFDBFE] bg-[#EFF6FF] p-2 space-y-2">
+          <p className="text-[10px] font-bold text-[#1E40AF]">
+            {lang === "en" ? "Your contact details (required before quote)" : "Tus datos de contacto (obligatorio antes de la cotización)"}
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="block space-y-0.5">
+              <span className="text-[10px] font-semibold text-[#1E3A8A]">
+                {lang === "en" ? "First name" : "Nombre(s)"} *
+              </span>
+              <input
+                type="text"
+                value={contactFirstName}
+                onChange={(e) => setContactFirstName(e.target.value)}
+                disabled={disabled || busy}
+                maxLength={80}
+                className="w-full rounded-lg border border-blue-200 bg-white px-2 py-1.5 text-[11px] outline-none focus:border-[#2563EB] disabled:opacity-50"
+              />
+            </label>
+            <label className="block space-y-0.5">
+              <span className="text-[10px] font-semibold text-[#1E3A8A]">
+                {lang === "en" ? "Last name" : "Apellido(s)"} *
+              </span>
+              <input
+                type="text"
+                value={contactLastName}
+                onChange={(e) => setContactLastName(e.target.value)}
+                disabled={disabled || busy}
+                maxLength={80}
+                className="w-full rounded-lg border border-blue-200 bg-white px-2 py-1.5 text-[11px] outline-none focus:border-[#2563EB] disabled:opacity-50"
+              />
+            </label>
+          </div>
+          <label className="block space-y-0.5">
+            <span className="text-[10px] font-semibold text-[#1E3A8A]">
+              {lang === "en" ? "Contact phone" : "Teléfono de contacto"} *
+            </span>
+            <input
+              type="tel"
+              value={contactPhone}
+              onChange={(e) => setContactPhone(e.target.value)}
+              disabled={disabled || busy}
+              placeholder={lang === "en" ? "+52 415 123 4567" : "+52 415 123 4567"}
+              className="w-full rounded-lg border border-blue-200 bg-white px-2 py-1.5 text-[11px] outline-none focus:border-[#2563EB] disabled:opacity-50"
+            />
+          </label>
+          <label className="flex items-center gap-2 text-[10px] text-[#1E3A8A] cursor-pointer">
+            <input
+              type="checkbox"
+              checked={whatsappDifferent}
+              onChange={(e) => setWhatsappDifferent(e.target.checked)}
+              disabled={disabled || busy}
+              className="accent-[#2563EB]"
+            />
+            {lang === "en" ? "WhatsApp number is different" : "WhatsApp es otro número"}
+          </label>
+          {whatsappDifferent ? (
+            <label className="block space-y-0.5">
+              <span className="text-[10px] font-semibold text-[#1E3A8A]">WhatsApp *</span>
+              <input
+                type="tel"
+                value={whatsappPhone}
+                onChange={(e) => setWhatsappPhone(e.target.value)}
+                disabled={disabled || busy}
+                className="w-full rounded-lg border border-blue-200 bg-white px-2 py-1.5 text-[11px] outline-none focus:border-[#2563EB] disabled:opacity-50"
+              />
+            </label>
+          ) : null}
+          <label className="block space-y-0.5">
+            <span className="text-[10px] font-semibold text-[#1E3A8A]">
+              {lang === "en" ? "Service address" : "Dirección del servicio"} *
+            </span>
+            <textarea
+              value={serviceAddress}
+              onChange={(e) => setServiceAddress(e.target.value)}
+              disabled={disabled || busy}
+              rows={2}
+              maxLength={500}
+              placeholder={
+                lang === "en"
+                  ? "Street, number, colonia, city, access instructions…"
+                  : "Calle, número, colonia, ciudad, instrucciones de acceso…"
+              }
+              className="w-full rounded-lg border border-blue-200 bg-white px-2 py-1.5 text-[11px] outline-none focus:border-[#2563EB] disabled:opacity-50"
+            />
+          </label>
+          <label className="block space-y-0.5">
+            <span className="text-[10px] font-semibold text-[#1E3A8A]">
+              {lang === "en" ? "Preferred visit day & time" : "Día y hora preferidos de la visita"} *
+            </span>
+            <input
+              type="datetime-local"
+              value={preferredAtLocal}
+              onChange={(e) => setPreferredAtLocal(e.target.value)}
+              disabled={disabled || busy}
+              min={new Date().toISOString().slice(0, 16)}
+              className="w-full rounded-lg border border-blue-200 bg-white px-2 py-1.5 text-[11px] outline-none focus:border-[#2563EB] disabled:opacity-50"
+            />
+          </label>
+          {contactErr ? <p className="text-[10px] text-red-600">{contactErr}</p> : null}
+        </div>
+      )}
       {quickGroups.length > 0 && (
         <div className="rounded-lg border border-amber-100 bg-amber-50/80 p-2 space-y-1.5">
           <p className="text-[10px] font-semibold text-[#92400E]">

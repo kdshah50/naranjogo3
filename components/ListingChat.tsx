@@ -6,6 +6,7 @@ import type { Lang } from "@/lib/i18n-lang";
 import type { ServiceMenu } from "@/lib/listing-service-menu";
 import { hasServiceMenu } from "@/lib/listing-service-menu";
 import ServiceMenuQuoteBuilder, { type QuoteBuilderPayload } from "@/components/ServiceMenuQuoteBuilder";
+import type { BuyerQuoteContact } from "@/lib/buyer-quote-contact";
 import ServiceQuoteBuyerPanel from "@/components/ServiceQuoteBuyerPanel";
 import ServiceQuoteSellerRequestPanel from "@/components/ServiceQuoteSellerRequestPanel";
 import type { ServiceQuoteLineItem, ServiceQuoteMetadata, ServiceQuoteStatus } from "@/lib/service-quote";
@@ -74,6 +75,7 @@ export default function ListingChat({
   const [quoteLineItems, setQuoteLineItems] = useState<ServiceQuoteLineItem[] | null>(null);
   const [quoteMetadata, setQuoteMetadata] = useState<ServiceQuoteMetadata | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
+  const [buyerContactPrefill, setBuyerContactPrefill] = useState<Partial<BuyerQuoteContact> | undefined>();
   const deepLinkConvLoadedRef = useRef(false);
   /** Scroll this pane — `scrollIntoView` on children scrolls the whole page in Chrome (nested overflow). */
   const messagesScrollRef = useRef<HTMLDivElement | null>(null);
@@ -187,6 +189,16 @@ export default function ListingChat({
       if (me.ok) {
         const j = await me.json();
         setMyUserId(j.user?.id ?? null);
+        const u = j.user as { display_name?: string | null; phone?: string | null } | undefined;
+        if (u?.display_name || u?.phone) {
+          const parts = String(u.display_name ?? "").trim().split(/\s+/).filter(Boolean);
+          const digits = String(u.phone ?? "").trim();
+          setBuyerContactPrefill({
+            firstName: parts[0] ?? "",
+            lastName: parts.slice(1).join(" "),
+            contactPhone: digits ? (digits.startsWith("+") ? digits : `+${digits}`) : "",
+          });
+        }
       }
       await loadListingScope();
     })();
@@ -458,6 +470,7 @@ export default function ListingChat({
         visitFrequency: payload.visitFrequency,
         quoteBasis: payload.quoteBasis,
         buyerNotes: payload.buyerNotes,
+        buyerContact: payload.buyerContact,
         lang: lang === "en" ? "en" : "es",
       }),
     });
@@ -787,6 +800,7 @@ export default function ListingChat({
             quoteLayout={quoteLayout}
             variant="buyer"
             disabled={sending || quoteLoading}
+            initialBuyerContact={buyerContactPrefill}
             onSubmitRequest={submitCleaningRequest}
           />
         </div>

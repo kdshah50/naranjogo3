@@ -10,6 +10,7 @@ import {
   type ServiceQuoteLineItem,
   type ServiceQuoteMetadata,
 } from "@/lib/service-quote";
+import { buyerContactFromMetadata } from "@/lib/buyer-quote-contact";
 
 type Props = {
   lineItems: ServiceQuoteLineItem[];
@@ -18,12 +19,26 @@ type Props = {
   lang: "es" | "en";
 };
 
+function formatPreferredAt(iso: string, lang: "es" | "en"): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString(lang === "en" ? "en-MX" : "es-MX", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 /** Read-only buyer cleaning request — shown to provider before they send official quote. */
 export default function ServiceQuoteSellerRequestPanel({ lineItems, metadata, menu, lang }: Props) {
   const es = lang === "es";
   const freq = metadata?.visitFrequency
     ? HOUSEKEEPING_VISIT_FREQUENCIES.find((f) => f.id === metadata.visitFrequency)
     : null;
+  const contact = buyerContactFromMetadata(metadata);
 
   const totalCents = computeQuoteTotalCents({
     menu,
@@ -41,6 +56,28 @@ export default function ServiceQuoteSellerRequestPanel({ lineItems, metadata, me
       <p className="text-xs font-bold text-[#065F46]">
         {es ? "🧹 Solicitud del cliente (detalle)" : "🧹 Customer request (breakdown)"}
       </p>
+      {contact ? (
+        <div className="rounded-lg border border-emerald-200 bg-white/80 px-2 py-2 space-y-1 text-[11px] text-[#065F46]">
+          <p className="font-semibold text-[#047857]">{es ? "Datos del cliente" : "Customer details"}</p>
+          <p>
+            {es ? "Nombre" : "Name"}: {contact.firstName} {contact.lastName}
+          </p>
+          <p>
+            {es ? "Teléfono" : "Phone"}: +{contact.contactPhone}
+          </p>
+          {contact.whatsappPhone && contact.whatsappPhone !== contact.contactPhone ? (
+            <p>
+              WhatsApp: +{contact.whatsappPhone}
+            </p>
+          ) : null}
+          <p>
+            {es ? "Dirección" : "Address"}: {contact.serviceAddress}
+          </p>
+          <p>
+            {es ? "Visita preferida" : "Preferred visit"}: {formatPreferredAt(contact.preferredAt, lang)}
+          </p>
+        </div>
+      ) : null}
       {freq ? (
         <p className="text-[11px] text-[#047857]">
           {es ? "Frecuencia" : "Frequency"}: {es ? freq.label_es : freq.label_en}

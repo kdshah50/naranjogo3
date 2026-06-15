@@ -27,6 +27,13 @@ export type ServiceQuoteMetadata = {
   buyerNotes?: string | null;
   lang?: "es" | "en";
   kind?: "buyer_request" | "provider_quote";
+  buyerFirstName?: string;
+  buyerLastName?: string;
+  contactPhone?: string;
+  whatsappPhone?: string | null;
+  serviceAddress?: string;
+  /** ISO datetime — preferred visit before quote */
+  preferredAt?: string;
 };
 
 export function normalizeQuoteStatus(raw: unknown): ServiceQuoteStatus {
@@ -65,6 +72,13 @@ export function parseQuoteMetadata(raw: unknown): ServiceQuoteMetadata | null {
   if (typeof o.buyerNotes === "string") meta.buyerNotes = o.buyerNotes;
   if (o.lang === "en" || o.lang === "es") meta.lang = o.lang;
   if (o.kind === "buyer_request" || o.kind === "provider_quote") meta.kind = o.kind;
+  if (typeof o.buyerFirstName === "string") meta.buyerFirstName = o.buyerFirstName.trim();
+  if (typeof o.buyerLastName === "string") meta.buyerLastName = o.buyerLastName.trim();
+  if (typeof o.contactPhone === "string") meta.contactPhone = o.contactPhone.trim();
+  if (typeof o.whatsappPhone === "string") meta.whatsappPhone = o.whatsappPhone.trim() || null;
+  if (o.whatsappPhone === null) meta.whatsappPhone = null;
+  if (typeof o.serviceAddress === "string") meta.serviceAddress = o.serviceAddress.trim();
+  if (typeof o.preferredAt === "string") meta.preferredAt = o.preferredAt.trim();
   return Object.keys(meta).length > 0 ? meta : null;
 }
 

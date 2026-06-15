@@ -12,6 +12,10 @@ import {
   computeQuoteTotalCents,
 } from "@/lib/service-quote";
 import {
+  buyerContactFromMetadata,
+  formatBuyerContactBlock,
+} from "@/lib/buyer-quote-contact";
+import {
   insertListingChatMessage,
   loadServiceQuoteGate,
   resolveConversationForBuyer,
@@ -122,6 +126,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       lang === "en"
         ? "\n\n🔄 Repeat booking — same services as last time."
         : "\n\n🔄 Reserva repetida — mismos servicios que la última vez.";
+    const savedContact = buyerContactFromMetadata(quoteMetadata);
+    if (savedContact) {
+      messageBody += `\n\n${formatBuyerContactBlock(savedContact, lang)}`;
+    }
     if (quoteMetadata.buyerNotes) {
       messageBody += lang === "en" ? `\n\nNotes: ${quoteMetadata.buyerNotes}` : `\n\nNotas: ${quoteMetadata.buyerNotes}`;
     }
@@ -159,7 +167,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       sellerId: String(listing.seller_id),
       listingId,
       listingTitle: String(listing.title_es ?? "Limpieza"),
-      buyerName: String(buyerRow?.display_name ?? "Cliente"),
+      buyerName: savedContact
+        ? `${savedContact.firstName} ${savedContact.lastName}`.trim()
+        : String(buyerRow?.display_name ?? "Cliente"),
       conversationId: conv.id,
       totalCents,
       lang,
