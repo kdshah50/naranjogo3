@@ -116,7 +116,9 @@ function SellerBookingsInner() {
     confirmCancel: es ? "Confirmar cancelación" : "Confirm cancellation",
     reviewed: es ? "★ Cliente ya envió reseña" : "★ Buyer submitted a review",
     notifyScheduled:
-      es ? "✓ Estado agendado guardado y WhatsApp enviado al cliente." : "✓ Scheduled saved and WhatsApp sent to the buyer.",
+      es
+        ? "✓ Agendado guardado. WhatsApp enviado al cliente (revisa su teléfono, no el tuyo). También verás el aviso en el chat del anuncio."
+        : "✓ Scheduled saved. WhatsApp sent to the buyer (their phone, not yours). You’ll also see the notice in the listing chat.",
     notifyProgress:
       es
         ? "✓ Servicio en curso guardado y WhatsApp enviado al comprador."

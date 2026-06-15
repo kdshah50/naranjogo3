@@ -197,12 +197,12 @@ export default function ListingChat({
       const d = (ev as CustomEvent<{ listingId?: string }>).detail;
       if (!d?.listingId || d.listingId === listingId) {
         void loadListingScope();
-        if (selectedId) void loadConversation(selectedId);
+        if (selectedId) void loadConversation(selectedId, agreedPriceBuyerId ?? undefined);
       }
     };
     window.addEventListener("tianguis:booking-paid", onBookingPaid);
     return () => window.removeEventListener("tianguis:booking-paid", onBookingPaid);
-  }, [listingId, loadListingScope, loadConversation, selectedId]);
+  }, [listingId, loadListingScope, loadConversation, selectedId, agreedPriceBuyerId]);
 
   useEffect(() => {
     const onLifecycle = (ev: Event) => {
@@ -212,12 +212,34 @@ export default function ListingChat({
         d.listingId.trim().toLowerCase() === listingId.trim().toLowerCase()
       ) {
         void loadListingScope();
-        if (selectedId) void loadConversation(selectedId);
+        if (selectedId) void loadConversation(selectedId, agreedPriceBuyerId ?? undefined);
       }
     };
     window.addEventListener("tianguis:booking-lifecycle", onLifecycle);
     return () => window.removeEventListener("tianguis:booking-lifecycle", onLifecycle);
-  }, [listingId, loadListingScope, loadConversation, selectedId]);
+  }, [listingId, loadListingScope, loadConversation, selectedId, agreedPriceBuyerId]);
+
+  // Seller chat open on listing page: refresh threads + messages (schedule/pay events may happen on seller-bookings tab).
+  useEffect(() => {
+    if (role !== "seller" || !selectedId) return;
+    const refreshSellerChat = async () => {
+      try {
+        const res = await fetch(`/api/conversations?listingId=${encodeURIComponent(listingId)}`, {
+          credentials: "same-origin",
+          cache: "no-store",
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setThreads((data as { threads?: Thread[] }).threads ?? []);
+        }
+      } catch {
+        /* silent */
+      }
+      void loadConversation(selectedId, agreedPriceBuyerId ?? undefined);
+    };
+    const t = setInterval(() => void refreshSellerChat(), 8000);
+    return () => clearInterval(t);
+  }, [role, selectedId, listingId, agreedPriceBuyerId, loadConversation]);
 
   useEffect(() => {
     if (loading || !initialConversationId || deepLinkConvLoadedRef.current) return;
@@ -832,11 +854,16 @@ export default function ListingChat({
       >
         {messages.map((m) => {
           const mine = myUserId && m.sender_id === myUserId;
+          const isSystem = m.body.startsWith("[Naranjogo]");
           return (
-            <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+            <div key={m.id} className={`flex ${isSystem ? "justify-center" : mine ? "justify-end" : "justify-start"}`}>
               <div
                 className={`max-w-[85%] rounded-xl px-3 py-2 text-sm ${
-                  mine ? "bg-[#1B4332] text-white" : "bg-[#F4F0EB] text-[#1C1917]"
+                  isSystem
+                    ? "bg-amber-50 border border-amber-200 text-amber-950 text-xs leading-relaxed"
+                    : mine
+                      ? "bg-[#1B4332] text-white"
+                      : "bg-[#F4F0EB] text-[#1C1917]"
                 }`}
               >
                 {m.body}

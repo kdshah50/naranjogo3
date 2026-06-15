@@ -318,6 +318,19 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       return NextResponse.json({ error: "La reserva no está pagada" }, { status: 400 });
     }
 
+    // Rare rows: paid but still `pending` — treat as confirmed so seller can advance lifecycle.
+    if (booking.status === "pending") {
+      const { data: repaired } = await supabase
+        .from("service_bookings")
+        .update({ status: "confirmed", updated_at: new Date().toISOString() })
+        .eq("id", rowId)
+        .eq("payment_status", "paid")
+        .eq("status", "pending")
+        .select("status")
+        .maybeSingle();
+      if (repaired?.status) booking.status = repaired.status;
+    }
+
     if (booking.status === "completed" && nextStatus === "completed") {
       let buyerPhaseWhatsApp: BuyerPhaseWhatsAppResult | undefined;
       try {
@@ -330,7 +343,45 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
 
     if (booking.status === nextStatus) {
-      return NextResponse.json({ ok: true, unchanged: true, status: String(booking.status) });
+      let buyerPhaseWhatsApp: BuyerPhaseWhatsAppResult | undefined;
+      const lifecyclePhase =
+        nextStatus === "scheduled" || nextStatus === "in_progress" ? nextStatus : null;
+
+      try {
+        const { data: freshRow } = await supabase
+          .from("service_bookings")
+          .select("ticket_code,appointment_at")
+          .eq("id", rowId)
+          .maybeSingle();
+
+        await appendListingChatBookingLifecycleNotice(
+          supabase,
+          {
+            id: String(booking.id),
+            listing_id: String(booking.listing_id),
+            buyer_id: String(booking.buyer_id),
+            ticket_code: freshRow?.ticket_code ?? booking.ticket_code ?? null,
+            appointment_at: freshRow?.appointment_at ?? null,
+          },
+          nextStatus as BookingChatLifecyclePhase,
+        );
+
+        if (lifecyclePhase) {
+          buyerPhaseWhatsApp = await notifyBuyerLifecyclePhase(supabase, rowId, lifecyclePhase);
+        } else if (nextStatus === "completed") {
+          buyerPhaseWhatsApp = await notifyBuyerCompletedReviewPrompt(supabase, rowId);
+        }
+      } catch (e) {
+        console.error("[bookings/:id] PATCH unchanged side-effects (non-fatal)", e);
+        buyerPhaseWhatsApp = { delivered: false, reason: "send_failed" };
+      }
+
+      return NextResponse.json({
+        ok: true,
+        unchanged: true,
+        status: String(booking.status),
+        buyerPhaseWhatsApp,
+      });
     }
 
     if (!canTransitionLifecycle(booking.status, nextStatus)) {
@@ -398,8 +449,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           listing_id: String(booking.listing_id),
           buyer_id: String(booking.buyer_id),
           ticket_code: booking.ticket_code ?? null,
+          appointment_at:
+            nextStatus === "scheduled" && updatePayload.appointment_at
+              ? String(updatePayload.appointment_at)
+              : null,
         },
-        nextStatus as BookingChatLifecyclePhase
+        nextStatus as BookingChatLifecyclePhase,
       );
     } catch (chatErr) {
       console.error("[bookings/:id] lifecycle in-app chat notice (non-fatal)", chatErr);

@@ -1,10 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { idMatchVariantsForIn, sortRowsWithPreferredUserId } from "@/lib/user-id-variants";
-import { expandUserAccountIdPool } from "@/lib/user-account-pool";
-import { e164DigitsForWhatsAppRecipient } from "@/lib/phone";
+import { idMatchVariantsForIn } from "@/lib/user-id-variants";
 import { sendWhatsAppToE164Digits, isTwilioWhatsAppConfigured } from "@/lib/twilio";
 import { getPublicAppUrl } from "@/lib/app-url";
 import { hasBuyerPhaseNotify, recordBuyerPhaseNotify } from "@/lib/booking-lifecycle";
+import { phoneDigitsForAccountPool } from "@/lib/user-phone-notify";
 
 /**
  * WhatsApp nudge when seller advances booking (scheduled / in progress). Skips `completed` (handled by review prompt).
@@ -13,10 +12,23 @@ export type BuyerPhaseWhatsAppResult =
   | { delivered: true }
   | { delivered: false; reason: "deduped" | "not_paid" | "no_booking" | "no_buyer_phone" | "twilio_unconfigured" | "send_failed" };
 
+function formatAppointmentEs(iso: string | null | undefined): string | null {
+  if (!iso?.trim()) return null;
+  const d = new Date(iso.trim());
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleString("es-MX", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export async function notifyBuyerLifecyclePhase(
   supabase: SupabaseClient,
   bookingId: string,
-  phase: "scheduled" | "in_progress"
+  phase: "scheduled" | "in_progress",
 ): Promise<BuyerPhaseWhatsAppResult> {
   const idVars = idMatchVariantsForIn(String(bookingId));
   if (idVars.length === 0) return { delivered: false, reason: "no_booking" };
@@ -27,35 +39,16 @@ export async function notifyBuyerLifecyclePhase(
 
   const { data: booking } = await supabase
     .from("service_bookings")
-    .select("id,buyer_id,listing_id,ticket_code,status,payment_status")
+    .select("id,buyer_id,listing_id,ticket_code,status,payment_status,appointment_at")
     .in("id", idVars)
     .maybeSingle();
 
   if (!booking) return { delivered: false, reason: "no_booking" };
   if (booking.payment_status !== "paid") return { delivered: false, reason: "not_paid" };
 
-  const buyerPool = await expandUserAccountIdPool(supabase, String(booking.buyer_id));
-  if (buyerPool.length === 0) {
-    console.warn("[buyer-phase-notify] empty buyer pool", { bookingId });
-    return { delivered: false, reason: "no_buyer_phone" };
-  }
-
-  const { data: buyerRowsRaw } = await supabase.from("users").select("id,phone").in("id", buyerPool);
-  const buyerRows = sortRowsWithPreferredUserId(buyerRowsRaw ?? [], String(booking.buyer_id));
-
-  let buyerDigits = "";
-  for (const row of buyerRows ?? []) {
-    const d = e164DigitsForWhatsAppRecipient(row?.phone);
-    if (d) {
-      buyerDigits = d;
-      break;
-    }
-  }
+  const buyerDigits = await phoneDigitsForAccountPool(supabase, String(booking.buyer_id));
   if (!buyerDigits) {
-    console.warn("[buyer-phase-notify] no buyer phone on any merged account", {
-      bookingId,
-      poolSize: buyerPool.length,
-    });
+    console.warn("[buyer-phase-notify] no buyer phone on any merged account", { bookingId });
     return { delivered: false, reason: "no_buyer_phone" };
   }
 
@@ -74,9 +67,13 @@ export async function notifyBuyerLifecyclePhase(
   const title = listingRow?.title_es?.trim() || "Tu servicio";
 
   const appUrl = getPublicAppUrl();
-  const ticket = booking.ticket_code ? `Ticket: *${booking.ticket_code}*` : `Reserva: \`${booking.id.slice(0, 8)}…\``;
-  const bookingsUrl = `${appUrl}/my-bookings`;
+  const ticket = booking.ticket_code ? String(booking.ticket_code) : null;
+  const ticketLine = ticket ? `Ticket: *${ticket}*` : `Reserva: \`${booking.id.slice(0, 8)}…\``;
   const bookingDetailUrl = `${appUrl}/booking/success?id=${encodeURIComponent(String(booking.id))}`;
+  const bookingsUrl = ticket
+    ? `${appUrl}/my-bookings?ticket=${encodeURIComponent(ticket)}`
+    : `${appUrl}/my-bookings`;
+  const appt = formatAppointmentEs(booking.appointment_at);
 
   const body =
     phase === "scheduled"
@@ -84,21 +81,24 @@ export async function notifyBuyerLifecyclePhase(
           `📅 *Visita agendada — Naranjogo*`,
           ``,
           `El proveedor registró tu servicio como *agendado*.`,
+          appt ? `Fecha acordada: *${appt}*` : null,
           `*${title}*`,
-          ticket,
+          ticketLine,
           ``,
           `Abre tu reserva:`,
           bookingDetailUrl,
           ``,
-          `Todas tus reservas:`,
+          `Mis reservas:`,
           bookingsUrl,
-        ].join("\n")
+        ]
+          .filter(Boolean)
+          .join("\n")
       : [
           `🔧 *Servicio en curso — Naranjogo*`,
           ``,
           `El proveedor indicó que *ya inició* el trabajo.`,
           `*${title}*`,
-          ticket,
+          ticketLine,
           ``,
           `Abre tu reserva:`,
           bookingDetailUrl,
