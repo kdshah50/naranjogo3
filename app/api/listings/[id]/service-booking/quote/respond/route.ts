@@ -8,6 +8,7 @@ import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-
 import { providerServiceRequiresQuoteAccept } from "@/lib/provider-services";
 import { loadServiceQuoteGateForBuyerPool, insertListingChatMessage, resolveConversationForBuyer } from "@/lib/service-quote-server";
 import { notifySellerQuoteResponded } from "@/lib/service-quote-notify";
+import { appendListingChatQuoteAcceptNotice } from "@/lib/payment-confirmed-chat";
 import { expandUserAccountIdPool, userIsListingSellerAccount } from "@/lib/user-account-pool";
 
 export const dynamic = "force-dynamic";
@@ -97,6 +98,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
           : `❌ Rechazo esta cotización.${note ? ` Nota: ${note}` : ""}`;
 
     const inserted = await insertListingChatMessage(supabase, conv.id, buyerUserId, messageBody);
+
+    if (action === "accept") {
+      await appendListingChatQuoteAcceptNotice(supabase, {
+        listingId,
+        buyerId: buyerUserId,
+        conversationId: conv.id,
+        totalFormatted: totalFmt,
+      });
+    }
 
     const { data: buyerRow } = await supabase
       .from("users")

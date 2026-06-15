@@ -15,13 +15,15 @@ export async function appendListingChatPaymentNotice(
   if (pool.length === 0) return;
 
   const listingVars = idMatchVariantsForIn(String(booking.listing_id));
-  const { data: conv } = await supabase
+  const { data: convRows } = await supabase
     .from("listing_conversations")
     .select("id,buyer_id")
     .in("listing_id", listingVars)
     .in("buyer_id", pool)
-    .maybeSingle();
+    .order("updated_at", { ascending: false })
+    .limit(1);
 
+  const conv = convRows?.[0];
   if (!conv?.id || !conv.buyer_id) return;
 
   const ticket = booking.ticket_code?.trim();
@@ -53,4 +55,41 @@ export async function appendListingChatPaymentNotice(
     .from("listing_conversations")
     .update({ updated_at: new Date().toISOString() })
     .eq("id", conv.id);
+}
+
+/** In-app notice when buyer accepts an official quote (seller may not receive browser events). */
+export async function appendListingChatQuoteAcceptNotice(
+  supabase: SupabaseClient,
+  opts: {
+    listingId: string;
+    buyerId: string;
+    conversationId: string;
+    totalFormatted: string;
+  },
+): Promise<void> {
+  const idTag = `quote-accepted:${opts.listingId}:${opts.buyerId}`;
+  const body = `[Naranjogo] Cotización aceptada (${opts.totalFormatted}). El cliente puede pagar el depósito en la app. ${idTag}`;
+
+  const { data: dup } = await supabase
+    .from("listing_messages")
+    .select("id")
+    .eq("conversation_id", opts.conversationId)
+    .ilike("body", `%${idTag}%`)
+    .limit(1);
+  if (dup?.length) return;
+
+  const { error: insErr } = await supabase.from("listing_messages").insert({
+    conversation_id: opts.conversationId,
+    sender_id: String(opts.buyerId),
+    body,
+  });
+  if (insErr) {
+    console.error("[payment-confirmed-chat] quote-accept insert", insErr);
+    return;
+  }
+
+  await supabase
+    .from("listing_conversations")
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", opts.conversationId);
 }

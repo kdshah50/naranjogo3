@@ -355,6 +355,7 @@ export default function ListingChat({
       const d = (ev as CustomEvent<{ listingId?: string }>).detail;
       if (d?.listingId && d.listingId !== listingId) return;
       void loadQuoteState();
+      if (selectedId) void loadConversation(selectedId, agreedPriceBuyerId ?? undefined);
     };
     window.addEventListener("tianguis:quote-updated", onQuote);
     window.addEventListener("tianguis:agreed-price-updated", onQuote);
@@ -362,7 +363,15 @@ export default function ListingChat({
       window.removeEventListener("tianguis:quote-updated", onQuote);
       window.removeEventListener("tianguis:agreed-price-updated", onQuote);
     };
-  }, [listingId, loadQuoteState]);
+  }, [listingId, loadQuoteState, loadConversation, selectedId, agreedPriceBuyerId]);
+
+  // Seller on another device/tab won't get buyer-side quote events — poll quote gate while chat is open.
+  useEffect(() => {
+    if (role !== "seller" || !requiresQuoteAccept) return;
+    if (!selectedId && !agreedPriceBuyerId) return;
+    const t = setInterval(() => void loadQuoteState(), 8000);
+    return () => clearInterval(t);
+  }, [role, requiresQuoteAccept, selectedId, agreedPriceBuyerId, loadQuoteState]);
 
   useEffect(() => {
     if (!highlightQuote) return;

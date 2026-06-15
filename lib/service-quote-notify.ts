@@ -1,18 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getPublicAppUrl } from "@/lib/app-url";
-import { e164DigitsForWhatsAppRecipient } from "@/lib/phone";
-import { sendWhatsAppToE164Digits, isTwilioWhatsAppConfigured } from "@/lib/twilio";
 import { formatMxn, type ServiceQuoteStatus } from "@/lib/service-quote";
-import { idMatchVariantsForIn } from "@/lib/auth-server";
+import { phoneDigitsForAccountPool } from "@/lib/user-phone-notify";
+import { sendWhatsAppToE164Digits, isTwilioWhatsAppConfigured } from "@/lib/twilio";
 
 async function loadUserPhone(supabase: SupabaseClient, userId: string): Promise<string> {
-  const { data } = await supabase
-    .from("users")
-    .select("phone")
-    .in("id", idMatchVariantsForIn(userId))
-    .limit(1)
-    .maybeSingle();
-  return e164DigitsForWhatsAppRecipient(String(data?.phone ?? ""));
+  return phoneDigitsForAccountPool(supabase, userId);
 }
 
 export async function notifyBuyerServiceQuoteSent(opts: {
