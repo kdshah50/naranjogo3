@@ -10,6 +10,7 @@ import {
 } from "@/lib/booking-cancellation";
 import { notifyBuyerCompletedReviewPrompt } from "@/lib/buyer-completed-review-notify";
 import { notifyBuyerLifecyclePhase, type BuyerPhaseWhatsAppResult } from "@/lib/buyer-phase-notify";
+import { notifySellerLifecyclePhase, type SellerPhaseWhatsAppResult } from "@/lib/seller-phase-notify";
 import { appendBookingEvent, BookingLifecycleStatus, canTransitionLifecycle } from "@/lib/booking-lifecycle";
 import { appendListingChatBookingLifecycleNotice, type BookingChatLifecyclePhase } from "@/lib/listing-chat-booking-notices";
 import { getPublicAppUrl } from "@/lib/app-url";
@@ -344,6 +345,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     if (booking.status === nextStatus) {
       let buyerPhaseWhatsApp: BuyerPhaseWhatsAppResult | undefined;
+      let sellerPhaseWhatsApp: SellerPhaseWhatsAppResult | undefined;
       const lifecyclePhase =
         nextStatus === "scheduled" || nextStatus === "in_progress" ? nextStatus : null;
 
@@ -368,12 +370,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
         if (lifecyclePhase) {
           buyerPhaseWhatsApp = await notifyBuyerLifecyclePhase(supabase, rowId, lifecyclePhase);
+          sellerPhaseWhatsApp = await notifySellerLifecyclePhase(supabase, rowId, lifecyclePhase);
         } else if (nextStatus === "completed") {
           buyerPhaseWhatsApp = await notifyBuyerCompletedReviewPrompt(supabase, rowId);
         }
       } catch (e) {
         console.error("[bookings/:id] PATCH unchanged side-effects (non-fatal)", e);
         buyerPhaseWhatsApp = { delivered: false, reason: "send_failed" };
+        sellerPhaseWhatsApp = { delivered: false, reason: "send_failed" };
       }
 
       return NextResponse.json({
@@ -381,6 +385,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         unchanged: true,
         status: String(booking.status),
         buyerPhaseWhatsApp,
+        sellerPhaseWhatsApp,
       });
     }
 
@@ -461,13 +466,20 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
 
     let buyerPhaseWhatsApp: BuyerPhaseWhatsAppResult | undefined;
+    let sellerPhaseWhatsApp: SellerPhaseWhatsAppResult | undefined;
 
     if (nextStatus === "scheduled" || nextStatus === "in_progress") {
       try {
         buyerPhaseWhatsApp = await notifyBuyerLifecyclePhase(supabase, rowId, nextStatus);
       } catch (e) {
-        console.error("[bookings/:id] PATCH phase WhatsApp failed (non-fatal)", e);
+        console.error("[bookings/:id] PATCH buyer phase WhatsApp failed (non-fatal)", e);
         buyerPhaseWhatsApp = { delivered: false, reason: "send_failed" };
+      }
+      try {
+        sellerPhaseWhatsApp = await notifySellerLifecyclePhase(supabase, rowId, nextStatus);
+      } catch (e) {
+        console.error("[bookings/:id] PATCH seller phase WhatsApp failed (non-fatal)", e);
+        sellerPhaseWhatsApp = { delivered: false, reason: "send_failed" };
       }
     }
 
@@ -488,7 +500,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       }
     }
 
-    return NextResponse.json({ ok: true, status: nextStatus, buyerPhaseWhatsApp });
+    return NextResponse.json({ ok: true, status: nextStatus, buyerPhaseWhatsApp, sellerPhaseWhatsApp });
   } catch (e) {
     console.error("[bookings/:id] PATCH", e);
     return NextResponse.json({ error: "Error del servidor" }, { status: 500 });

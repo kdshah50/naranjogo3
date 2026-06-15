@@ -51,6 +51,8 @@ function waReasonDetail(reason: string | undefined, es: boolean): string {
   switch (reason) {
     case "no_buyer_phone":
       return es ? "sin teléfono en la cuenta del comprador" : "no phone on buyer account";
+    case "no_seller_phone":
+      return es ? "sin teléfono en tu perfil de proveedor" : "no phone on your provider profile";
     case "twilio_unconfigured":
       return es ? "WhatsApp no configurado (TWILIO_* en servidor)" : "WhatsApp not configured (TWILIO_* on server)";
     case "send_failed":
@@ -117,12 +119,12 @@ function SellerBookingsInner() {
     reviewed: es ? "★ Cliente ya envió reseña" : "★ Buyer submitted a review",
     notifyScheduled:
       es
-        ? "✓ Agendado guardado. WhatsApp enviado al cliente (revisa su teléfono, no el tuyo). También verás el aviso en el chat del anuncio."
-        : "✓ Scheduled saved. WhatsApp sent to the buyer (their phone, not yours). You’ll also see the notice in the listing chat.",
+        ? "✓ Agendado guardado. WhatsApp enviado a ti y al cliente (con enlaces a la reserva y al chat)."
+        : "✓ Scheduled saved. WhatsApp sent to you and the buyer (with booking and chat links).",
     notifyProgress:
       es
-        ? "✓ Servicio en curso guardado y WhatsApp enviado al comprador."
-        : "✓ In progress saved and WhatsApp sent to the buyer.",
+        ? "✓ En curso guardado. WhatsApp enviado a ti y al cliente."
+        : "✓ In progress saved. WhatsApp sent to you and the buyer.",
     notifyDeduped:
       es
         ? "✓ Estado guardado. WhatsApp para este paso ya se había enviado antes (sin duplicar)."
@@ -367,6 +369,7 @@ function SellerBookingsInner() {
         error?: string;
         status?: string;
         buyerPhaseWhatsApp?: { delivered: boolean; reason?: string };
+        sellerPhaseWhatsApp?: { delivered: boolean; reason?: string };
       };
       if (!res.ok) {
         const err = data.error ?? "Error";
@@ -388,7 +391,7 @@ function SellerBookingsInner() {
           feedback = t.updated;
         }
       } else if (status === "scheduled" || status === "in_progress") {
-        const w = data.buyerPhaseWhatsApp;
+        const w = data.sellerPhaseWhatsApp ?? data.buyerPhaseWhatsApp;
         if (w?.delivered === true) {
           feedback = status === "scheduled" ? t.notifyScheduled : t.notifyProgress;
         } else if (w && w.delivered === false) {

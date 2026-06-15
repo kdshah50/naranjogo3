@@ -136,3 +136,37 @@ export async function recordBuyerPhaseNotify(
     meta: { channel: "whatsapp" },
   });
 }
+
+/** Returns true if we already logged a provider WhatsApp for this lifecycle phase (dedupe). */
+export async function hasSellerPhaseNotify(
+  supabase: SupabaseClient,
+  bookingId: string,
+  phase: string,
+): Promise<boolean> {
+  const idVars = idMatchVariantsForIn(String(bookingId));
+  if (idVars.length === 0) return false;
+
+  const { count, error } = await supabase
+    .from("booking_events")
+    .select("id", { count: "exact", head: true })
+    .in("booking_id", idVars)
+    .eq("event_type", "seller_whatsapp_phase")
+    .eq("to_status", phase);
+
+  if (error) return false;
+  return (count ?? 0) > 0;
+}
+
+export async function recordSellerPhaseNotify(
+  supabase: SupabaseClient,
+  bookingId: string,
+  phase: string,
+): Promise<void> {
+  await appendBookingEvent(supabase, {
+    bookingId,
+    actorId: null,
+    eventType: "seller_whatsapp_phase",
+    toStatus: phase,
+    meta: { channel: "whatsapp" },
+  });
+}
