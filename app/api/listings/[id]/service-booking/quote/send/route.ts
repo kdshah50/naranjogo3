@@ -16,6 +16,7 @@ import {
 import {
   insertListingChatMessage,
   loadServiceQuoteGate,
+  replicateServiceQuoteGateToBuyerPool,
   resolveConversationForBuyer,
 } from "@/lib/service-quote-server";
 import { notifyBuyerServiceQuoteSent } from "@/lib/service-quote-notify";
@@ -121,6 +122,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     if (upsertErr) {
       console.error("[service-quote/send] upsert", upsertErr);
       return NextResponse.json({ error: "No se pudo guardar la cotización" }, { status: 500 });
+    }
+
+    const sentGate = await loadServiceQuoteGate(supabase, listingId, gateBuyerId);
+    if (sentGate) {
+      try {
+        await replicateServiceQuoteGateToBuyerPool(supabase, listingId, gateBuyerId, sentGate);
+      } catch (syncErr) {
+        console.error("[service-quote/send] pool sync (non-fatal)", syncErr);
+      }
     }
 
     const inserted = await insertListingChatMessage(supabase, conv.id, sellerUserId, messageBody);

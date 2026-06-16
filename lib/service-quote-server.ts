@@ -79,14 +79,19 @@ export async function loadServiceQuoteGateForBuyerPool(
   }
   if (rows.length === 0) return null;
 
-  const rebookReady = rows.find(isRebookReadyGate);
-  if (rebookReady) return rebookReady;
-
   const pending = rows.find((r) => r.quoteStatus === "pending");
   if (pending) return pending;
 
   const accepted = rows.find((r) => r.quoteStatus === "accepted");
   if (accepted) return accepted;
+
+  const awaitingProvider = rows.find(
+    (r) => r.quoteStatus === "none" && (r.quoteLineItems?.length ?? 0) > 0,
+  );
+  if (awaitingProvider) return awaitingProvider;
+
+  const rebookReady = rows.find(isRebookReadyGate);
+  if (rebookReady) return rebookReady;
 
   let best = rows[0];
   for (const row of rows.slice(1)) {
@@ -219,4 +224,46 @@ export async function prepareQuoteGateForRebook(
   }
 
   return { ok: true, buyerId: primaryGateBuyerId };
+}
+
+/** Keep linked buyer accounts on the same quote state (pending/accepted) after seller send or buyer respond. */
+export async function replicateServiceQuoteGateToBuyerPool(
+  supabase: SupabaseClient,
+  listingId: string,
+  buyerId: string,
+  gate: ServiceQuoteGateRow,
+): Promise<void> {
+  const buyerPool = await expandUserAccountIdPool(supabase, buyerId);
+  const uniquePool = [...new Set(buyerPool.map((id) => String(id).trim()).filter(Boolean))];
+  const listVars = idMatchVariantsForIn(listingId);
+  const now = new Date().toISOString();
+
+  for (const bid of uniquePool) {
+    const buyerVars = idMatchVariantsForIn(bid);
+    const { data: gateRow } = await supabase
+      .from("listing_service_contact_gate")
+      .select("buyer_id")
+      .in("listing_id", listVars)
+      .in("buyer_id", buyerVars)
+      .limit(1)
+      .maybeSingle();
+
+    const gateBuyerId = String(gateRow?.buyer_id ?? bid);
+    await supabase.from("listing_service_contact_gate").upsert(
+      {
+        listing_id: listingId,
+        buyer_id: gateBuyerId,
+        contacted_in_app: true,
+        quote_status: gate.quoteStatus,
+        quote_line_items: gate.quoteLineItems ?? null,
+        quote_metadata: gate.quoteMetadata ?? null,
+        agreed_subtotal_mxn_cents: gate.agreedSubtotalMxnCents,
+        seller_set_agreed_price_at: gate.sellerSetAgreedPriceAt,
+        quote_sent_at: gate.quoteSentAt,
+        quote_responded_at: gate.quoteRespondedAt,
+        updated_at: now,
+      },
+      { onConflict: "listing_id,buyer_id" },
+    );
+  }
 }

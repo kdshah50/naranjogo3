@@ -8,6 +8,7 @@ import {
   quoteSendRequestLine,
   serviceDepositConfirmLine,
 } from "@/lib/service-quote-vertical";
+import ServiceQuoteBuyerPanel from "@/components/ServiceQuoteBuyerPanel";
 
 type BookingState = {
   isService: boolean;
@@ -45,6 +46,7 @@ type BookingState = {
   sellerConnectReady?: boolean;
   requiresQuoteAccept?: boolean;
   quoteStatus?: string | null;
+  quoteSentAt?: string | null;
   quoteAwaitingProvider?: boolean;
   canPayDeposit?: boolean;
   fullConnectPreview?: {
@@ -237,8 +239,9 @@ export default function ServiceBookingBlock({
     const st = String(booking.paidBookingStatus ?? "");
     const activePaidLifecycle =
       Boolean(booking.paidBookingId) && st !== "completed" && st !== "cancelled";
+    const quotePending = String(booking.quoteStatus ?? "") === "pending";
     const shouldPoll = Boolean(
-      booking.checkoutBlocked || booking.hasPendingBooking || activePaidLifecycle,
+      booking.checkoutBlocked || booking.hasPendingBooking || activePaidLifecycle || quotePending,
     );
     if (!shouldPoll) return;
     const id = window.setInterval(() => {
@@ -253,6 +256,7 @@ export default function ServiceBookingBlock({
     booking?.hasPendingBooking,
     booking?.paidBookingId,
     booking?.paidBookingStatus,
+    booking?.quoteStatus,
   ]);
 
   useEffect(() => {
@@ -665,6 +669,18 @@ export default function ServiceBookingBlock({
       {/* STEP 2: Quote pending (housekeeping) */}
       {contacted && quoteBlocksPay && (
         <div className="px-4 pb-4 space-y-3">
+          {quoteStatus === "pending" ? (
+            <ServiceQuoteBuyerPanel
+              listingId={listingId}
+              quoteStatus="pending"
+              agreedSubtotalMxnCents={
+                booking.agreedSubtotalMxnCents ?? booking.pricingBaseMxnCents ?? null
+              }
+              quoteSentAt={booking.quoteSentAt ?? null}
+              lang={listingLang === "en" ? "en" : "es"}
+              onResponded={() => void load()}
+            />
+          ) : null}
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 space-y-2">
             <p className="text-xs text-blue-900 leading-relaxed">
               {quoteStatus === "pending" ? (

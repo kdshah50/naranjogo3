@@ -457,7 +457,7 @@ export default function ListingChat({
   ]);
 
   useEffect(() => {
-    if (!highlightQuote) return;
+    if (!highlightQuote && quoteStatus !== "pending") return;
     const t = window.setTimeout(() => {
       document.getElementById("service-quote-panel")?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 400);
@@ -759,18 +759,27 @@ export default function ListingChat({
   const rebookPrefillLines = quoteMetadata?.rebookPrefillLineItems;
   const quoteAwaitingProvider =
     quoteStatus === "none" && (quoteLineItems?.length ?? 0) > 0;
+  const quoteNeedsBuyerResponse = quoteStatus === "pending" || quoteStatus === "accepted";
   const isRebookFormCycle =
-    highlightRebook ||
-    (quoteStatus === "none" &&
-      !(quoteLineItems?.length ?? 0) &&
-      (rebookPrefillLines?.length ?? 0) > 0);
+    !quoteNeedsBuyerResponse &&
+    (highlightRebook ||
+      (quoteStatus === "none" &&
+        !(quoteLineItems?.length ?? 0) &&
+        (rebookPrefillLines?.length ?? 0) > 0));
   const showBuyerRequestForm =
     role === "buyer" &&
     requiresQuoteAccept &&
     hasServiceMenu(effectiveMenu) &&
     !rebookPreparing &&
+    !quoteNeedsBuyerResponse &&
     (isRebookFormCycle ||
       ((quoteStatus === "none" || quoteStatus === "declined") && !quoteAwaitingProvider));
+  const showBuyerQuotePanel =
+    role === "buyer" &&
+    requiresQuoteAccept &&
+    !quoteLoading &&
+    !rebookPreparing &&
+    quoteNeedsBuyerResponse;
   const rebookCartPrefill =
     rebookPrefillLines?.map((x) => ({ sku: x.sku, qty: x.qty })) ?? undefined;
 
@@ -1019,13 +1028,7 @@ export default function ListingChat({
         </div>
       )}
 
-      {role === "buyer" &&
-        requiresQuoteAccept &&
-        !quoteLoading &&
-        !rebookPreparing &&
-        quoteStatus !== "none" &&
-        !isRebookFormCycle &&
-        !highlightRebook && (
+      {showBuyerQuotePanel && (
         <div className="px-4 py-2 border-b border-[#E5E0D8]">
           <ServiceQuoteBuyerPanel
             listingId={listingId}
