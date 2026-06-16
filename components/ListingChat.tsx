@@ -82,6 +82,7 @@ export default function ListingChat({
   const [quoteLineItems, setQuoteLineItems] = useState<ServiceQuoteLineItem[] | null>(null);
   const [quoteMetadata, setQuoteMetadata] = useState<ServiceQuoteMetadata | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
+  const [rebookPreparing, setRebookPreparing] = useState(false);
   const [buyerContactPrefill, setBuyerContactPrefill] = useState<Partial<BuyerQuoteContact> | undefined>();
   const deepLinkConvLoadedRef = useRef(false);
   /** Scroll this pane — `scrollIntoView` on children scrolls the whole page in Chrome (nested overflow). */
@@ -147,7 +148,8 @@ export default function ListingChat({
     } else {
       if (data.conversation?.id) {
         setSelectedId(data.conversation.id);
-        setMessages(data.messages ?? []);
+        const fresh: Msg[] = data.messages ?? [];
+        setMessages((prev) => (chatMessagesChanged(prev, fresh) ? fresh : prev));
         conversationListingIdRef.current = listingId;
       }
     }
@@ -305,8 +307,9 @@ export default function ListingChat({
   useEffect(() => {
     if (role !== "buyer" || !listingId) return;
     const poll = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
       void loadListingScope();
-    }, 7500);
+    }, 4000);
     return () => clearInterval(poll);
   }, [role, listingId, loadListingScope]);
 
@@ -384,6 +387,25 @@ export default function ListingChat({
     void loadQuoteState();
   }, [loadQuoteState]);
 
+  // Buyer: poll quote gate so rebook reset + provider quote appear without refresh.
+  useEffect(() => {
+    if (role !== "buyer" || !requiresQuoteAccept) return;
+    const t = setInterval(() => void loadQuoteState(), 5000);
+    return () => clearInterval(t);
+  }, [role, requiresQuoteAccept, loadQuoteState]);
+
+  useEffect(() => {
+    if (role !== "buyer") return;
+    const refreshOnVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      void loadListingScope();
+      void loadQuoteState();
+      if (selectedId) void loadConversation(selectedId);
+    };
+    document.addEventListener("visibilitychange", refreshOnVisible);
+    return () => document.removeEventListener("visibilitychange", refreshOnVisible);
+  }, [role, selectedId, loadListingScope, loadQuoteState, loadConversation]);
+
   useEffect(() => {
     const onQuote = (ev: Event) => {
       const d = (ev as CustomEvent<{ listingId?: string }>).detail;
@@ -460,6 +482,7 @@ export default function ListingChat({
   useEffect(() => {
     if (!highlightRebook || role !== "buyer" || !requiresQuoteAccept || rebookPrepareRanRef.current) return;
     rebookPrepareRanRef.current = true;
+    setRebookPreparing(true);
     void (async () => {
       try {
         const r = await fetch(
@@ -471,12 +494,18 @@ export default function ListingChat({
             body: JSON.stringify({ lang: lang === "en" ? "en" : "es" }),
           },
         );
-        if (r.ok) await loadQuoteState();
+        if (r.ok) {
+          await loadQuoteState();
+          await loadListingScope();
+          window.dispatchEvent(new CustomEvent("tianguis:quote-updated", { detail: { listingId } }));
+        }
       } catch {
         /* non-fatal — form may still show if gate was reset on booking complete */
+      } finally {
+        setRebookPreparing(false);
       }
     })();
-  }, [highlightRebook, role, requiresQuoteAccept, listingId, lang, loadQuoteState]);
+  }, [highlightRebook, role, requiresQuoteAccept, listingId, lang, loadQuoteState, loadListingScope]);
 
   const sendOfficialQuote = async (payload: QuoteBuilderPayload) => {
     if (role !== "seller" || !agreedPriceBuyerId) return;
@@ -682,9 +711,16 @@ export default function ListingChat({
     requiresQuoteAccept &&
     hasServiceMenu(serviceMenu) &&
     (quoteStatus === "none" || quoteStatus === "declined" || isRebookFormCycle) &&
-    !quoteAwaitingProvider;
+    !quoteAwaitingProvider &&
+    !rebookPreparing;
   const rebookCartPrefill =
     rebookPrefillLines?.map((x) => ({ sku: x.sku, qty: x.qty })) ?? undefined;
+
+  const refreshBuyerChat = async () => {
+    await loadListingScope();
+    await loadQuoteState();
+    if (selectedId) await loadConversation(selectedId);
+  };
 
   if (loading) {
     return (
@@ -726,7 +762,22 @@ export default function ListingChat({
             {lang === "en" ? "View listing page" : "Ver ficha del anuncio"}
           </Link>
         ) : null}
+        {role === "buyer" ? (
+          <button
+            type="button"
+            onClick={() => void refreshBuyerChat()}
+            className="text-xs font-semibold text-[#1B4332] hover:underline shrink-0"
+          >
+            {lang === "en" ? "Refresh" : "Actualizar"}
+          </button>
+        ) : null}
       </div>
+
+      {role === "buyer" && rebookPreparing ? (
+        <div className="px-4 py-2 border-b border-[#E5E0D8] bg-[#FFFBEB] text-xs text-[#78350F]">
+          {lang === "en" ? "Preparing your rebook form…" : "Preparando formulario para reservar de nuevo…"}
+        </div>
+      ) : null}
 
       {role === "seller" && threads.length > 0 && (
         <div className="border-b border-[#E5E0D8]">
@@ -907,6 +958,7 @@ export default function ListingChat({
       {role === "buyer" &&
         requiresQuoteAccept &&
         !quoteLoading &&
+        !rebookPreparing &&
         quoteStatus !== "none" &&
         !isRebookFormCycle &&
         !highlightRebook && (

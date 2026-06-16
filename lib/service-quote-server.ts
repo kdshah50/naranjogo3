@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { idMatchVariantsForIn } from "@/lib/auth-server";
 import { normalizeQuoteStatus, parseQuoteLineItems, parseQuoteMetadata } from "@/lib/service-quote";
+import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 
 export type ServiceQuoteGateRow = {
   quoteStatus: ReturnType<typeof normalizeQuoteStatus>;
@@ -54,6 +55,14 @@ export async function loadServiceQuoteGate(
   };
 }
 
+function isRebookReadyGate(row: ServiceQuoteGateRow): boolean {
+  return (
+    row.quoteStatus === "none" &&
+    !(row.quoteLineItems?.length ?? 0) &&
+    (row.quoteMetadata?.rebookPrefillLineItems?.length ?? 0) > 0
+  );
+}
+
 /** Linked buyer accounts (same WhatsApp) may have gate rows under a sibling user id. */
 export async function loadServiceQuoteGateForBuyerPool(
   supabase: SupabaseClient,
@@ -63,17 +72,25 @@ export async function loadServiceQuoteGateForBuyerPool(
   const unique = [...new Set(buyerPool.map((id) => String(id).trim()).filter(Boolean))];
   if (unique.length === 0) return null;
 
-  let best: ServiceQuoteGateRow | null = null;
+  const rows: ServiceQuoteGateRow[] = [];
   for (const bid of unique) {
     const row = await loadServiceQuoteGate(supabase, listingId, bid);
-    if (!row) continue;
-    if (row.quoteStatus === "pending" || row.quoteStatus === "accepted") return row;
-    if (!best) {
-      best = row;
-      continue;
-    }
-    const rank = (s: string) =>
-      s === "declined" ? 2 : s === "none" ? 1 : 0;
+    if (row) rows.push(row);
+  }
+  if (rows.length === 0) return null;
+
+  const rebookReady = rows.find(isRebookReadyGate);
+  if (rebookReady) return rebookReady;
+
+  const pending = rows.find((r) => r.quoteStatus === "pending");
+  if (pending) return pending;
+
+  const accepted = rows.find((r) => r.quoteStatus === "accepted");
+  if (accepted) return accepted;
+
+  let best = rows[0];
+  for (const row of rows.slice(1)) {
+    const rank = (s: string) => (s === "declined" ? 2 : s === "none" ? 1 : 0);
     if (rank(row.quoteStatus) > rank(best.quoteStatus)) best = row;
     else if (
       row.quoteStatus === best.quoteStatus &&
@@ -133,9 +150,29 @@ export async function prepareQuoteGateForRebook(
   listingId: string,
   buyerId: string,
 ): Promise<{ ok: boolean; buyerId: string }> {
-  const gate = await loadServiceQuoteGate(supabase, listingId, buyerId);
-  const lineItems = gate?.quoteLineItems ?? [];
-  const existingMeta = gate?.quoteMetadata ?? {};
+  const buyerPool = await expandUserAccountIdPool(supabase, buyerId);
+  const uniquePool = [...new Set(buyerPool.map((id) => String(id).trim()).filter(Boolean))];
+
+  let sourceGate: ServiceQuoteGateRow | null = null;
+  for (const bid of uniquePool) {
+    const row = await loadServiceQuoteGate(supabase, listingId, bid);
+    if (!row) continue;
+    if ((row.quoteLineItems?.length ?? 0) > 0) {
+      sourceGate = row;
+      break;
+    }
+    if ((row.quoteMetadata?.rebookPrefillLineItems?.length ?? 0) > 0) {
+      sourceGate = row;
+      break;
+    }
+    if (row.quoteMetadata?.buyerFirstName && !sourceGate) sourceGate = row;
+  }
+  if (!sourceGate) {
+    sourceGate = await loadServiceQuoteGate(supabase, listingId, buyerId);
+  }
+
+  const lineItems = sourceGate?.quoteLineItems ?? [];
+  const existingMeta = sourceGate?.quoteMetadata ?? {};
   const rebookPrefill =
     lineItems.length > 0 ? lineItems : existingMeta.rebookPrefillLineItems ?? null;
 
@@ -148,33 +185,38 @@ export async function prepareQuoteGateForRebook(
   delete (metadata as { preferredAt?: string }).preferredAt;
 
   const listVars = idMatchVariantsForIn(listingId);
-  const buyerVars = idMatchVariantsForIn(buyerId);
-  const { data: gateRow } = await supabase
-    .from("listing_service_contact_gate")
-    .select("buyer_id")
-    .in("listing_id", listVars)
-    .in("buyer_id", buyerVars)
-    .limit(1)
-    .maybeSingle();
-
-  const gateBuyerId = String(gateRow?.buyer_id ?? buyerId);
   const now = new Date().toISOString();
+  let primaryGateBuyerId = buyerId;
 
-  await supabase.from("listing_service_contact_gate").upsert(
-    {
-      listing_id: listingId,
-      buyer_id: gateBuyerId,
-      contacted_in_app: true,
-      quote_status: "none",
-      quote_line_items: null,
-      quote_metadata: metadata,
-      agreed_subtotal_mxn_cents: null,
-      quote_sent_at: null,
-      quote_responded_at: null,
-      updated_at: now,
-    },
-    { onConflict: "listing_id,buyer_id" },
-  );
+  for (const bid of uniquePool) {
+    const buyerVars = idMatchVariantsForIn(bid);
+    const { data: gateRow } = await supabase
+      .from("listing_service_contact_gate")
+      .select("buyer_id")
+      .in("listing_id", listVars)
+      .in("buyer_id", buyerVars)
+      .limit(1)
+      .maybeSingle();
 
-  return { ok: true, buyerId: gateBuyerId };
+    const gateBuyerId = String(gateRow?.buyer_id ?? bid);
+    if (bid === buyerId || gateRow?.buyer_id) primaryGateBuyerId = gateBuyerId;
+
+    await supabase.from("listing_service_contact_gate").upsert(
+      {
+        listing_id: listingId,
+        buyer_id: gateBuyerId,
+        contacted_in_app: true,
+        quote_status: "none",
+        quote_line_items: null,
+        quote_metadata: metadata,
+        agreed_subtotal_mxn_cents: null,
+        quote_sent_at: null,
+        quote_responded_at: null,
+        updated_at: now,
+      },
+      { onConflict: "listing_id,buyer_id" },
+    );
+  }
+
+  return { ok: true, buyerId: primaryGateBuyerId };
 }

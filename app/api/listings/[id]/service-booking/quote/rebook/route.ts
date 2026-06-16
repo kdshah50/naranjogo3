@@ -3,7 +3,7 @@ import {
   createAdminSupabase,
   getUserIdFromRequest,
 } from "@/lib/auth-server";
-import { buyerContactFromMetadata } from "@/lib/buyer-quote-contact";
+import { buyerContactFromMetadata, buyerContactPrefillFromMetadata } from "@/lib/buyer-quote-contact";
 import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
 import { providerServiceRequiresQuoteAccept } from "@/lib/provider-services";
 import { loadServiceQuoteGate, prepareQuoteGateForRebook } from "@/lib/service-quote-server";
@@ -51,6 +51,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       if (
         (row?.quoteLineItems?.length ?? 0) > 0 ||
         buyerContactFromMetadata(row?.quoteMetadata) ||
+        buyerContactPrefillFromMetadata(row?.quoteMetadata) ||
         (row?.quoteMetadata?.rebookPrefillLineItems?.length ?? 0) > 0
       ) {
         savedGate = row;
