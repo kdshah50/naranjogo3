@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { Lang } from "@/lib/i18n-lang";
 import type { ServiceMenu } from "@/lib/listing-service-menu";
-import { hasServiceMenu } from "@/lib/listing-service-menu";
+import { hasServiceMenu, effectiveServiceMenuForListing } from "@/lib/listing-service-menu";
 import ServiceMenuQuoteBuilder, { type QuoteBuilderPayload } from "@/components/ServiceMenuQuoteBuilder";
 import type { BuyerQuoteContact } from "@/lib/buyer-quote-contact";
 import { buyerContactPrefillFromMetadata } from "@/lib/buyer-quote-contact";
@@ -83,6 +83,7 @@ export default function ListingChat({
   const [quoteMetadata, setQuoteMetadata] = useState<ServiceQuoteMetadata | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [rebookPreparing, setRebookPreparing] = useState(false);
+  const [rebookPrepareError, setRebookPrepareError] = useState("");
   const [buyerContactPrefill, setBuyerContactPrefill] = useState<Partial<BuyerQuoteContact> | undefined>();
   const deepLinkConvLoadedRef = useRef(false);
   /** Scroll this pane — `scrollIntoView` on children scrolls the whole page in Chrome (nested overflow). */
@@ -97,7 +98,13 @@ export default function ListingChat({
 
   useEffect(() => {
     rebookPrepareRanRef.current = false;
+    setRebookPrepareError("");
   }, [listingId]);
+
+  const effectiveMenu = useMemo(
+    () => effectiveServiceMenuForListing(serviceMenu, providerSlug),
+    [serviceMenu, providerSlug],
+  );
 
   const scrollMessagesToBottom = () => {
     const el = messagesScrollRef.current;
@@ -480,10 +487,13 @@ export default function ListingChat({
   }, [role, quoteMetadata]);
 
   useEffect(() => {
-    if (!highlightRebook || role !== "buyer" || !requiresQuoteAccept || rebookPrepareRanRef.current) return;
-    rebookPrepareRanRef.current = true;
-    setRebookPreparing(true);
-    void (async () => {
+    if (role !== "buyer" || !requiresQuoteAccept || rebookPrepareRanRef.current) return;
+    if (!highlightRebook && quoteLoading) return;
+
+    const runRebookPrepare = async (reason: "highlight" | "completed") => {
+      rebookPrepareRanRef.current = true;
+      setRebookPreparing(true);
+      setRebookPrepareError("");
       try {
         const r = await fetch(
           `/api/listings/${encodeURIComponent(listingId)}/service-booking/quote/rebook`,
@@ -494,18 +504,66 @@ export default function ListingChat({
             body: JSON.stringify({ lang: lang === "en" ? "en" : "es" }),
           },
         );
-        if (r.ok) {
+        const d = (await r.json().catch(() => ({}))) as { error?: string; message?: string };
+        if (!r.ok) {
+          const msg = d.message ?? d.error ?? (lang === "en" ? "Could not prepare rebook" : "No se pudo preparar la reserva");
+          setRebookPrepareError(msg);
+          if (reason === "highlight") return;
+        } else {
           await loadQuoteState();
           await loadListingScope();
           window.dispatchEvent(new CustomEvent("tianguis:quote-updated", { detail: { listingId } }));
         }
       } catch {
-        /* non-fatal — form may still show if gate was reset on booking complete */
+        setRebookPrepareError(
+          lang === "en" ? "Network error preparing rebook form" : "Error de red al preparar el formulario",
+        );
       } finally {
         setRebookPreparing(false);
       }
+    };
+
+    void (async () => {
+      if (highlightRebook) {
+        await runRebookPrepare("highlight");
+        return;
+      }
+
+      try {
+        const sb = await fetch(`/api/listings/${encodeURIComponent(listingId)}/service-booking`, {
+          credentials: "same-origin",
+          cache: "no-store",
+        });
+        if (!sb.ok) return;
+        const d = (await sb.json()) as {
+          paidBookingStatus?: string | null;
+          requiresQuoteAccept?: boolean;
+        };
+        const paidSt = String(d.paidBookingStatus ?? "").toLowerCase();
+        if (paidSt !== "completed") return;
+
+        const needsReset =
+          quoteStatus === "accepted" ||
+          quoteStatus === "pending" ||
+          (quoteStatus === "none" && (quoteLineItems?.length ?? 0) > 0);
+
+        if (needsReset) await runRebookPrepare("completed");
+      } catch {
+        /* non-fatal */
+      }
     })();
-  }, [highlightRebook, role, requiresQuoteAccept, listingId, lang, loadQuoteState, loadListingScope]);
+  }, [
+    highlightRebook,
+    role,
+    requiresQuoteAccept,
+    listingId,
+    lang,
+    loadQuoteState,
+    loadListingScope,
+    quoteStatus,
+    quoteLineItems,
+    quoteLoading,
+  ]);
 
   const sendOfficialQuote = async (payload: QuoteBuilderPayload) => {
     if (role !== "seller" || !agreedPriceBuyerId) return;
@@ -709,10 +767,10 @@ export default function ListingChat({
   const showBuyerRequestForm =
     role === "buyer" &&
     requiresQuoteAccept &&
-    hasServiceMenu(serviceMenu) &&
-    (quoteStatus === "none" || quoteStatus === "declined" || isRebookFormCycle) &&
-    !quoteAwaitingProvider &&
-    !rebookPreparing;
+    hasServiceMenu(effectiveMenu) &&
+    !rebookPreparing &&
+    (isRebookFormCycle ||
+      ((quoteStatus === "none" || quoteStatus === "declined") && !quoteAwaitingProvider));
   const rebookCartPrefill =
     rebookPrefillLines?.map((x) => ({ sku: x.sku, qty: x.qty })) ?? undefined;
 
@@ -772,6 +830,12 @@ export default function ListingChat({
           </button>
         ) : null}
       </div>
+
+      {role === "buyer" && rebookPrepareError ? (
+        <div className="px-4 py-2 border-b border-red-200 bg-red-50 text-xs text-red-800">
+          {rebookPrepareError}
+        </div>
+      ) : null}
 
       {role === "buyer" && rebookPreparing ? (
         <div className="px-4 py-2 border-b border-[#E5E0D8] bg-[#FFFBEB] text-xs text-[#78350F]">
@@ -885,19 +949,19 @@ export default function ListingChat({
             quoteStatus === "none" &&
             quoteLineItems != null &&
             quoteLineItems.length > 0 &&
-            hasServiceMenu(serviceMenu) && (
+            hasServiceMenu(effectiveMenu) && (
               <ServiceQuoteSellerRequestPanel
                 lineItems={quoteLineItems}
                 metadata={quoteMetadata}
-                menu={serviceMenu}
+                menu={effectiveMenu}
                 lang={lang === "en" ? "en" : "es"}
                 quoteLayout={quoteLayout}
                 providerSlug={providerSlug}
               />
             )}
-          {hasServiceMenu(serviceMenu) && agreedPriceBuyerId && (
+          {hasServiceMenu(effectiveMenu) && agreedPriceBuyerId && (
             <ServiceMenuQuoteBuilder
-              menu={serviceMenu}
+              menu={effectiveMenu}
               lang={lang === "en" ? "en" : "es"}
               quoteLayout={quoteLayout}
               requiresBuyerContact={requiresQuoteAccept}
@@ -921,7 +985,7 @@ export default function ListingChat({
         </div>
       )}
 
-      {role === "buyer" && requiresQuoteAccept && hasServiceMenu(serviceMenu) && quoteAwaitingProvider && (
+      {role === "buyer" && requiresQuoteAccept && hasServiceMenu(effectiveMenu) && quoteAwaitingProvider && !isRebookFormCycle && (
         <div className="px-4 py-2 border-b border-[#E5E0D8] bg-blue-50 text-xs text-blue-900">
           {lang === "en"
             ? "✓ Request sent — waiting for your provider’s official quote. You’ll get Accept / Decline buttons here when they send it."
@@ -939,7 +1003,7 @@ export default function ListingChat({
             </p>
           ) : null}
           <ServiceMenuQuoteBuilder
-            menu={serviceMenu}
+            menu={effectiveMenu}
             lang={lang === "en" ? "en" : "es"}
             quoteLayout={quoteLayout}
             requiresBuyerContact={requiresQuoteAccept}

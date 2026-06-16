@@ -60,16 +60,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     }
 
     if (!savedGate) {
-      return NextResponse.json(
-        {
-          error: "no_prior_request",
-          message:
-            lang === "en"
-              ? "No saved service request found — open the listing and send a new request."
-              : "No hay solicitud guardada — abre el anuncio y envía una nueva solicitud.",
-        },
-        { status: 400 },
-      );
+      await prepareQuoteGateForRebook(supabase, listingId, buyerUserId);
+      const langQ = lang === "en" ? "lang=en&" : "";
+      return NextResponse.json({
+        ok: true,
+        listingId,
+        freshStart: true,
+        redirectUrl: `/listing/${listingId}?${langQ}rebook=1#listing-inapp-chat`,
+      });
     }
 
     await prepareQuoteGateForRebook(supabase, listingId, buyerUserId);

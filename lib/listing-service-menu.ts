@@ -217,6 +217,15 @@ export function hasServiceMenu(menu: ServiceMenu | null | undefined): menu is Se
   return Boolean(menu && Array.isArray(menu.items) && menu.items.length > 0);
 }
 
+/** Listing menu when set; otherwise starter template for quote-gated provider slugs. */
+export function effectiveServiceMenuForListing(
+  menu: ServiceMenu | null | undefined,
+  providerSlug: string | null | undefined,
+): ServiceMenu | null {
+  if (hasServiceMenu(menu)) return menu;
+  return starterMenuForProviderSlug(providerSlug);
+}
+
 export type ServiceMenuFormRow = { name: string; pesos: string };
 
 /** Form rows for the menu editor UI (signup or profile). */

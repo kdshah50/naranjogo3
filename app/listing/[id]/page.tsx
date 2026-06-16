@@ -5,6 +5,7 @@ import ListingChat from "@/components/ListingChat";
 import ServiceBookingBlock from "@/components/ServiceBookingBlock";
 import ServiceMenuPublic from "@/components/ServiceMenuPublic";
 import type { ServiceMenu } from "@/lib/listing-service-menu";
+import { effectiveServiceMenuForListing } from "@/lib/listing-service-menu";
 import WhatsAppCTA from "@/components/WhatsAppCTA";
 import SellerReviews, { RatingSummary } from "@/components/SellerReviews";
 import ReportButton from "@/components/ReportButton";
@@ -107,6 +108,8 @@ export default async function ListingPage({
   const highlightRequest = searchParams?.request === "1" || searchParams?.request === "true";
   const highlightRebook = searchParams?.rebook === "1" || searchParams?.rebook === "true";
   const listingLang = langFromParam(searchParams?.lang);
+  const rawServiceMenu = (listing as { service_menu?: ServiceMenu | null }).service_menu ?? null;
+  const effectiveServiceMenu = effectiveServiceMenuForListing(rawServiceMenu, providerSlug);
   const listingQueryBase = new URLSearchParams();
   if (listingLang === "en") listingQueryBase.set("lang", "en");
   const listingBasePath = `/listing/${params.id}${listingQueryBase.toString() ? `?${listingQueryBase}` : ""}`;
@@ -212,7 +215,7 @@ export default async function ListingPage({
           )}
         {isServiceListing && (
           <ServiceMenuPublic
-            menu={(listing as { service_menu?: ServiceMenu | null }).service_menu ?? null}
+            menu={effectiveServiceMenu}
             lang={listingLang}
           />
         )}
@@ -337,11 +340,7 @@ export default async function ListingPage({
             fullListingHref={listingBasePath}
             showFullListingLink={Boolean(searchParams?.chat)}
             lang={listingLang}
-            serviceMenu={
-              isServiceListing
-                ? (listing as { service_menu?: ServiceMenu | null }).service_menu ?? null
-                : null
-            }
+            serviceMenu={isServiceListing ? effectiveServiceMenu : null}
             quoteLayout={menuQuoteLayout}
             providerSlug={providerSlug}
             requiresQuoteAccept={requiresQuoteAccept}
