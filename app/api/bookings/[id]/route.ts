@@ -17,6 +17,9 @@ import { getPublicAppUrl } from "@/lib/app-url";
 import { sellerCanManagePaidBookingRow } from "@/lib/seller-booking-access";
 import { computeBalanceDueCents, listingIsHousekeeping } from "@/lib/housekeeping-payments";
 import { notifyBuyerHousekeepingBalanceDue } from "@/lib/housekeeping-balance-notify";
+import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
+import { providerServiceRequiresQuoteAccept } from "@/lib/provider-services";
+import { prepareQuoteGateForRebook } from "@/lib/service-quote-server";
 
 export const dynamic = "force-dynamic";
 
@@ -509,6 +512,19 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       } catch (e) {
         console.error("[bookings/:id] PATCH seller completed WhatsApp failed (non-fatal)", e);
         sellerPhaseWhatsApp = { delivered: false, reason: "send_failed" };
+      }
+      try {
+        const { data: listingRow } = await supabase
+          .from("listings")
+          .select("title_es")
+          .eq("id", String(booking.listing_id))
+          .maybeSingle();
+        const slug = inferProviderSlugFromListingTitle(listingRow?.title_es as string);
+        if (providerServiceRequiresQuoteAccept(slug)) {
+          await prepareQuoteGateForRebook(supabase, String(booking.listing_id), String(booking.buyer_id));
+        }
+      } catch (rebookPrepErr) {
+        console.error("[bookings/:id] prepare rebook gate after complete (non-fatal)", rebookPrepErr);
       }
       const balDue = Math.round(Number(updated?.balance_due_mxn_cents ?? 0));
       if (String(updated?.balance_payment_status ?? "") === "pending" && balDue >= 100) {

@@ -2,31 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   createAdminSupabase,
   getUserIdFromRequest,
-  idMatchVariantsForIn,
 } from "@/lib/auth-server";
+import { buyerContactFromMetadata } from "@/lib/buyer-quote-contact";
 import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
-import { parseServiceMenu } from "@/lib/listing-service-menu";
 import { providerServiceRequiresQuoteAccept } from "@/lib/provider-services";
-import {
-  buildMenuQuoteMessage,
-  computeQuoteTotalCents,
-} from "@/lib/service-quote";
-import {
-  buyerContactFromMetadata,
-  formatBuyerContactBlock,
-} from "@/lib/buyer-quote-contact";
-import {
-  insertListingChatMessage,
-  loadServiceQuoteGate,
-  resolveConversationForBuyer,
-} from "@/lib/service-quote-server";
-import { notifySellerBuyerServiceRequest } from "@/lib/service-quote-notify";
-import { quoteLayoutForSlug } from "@/lib/service-quote-vertical";
+import { loadServiceQuoteGate, prepareQuoteGateForRebook } from "@/lib/service-quote-server";
 import { expandUserAccountIdPool, userIsListingSellerAccount } from "@/lib/user-account-pool";
 
 export const dynamic = "force-dynamic";
 
-/** POST — buyer re-sends last cleaning request from saved gate line items (one-tap rebook). */
+/** POST — prepare gate for rebook: prefill contact + menu, show buyer form (no auto-submit). */
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const buyerUserId = await getUserIdFromRequest(req);
@@ -41,7 +26,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const supabase = createAdminSupabase();
     const { data: listing, error: le } = await supabase
       .from("listings")
-      .select("id,seller_id,title_es,service_menu,status")
+      .select("id,seller_id,title_es,status")
       .eq("id", listingId)
       .maybeSingle();
     if (le || !listing?.seller_id) {
@@ -60,128 +45,39 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     }
 
     const buyerPool = await expandUserAccountIdPool(supabase, buyerUserId);
-    let gate = null;
+    let savedGate = null;
     for (const bid of buyerPool) {
-      gate = await loadServiceQuoteGate(supabase, listingId, bid);
-      if (gate?.quoteLineItems?.length) break;
+      const row = await loadServiceQuoteGate(supabase, listingId, bid);
+      if (
+        (row?.quoteLineItems?.length ?? 0) > 0 ||
+        buyerContactFromMetadata(row?.quoteMetadata) ||
+        (row?.quoteMetadata?.rebookPrefillLineItems?.length ?? 0) > 0
+      ) {
+        savedGate = row;
+        break;
+      }
     }
-    const lineItems = gate?.quoteLineItems ?? [];
-    if (lineItems.length === 0) {
+
+    if (!savedGate) {
       return NextResponse.json(
         {
           error: "no_prior_request",
           message:
             lang === "en"
-              ? "No saved cleaning request found — open the listing and send a new request."
+              ? "No saved service request found — open the listing and send a new request."
               : "No hay solicitud guardada — abre el anuncio y envía una nueva solicitud.",
         },
         { status: 400 },
       );
     }
 
-    const parsedMenu = parseServiceMenu(listing.service_menu);
-    if (!parsedMenu.ok) {
-      return NextResponse.json({ error: "Menú de servicio no disponible" }, { status: 400 });
-    }
+    await prepareQuoteGateForRebook(supabase, listingId, buyerUserId);
 
-    const quoteMetadata = gate?.quoteMetadata ?? { kind: "buyer_request" as const, lang };
-    quoteMetadata.kind = "buyer_request";
-    quoteMetadata.lang = lang;
-
-    const cartLines = lineItems.map((x) => ({ sku: x.sku, qty: x.qty }));
-    const totalCents = computeQuoteTotalCents({
-      menu: parsedMenu.menu,
-      cartLines,
-      visitFrequency: quoteMetadata.visitFrequency,
-      quoteBasis: quoteMetadata.quoteBasis,
-      quoteLayout: quoteLayoutForSlug(slug),
-    });
-
-    let conv = await resolveConversationForBuyer(supabase, listingId, buyerUserId);
-    if (!conv) {
-      const { data: created, error: cErr } = await supabase
-        .from("listing_conversations")
-        .insert({
-          listing_id: listingId,
-          buyer_id: buyerUserId,
-          seller_id: listing.seller_id,
-        })
-        .select("id,buyer_id")
-        .single();
-      if (cErr || !created?.id) {
-        return NextResponse.json({ error: "No se pudo iniciar conversación" }, { status: 500 });
-      }
-      conv = { id: String(created.id), buyer_id: String(created.buyer_id ?? buyerUserId) };
-    }
-
-    let messageBody = buildMenuQuoteMessage({
-      menu: parsedMenu.menu,
-      lineItems,
-      totalCents,
-      lang,
-      visitFrequency: quoteMetadata.visitFrequency,
-      quoteBasis: quoteMetadata.quoteBasis,
-      headerKind: "buyer_request",
-    });
-    messageBody +=
-      lang === "en"
-        ? "\n\n🔄 Repeat booking — same services as last time."
-        : "\n\n🔄 Reserva repetida — mismos servicios que la última vez.";
-    const savedContact = buyerContactFromMetadata(quoteMetadata);
-    if (savedContact) {
-      messageBody += `\n\n${formatBuyerContactBlock(savedContact, lang)}`;
-    }
-    if (quoteMetadata.buyerNotes) {
-      messageBody += lang === "en" ? `\n\nNotes: ${quoteMetadata.buyerNotes}` : `\n\nNotas: ${quoteMetadata.buyerNotes}`;
-    }
-
-    const inserted = await insertListingChatMessage(supabase, conv.id, buyerUserId, messageBody);
-    if (!inserted) {
-      return NextResponse.json({ error: "No se pudo enviar la solicitud" }, { status: 500 });
-    }
-
-    const now = new Date().toISOString();
-    await supabase.from("listing_service_contact_gate").upsert(
-      {
-        listing_id: listingId,
-        buyer_id: conv.buyer_id,
-        contacted_in_app: true,
-        quote_metadata: quoteMetadata,
-        quote_line_items: lineItems,
-        quote_status: "none",
-        agreed_subtotal_mxn_cents: null,
-        quote_sent_at: null,
-        quote_responded_at: null,
-        updated_at: now,
-      },
-      { onConflict: "listing_id,buyer_id" },
-    );
-
-    const { data: buyerRow } = await supabase
-      .from("users")
-      .select("display_name")
-      .in("id", idMatchVariantsForIn(buyerUserId))
-      .maybeSingle();
-
-    void notifySellerBuyerServiceRequest({
-      supabase,
-      sellerId: String(listing.seller_id),
-      listingId,
-      listingTitle: String(listing.title_es ?? "Servicio"),
-      buyerName: savedContact
-        ? `${savedContact.firstName} ${savedContact.lastName}`.trim()
-        : String(buyerRow?.display_name ?? "Cliente"),
-      conversationId: conv.id,
-      totalCents,
-      lang,
-      providerSlug: slug,
-    });
-
+    const langQ = lang === "en" ? "lang=en&" : "";
     return NextResponse.json({
       ok: true,
-      conversationId: conv.id,
       listingId,
-      redirectUrl: `/listing/${listingId}?quote=1`,
+      redirectUrl: `/listing/${listingId}?${langQ}rebook=1#listing-inapp-chat`,
     });
   } catch (e) {
     console.error("[service-quote/rebook] POST", e);

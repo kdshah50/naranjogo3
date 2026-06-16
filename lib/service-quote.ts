@@ -34,6 +34,8 @@ export type ServiceQuoteMetadata = {
   serviceAddress?: string;
   /** ISO datetime — preferred visit before quote */
   preferredAt?: string;
+  /** Saved line items for rebook form prefill (cleared from gate row until buyer submits). */
+  rebookPrefillLineItems?: ServiceQuoteLineItem[];
 };
 
 export function normalizeQuoteStatus(raw: unknown): ServiceQuoteStatus {
@@ -79,6 +81,8 @@ export function parseQuoteMetadata(raw: unknown): ServiceQuoteMetadata | null {
   if (o.whatsappPhone === null) meta.whatsappPhone = null;
   if (typeof o.serviceAddress === "string") meta.serviceAddress = o.serviceAddress.trim();
   if (typeof o.preferredAt === "string") meta.preferredAt = o.preferredAt.trim();
+  const prefill = parseQuoteLineItems(o.rebookPrefillLineItems);
+  if (prefill?.length) meta.rebookPrefillLineItems = prefill;
   return Object.keys(meta).length > 0 ? meta : null;
 }
 

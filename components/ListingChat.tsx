@@ -7,11 +7,13 @@ import type { ServiceMenu } from "@/lib/listing-service-menu";
 import { hasServiceMenu } from "@/lib/listing-service-menu";
 import ServiceMenuQuoteBuilder, { type QuoteBuilderPayload } from "@/components/ServiceMenuQuoteBuilder";
 import type { BuyerQuoteContact } from "@/lib/buyer-quote-contact";
+import { buyerContactPrefillFromMetadata } from "@/lib/buyer-quote-contact";
 import ServiceQuoteBuyerPanel from "@/components/ServiceQuoteBuyerPanel";
 import ServiceQuoteSellerRequestPanel from "@/components/ServiceQuoteSellerRequestPanel";
 import type { ServiceQuoteLineItem, ServiceQuoteMetadata, ServiceQuoteStatus } from "@/lib/service-quote";
+import { chatMessagesChanged, type ChatPollMessage } from "@/lib/listing-chat-poll";
 
-type Msg = { id: string; sender_id: string; body: string; created_at: string };
+type Msg = ChatPollMessage;
 
 type Thread = {
   conversationId: string;
@@ -34,6 +36,7 @@ export default function ListingChat({
   requiresQuoteAccept = false,
   highlightQuote = false,
   highlightRequest = false,
+  highlightRebook = false,
 }: {
   listingId: string;
   initialConversationId?: string;
@@ -54,6 +57,8 @@ export default function ListingChat({
   highlightQuote?: boolean;
   /** Deep link ?request=1 — scroll buyer request breakdown (seller). */
   highlightRequest?: boolean;
+  /** Deep link ?rebook=1 — reset gate and show buyer request form with prefill. */
+  highlightRebook?: boolean;
 }) {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -85,6 +90,13 @@ export default function ListingChat({
   const conversationListingIdRef = useRef<string | null>(null);
   /** Only full reset (loading + clear threads) when `listingId` actually changes, not on React remount. Stops seller flicker. */
   const lastScopeListingIdRef = useRef<string | null>(null);
+  /** Seller: detect thread activity changes to reload open conversation. */
+  const lastThreadActivityRef = useRef<string | null>(null);
+  const rebookPrepareRanRef = useRef(false);
+
+  useEffect(() => {
+    rebookPrepareRanRef.current = false;
+  }, [listingId]);
 
   const scrollMessagesToBottom = () => {
     const el = messagesScrollRef.current;
@@ -115,6 +127,7 @@ export default function ListingChat({
 
     const res = await fetch(`/api/conversations?listingId=${encodeURIComponent(listingId)}`, {
       credentials: "same-origin",
+      cache: "no-store",
     });
     if (res.status === 401) {
       setRole(null);
@@ -155,7 +168,10 @@ export default function ListingChat({
         setAgreedPriceBuyerId(null);
       }
       try {
-        const res = await fetch(`/api/conversations/${conversationId}`, { credentials: "same-origin" });
+        const res = await fetch(`/api/conversations/${conversationId}`, {
+          credentials: "same-origin",
+          cache: "no-store",
+        });
         if (!res.ok) {
           const d = await res.json().catch(() => ({}));
           setError((d as { error?: string }).error ?? "No se pudo cargar");
@@ -174,6 +190,11 @@ export default function ListingChat({
           conversationListingIdRef.current = listingId;
         } else {
           conversationListingIdRef.current = null;
+        }
+        const loadedMsgs = (data.messages ?? []) as Msg[];
+        const lastMsg = loadedMsgs[loadedMsgs.length - 1];
+        if (lastMsg) {
+          lastThreadActivityRef.current = `${lastMsg.created_at}:${lastMsg.body}`;
         }
       } catch {
         setError("Error de conexión");
@@ -233,28 +254,6 @@ export default function ListingChat({
     return () => window.removeEventListener("tianguis:booking-lifecycle", onLifecycle);
   }, [listingId, loadListingScope, loadConversation, selectedId, agreedPriceBuyerId]);
 
-  // Seller chat open on listing page: refresh threads + messages (schedule/pay events may happen on seller-bookings tab).
-  useEffect(() => {
-    if (role !== "seller" || !selectedId) return;
-    const refreshSellerChat = async () => {
-      try {
-        const res = await fetch(`/api/conversations?listingId=${encodeURIComponent(listingId)}`, {
-          credentials: "same-origin",
-          cache: "no-store",
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setThreads((data as { threads?: Thread[] }).threads ?? []);
-        }
-      } catch {
-        /* silent */
-      }
-      void loadConversation(selectedId, agreedPriceBuyerId ?? undefined);
-    };
-    const t = setInterval(() => void refreshSellerChat(), 8000);
-    return () => clearInterval(t);
-  }, [role, selectedId, listingId, agreedPriceBuyerId, loadConversation]);
-
   useEffect(() => {
     if (loading || !initialConversationId || deepLinkConvLoadedRef.current) return;
     if (role === "seller") {
@@ -282,24 +281,23 @@ export default function ListingChat({
     scrollMessagesToBottom();
   }, [messages]);
 
-  // Poll selected conversation for new messages
+  // Poll selected conversation for new messages (buyer + seller).
   useEffect(() => {
     if (!selectedId) return;
     const poll = setInterval(async () => {
       try {
-        const res = await fetch(`/api/conversations/${selectedId}`, { credentials: "same-origin" });
+        const res = await fetch(`/api/conversations/${selectedId}`, {
+          credentials: "same-origin",
+          cache: "no-store",
+        });
         if (!res.ok) return;
         const data = await res.json();
         const fresh: Msg[] = data.messages ?? [];
-        if (fresh.length === 0) return;
-        setMessages((prev) => {
-          const lastFresh = fresh[fresh.length - 1]?.id;
-          const lastPrev = prev[prev.length - 1]?.id;
-          if (lastFresh !== lastPrev || fresh.length !== prev.length) return fresh;
-          return prev;
-        });
-      } catch { /* silent */ }
-    }, 5000);
+        setMessages((prev) => (chatMessagesChanged(prev, fresh) ? fresh : prev));
+      } catch {
+        /* silent */
+      }
+    }, 4000);
     return () => clearInterval(poll);
   }, [selectedId]);
 
@@ -405,9 +403,29 @@ export default function ListingChat({
   useEffect(() => {
     if (role !== "seller" || !requiresQuoteAccept) return;
     if (!selectedId && !agreedPriceBuyerId) return;
-    const t = setInterval(() => void loadQuoteState(), 8000);
+    const t = setInterval(() => void loadQuoteState(), 6000);
     return () => clearInterval(t);
   }, [role, requiresQuoteAccept, selectedId, agreedPriceBuyerId, loadQuoteState]);
+
+  useEffect(() => {
+    if (role !== "seller") return;
+    const refreshOnVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      void loadListingScope();
+      if (selectedId) void loadConversation(selectedId, agreedPriceBuyerId ?? undefined);
+      if (requiresQuoteAccept) void loadQuoteState();
+    };
+    document.addEventListener("visibilitychange", refreshOnVisible);
+    return () => document.removeEventListener("visibilitychange", refreshOnVisible);
+  }, [
+    role,
+    selectedId,
+    agreedPriceBuyerId,
+    requiresQuoteAccept,
+    loadListingScope,
+    loadConversation,
+    loadQuoteState,
+  ]);
 
   useEffect(() => {
     if (!highlightQuote) return;
@@ -424,6 +442,41 @@ export default function ListingChat({
     }, 600);
     return () => window.clearTimeout(t);
   }, [highlightRequest, quoteLineItems]);
+
+  useEffect(() => {
+    if (!highlightRebook) return;
+    const t = window.setTimeout(() => {
+      document.getElementById("listing-inapp-chat")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 500);
+    return () => window.clearTimeout(t);
+  }, [highlightRebook]);
+
+  useEffect(() => {
+    if (role !== "buyer") return;
+    const prefill = buyerContactPrefillFromMetadata(quoteMetadata);
+    if (prefill) setBuyerContactPrefill(prefill);
+  }, [role, quoteMetadata]);
+
+  useEffect(() => {
+    if (!highlightRebook || role !== "buyer" || !requiresQuoteAccept || rebookPrepareRanRef.current) return;
+    rebookPrepareRanRef.current = true;
+    void (async () => {
+      try {
+        const r = await fetch(
+          `/api/listings/${encodeURIComponent(listingId)}/service-booking/quote/rebook`,
+          {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ lang: lang === "en" ? "en" : "es" }),
+          },
+        );
+        if (r.ok) await loadQuoteState();
+      } catch {
+        /* non-fatal — form may still show if gate was reset on booking complete */
+      }
+    })();
+  }, [highlightRebook, role, requiresQuoteAccept, listingId, lang, loadQuoteState]);
 
   const sendOfficialQuote = async (payload: QuoteBuilderPayload) => {
     if (role !== "seller" || !agreedPriceBuyerId) return;
@@ -487,23 +540,37 @@ export default function ListingChat({
     if (msg) setMessages((m) => [...m, msg]);
     window.dispatchEvent(new CustomEvent("tianguis:listing-contact"));
     window.dispatchEvent(new CustomEvent("tianguis:quote-updated", { detail: { listingId } }));
+    await loadQuoteState();
   };
 
-  // Poll thread list for new buyers/messages (seller only)
+  // Poll thread list for new buyers/messages (seller only).
   useEffect(() => {
     if (role !== "seller") return;
     const poll = setInterval(async () => {
       try {
-        const res = await fetch(`/api/conversations?listingId=${encodeURIComponent(listingId)}`, { credentials: "same-origin" });
+        const res = await fetch(`/api/conversations?listingId=${encodeURIComponent(listingId)}`, {
+          credentials: "same-origin",
+          cache: "no-store",
+        });
         if (!res.ok) return;
         const data = await res.json();
-        if (data.role === "seller" && Array.isArray(data.threads)) {
-          setThreads(data.threads);
+        if (data.role !== "seller" || !Array.isArray(data.threads)) return;
+        const newThreads = data.threads as Thread[];
+        if (selectedId) {
+          const active = newThreads.find((t) => t.conversationId === selectedId);
+          const sig = active ? `${active.last_at}:${active.last_body}` : null;
+          if (sig && sig !== lastThreadActivityRef.current) {
+            lastThreadActivityRef.current = sig;
+            void loadConversation(selectedId, agreedPriceBuyerId ?? undefined);
+          }
         }
-      } catch { /* silent */ }
+        setThreads(newThreads);
+      } catch {
+        /* silent */
+      }
     }, 4000);
     return () => clearInterval(poll);
-  }, [role, listingId]);
+  }, [role, listingId, selectedId, agreedPriceBuyerId, loadConversation]);
 
   /** Always resolves the thread for this `listingId` (idempotent). Do not short-circuit on selectedId — it may belong to another anuncio. */
   const ensureConversation = async (): Promise<string | null> => {
@@ -601,6 +668,23 @@ export default function ListingChat({
       setAgreedSaving(false);
     }
   };
+
+  const rebookPrefillLines = quoteMetadata?.rebookPrefillLineItems;
+  const quoteAwaitingProvider =
+    quoteStatus === "none" && (quoteLineItems?.length ?? 0) > 0;
+  const isRebookFormCycle =
+    highlightRebook ||
+    (quoteStatus === "none" &&
+      !(quoteLineItems?.length ?? 0) &&
+      (rebookPrefillLines?.length ?? 0) > 0);
+  const showBuyerRequestForm =
+    role === "buyer" &&
+    requiresQuoteAccept &&
+    hasServiceMenu(serviceMenu) &&
+    (quoteStatus === "none" || quoteStatus === "declined" || isRebookFormCycle) &&
+    !quoteAwaitingProvider;
+  const rebookCartPrefill =
+    rebookPrefillLines?.map((x) => ({ sku: x.sku, qty: x.qty })) ?? undefined;
 
   if (loading) {
     return (
@@ -786,7 +870,7 @@ export default function ListingChat({
         </div>
       )}
 
-      {role === "buyer" && requiresQuoteAccept && hasServiceMenu(serviceMenu) && quoteStatus === "none" && (quoteLineItems?.length ?? 0) > 0 && (
+      {role === "buyer" && requiresQuoteAccept && hasServiceMenu(serviceMenu) && quoteAwaitingProvider && (
         <div className="px-4 py-2 border-b border-[#E5E0D8] bg-blue-50 text-xs text-blue-900">
           {lang === "en"
             ? "✓ Request sent — waiting for your provider’s official quote. You’ll get Accept / Decline buttons here when they send it."
@@ -794,12 +878,15 @@ export default function ListingChat({
         </div>
       )}
 
-      {role === "buyer" &&
-        requiresQuoteAccept &&
-        hasServiceMenu(serviceMenu) &&
-        (quoteStatus === "none" || quoteStatus === "declined") &&
-        !(quoteStatus === "none" && (quoteLineItems?.length ?? 0) > 0) && (
+      {showBuyerRequestForm && (
         <div className="px-4 py-2 border-b border-[#E5E0D8] bg-[#FFFBEB]">
+          {isRebookFormCycle ? (
+            <p className="text-xs text-[#78350F] font-medium mb-2">
+              {lang === "en"
+                ? "Book again — review your contact details and service request, then send a new quote request."
+                : "Reservar de nuevo — revisa tus datos y la solicitud, luego envía una nueva cotización."}
+            </p>
+          ) : null}
           <ServiceMenuQuoteBuilder
             menu={serviceMenu}
             lang={lang === "en" ? "en" : "es"}
@@ -809,12 +896,20 @@ export default function ListingChat({
             variant="buyer"
             disabled={sending || quoteLoading}
             initialBuyerContact={buyerContactPrefill}
+            initialCartLines={rebookCartPrefill}
+            initialVisitFrequency={quoteMetadata?.visitFrequency}
+            initialQuoteBasis={quoteMetadata?.quoteBasis}
             onSubmitRequest={submitCleaningRequest}
           />
         </div>
       )}
 
-      {role === "buyer" && requiresQuoteAccept && !quoteLoading && quoteStatus !== "none" && (
+      {role === "buyer" &&
+        requiresQuoteAccept &&
+        !quoteLoading &&
+        quoteStatus !== "none" &&
+        !isRebookFormCycle &&
+        !highlightRebook && (
         <div className="px-4 py-2 border-b border-[#E5E0D8]">
           <ServiceQuoteBuyerPanel
             listingId={listingId}

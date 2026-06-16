@@ -8,8 +8,9 @@ import {
   type ServiceMenu,
 } from "@/lib/listing-service-menu";
 import ServiceMenuQuoteBuilder from "@/components/ServiceMenuQuoteBuilder";
+import { chatMessagesChanged, type ChatPollMessage } from "@/lib/listing-chat-poll";
 
-type Msg = { id: string; sender_id: string; body: string; created_at: string };
+type Msg = ChatPollMessage;
 type ConvRole = "buyer" | "seller" | null;
 
 const UI = {
@@ -86,7 +87,10 @@ export default function ConversationThread({
   const load = useCallback(async () => {
     const strings = UI[lang];
     setError("");
-    const res = await fetch(`/api/conversations/${conversationId}`, { credentials: "same-origin" });
+    const res = await fetch(`/api/conversations/${conversationId}`, {
+      credentials: "same-origin",
+      cache: "no-store",
+    });
     if (!res.ok) {
       const d = await res.json().catch(() => ({}));
       setError((d as { error?: string }).error ?? strings.loadErr);
@@ -128,26 +132,33 @@ export default function ConversationThread({
     scrollMessagesToBottom();
   }, [messages]);
 
-  // Poll for new messages
+  // Poll for new messages (provider may miss buyer-side browser events).
   useEffect(() => {
     if (!conversationId) return;
     const poll = setInterval(async () => {
       try {
-        const res = await fetch(`/api/conversations/${conversationId}`, { credentials: "same-origin" });
+        const res = await fetch(`/api/conversations/${conversationId}`, {
+          credentials: "same-origin",
+          cache: "no-store",
+        });
         if (!res.ok) return;
         const data = await res.json();
-        const fresh: typeof messages = data.messages ?? [];
-        if (fresh.length === 0) return;
-        setMessages((prev) => {
-          const lastFresh = fresh[fresh.length - 1]?.id;
-          const lastPrev = prev[prev.length - 1]?.id;
-          if (lastFresh !== lastPrev || fresh.length !== prev.length) return fresh;
-          return prev;
-        });
-      } catch { /* silent */ }
-    }, 5000);
+        const fresh: Msg[] = data.messages ?? [];
+        setMessages((prev) => (chatMessagesChanged(prev, fresh) ? fresh : prev));
+      } catch {
+        /* silent */
+      }
+    }, 4000);
     return () => clearInterval(poll);
   }, [conversationId]);
+
+  useEffect(() => {
+    const refreshOnVisible = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    document.addEventListener("visibilitychange", refreshOnVisible);
+    return () => document.removeEventListener("visibilitychange", refreshOnVisible);
+  }, [load]);
 
   // Seller: load existing agreed price for this listing+buyer pair.
   useEffect(() => {
@@ -345,20 +356,27 @@ export default function ConversationThread({
         className="max-h-[50vh] overflow-y-auto overflow-x-hidden px-4 py-3 space-y-2 min-h-[120px] overscroll-y-contain"
       >
         {messages.map((m) => {
-          const mine = myUserId && m.sender_id === myUserId;
+          const mine = myUserId && m.sender_id.trim().toLowerCase() === myUserId.trim().toLowerCase();
+          const isSystem = m.body.startsWith("[Naranjogo]");
           return (
-            <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+            <div key={m.id} className={`flex ${isSystem ? "justify-center" : mine ? "justify-end" : "justify-start"}`}>
               <div className={`flex flex-col gap-0.5 max-w-[85%] ${mine ? "items-end" : "items-start"}`}>
                 <div
                   className={`rounded-xl px-3 py-2 text-sm ${
-                    mine ? "bg-[#1B4332] text-white" : "bg-[#F4F0EB] text-[#1C1917]"
+                    isSystem
+                      ? "bg-amber-50 border border-amber-200 text-amber-950 text-xs leading-relaxed"
+                      : mine
+                        ? "bg-[#1B4332] text-white"
+                        : "bg-[#F4F0EB] text-[#1C1917]"
                   }`}
                 >
                   {m.body}
                 </div>
-                <span className={`text-[10px] tabular-nums ${mine ? "text-[#A7F3D0]" : "text-[#9CA3AF]"}`}>
-                  {formatDateTimeShort(m.created_at, lang)}
-                </span>
+                {!isSystem ? (
+                  <span className={`text-[10px] tabular-nums ${mine ? "text-[#A7F3D0]" : "text-[#9CA3AF]"}`}>
+                    {formatDateTimeShort(m.created_at, lang)}
+                  </span>
+                ) : null}
               </div>
             </div>
           );

@@ -612,7 +612,7 @@ function MyBookingsPageInner() {
         redirectUrl?: string;
       };
       if (!res.ok) throw new Error(data.message ?? data.error ?? "Error");
-      const dest = data.redirectUrl ?? `/listing/${booking.listing_id}?quote=1`;
+      const dest = data.redirectUrl ?? `/listing/${booking.listing_id}?${lang === "en" ? "lang=en&" : ""}rebook=1#listing-inapp-chat`;
       router.push(dest);
     } catch (e) {
       setRebookMsg((m) => ({
@@ -867,7 +867,7 @@ function MyBookingsPageInner() {
 
                   <div className="flex flex-wrap gap-2">
                     <Link
-                      href={`/listing/${b.listing_id}#booking-section`}
+                      href={`/listing/${b.listing_id}?${lang === "en" ? "lang=en&" : ""}rebook=1#listing-inapp-chat`}
                       className="flex-1 min-w-[120px] py-2.5 rounded-xl bg-[#1B4332] text-white text-xs font-semibold text-center hover:bg-[#2D6A4F] transition-colors"
                     >
                       {t.rebook}

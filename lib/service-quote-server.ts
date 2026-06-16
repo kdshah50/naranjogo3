@@ -123,3 +123,58 @@ export async function resolveConversationForBuyer(
     .maybeSingle();
   return conv?.id ? { id: String(conv.id), buyer_id: String(conv.buyer_id ?? buyerId) } : null;
 }
+
+/**
+ * Start a new quote cycle after a completed job (or explicit rebook).
+ * Keeps buyer contact + last menu picks in metadata; clears active quote state.
+ */
+export async function prepareQuoteGateForRebook(
+  supabase: SupabaseClient,
+  listingId: string,
+  buyerId: string,
+): Promise<{ ok: boolean; buyerId: string }> {
+  const gate = await loadServiceQuoteGate(supabase, listingId, buyerId);
+  const lineItems = gate?.quoteLineItems ?? [];
+  const existingMeta = gate?.quoteMetadata ?? {};
+  const rebookPrefill =
+    lineItems.length > 0 ? lineItems : existingMeta.rebookPrefillLineItems ?? null;
+
+  const metadata = {
+    ...existingMeta,
+    kind: "buyer_request" as const,
+    rebookPrefillLineItems: rebookPrefill ?? undefined,
+    preferredAt: undefined,
+  };
+  delete (metadata as { preferredAt?: string }).preferredAt;
+
+  const listVars = idMatchVariantsForIn(listingId);
+  const buyerVars = idMatchVariantsForIn(buyerId);
+  const { data: gateRow } = await supabase
+    .from("listing_service_contact_gate")
+    .select("buyer_id")
+    .in("listing_id", listVars)
+    .in("buyer_id", buyerVars)
+    .limit(1)
+    .maybeSingle();
+
+  const gateBuyerId = String(gateRow?.buyer_id ?? buyerId);
+  const now = new Date().toISOString();
+
+  await supabase.from("listing_service_contact_gate").upsert(
+    {
+      listing_id: listingId,
+      buyer_id: gateBuyerId,
+      contacted_in_app: true,
+      quote_status: "none",
+      quote_line_items: null,
+      quote_metadata: metadata,
+      agreed_subtotal_mxn_cents: null,
+      quote_sent_at: null,
+      quote_responded_at: null,
+      updated_at: now,
+    },
+    { onConflict: "listing_id,buyer_id" },
+  );
+
+  return { ok: true, buyerId: gateBuyerId };
+}

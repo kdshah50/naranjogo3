@@ -96,6 +96,22 @@ export function buyerContactFromMetadata(meta: ServiceQuoteMetadata | null | und
   };
 }
 
+/** Rebook prefill — contact fields only; preferred date must be chosen again. */
+export function buyerContactPrefillFromMetadata(
+  meta: ServiceQuoteMetadata | null | undefined,
+): Partial<BuyerQuoteContact> | null {
+  if (!meta?.buyerFirstName || !meta.buyerLastName || !meta.contactPhone || !meta.serviceAddress) {
+    return null;
+  }
+  return {
+    firstName: meta.buyerFirstName,
+    lastName: meta.buyerLastName,
+    contactPhone: meta.contactPhone,
+    whatsappPhone: meta.whatsappPhone ?? null,
+    serviceAddress: meta.serviceAddress,
+  };
+}
+
 export function metadataFromBuyerContact(c: BuyerQuoteContact): Pick<
   ServiceQuoteMetadata,
   | "buyerFirstName"

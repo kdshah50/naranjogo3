@@ -61,7 +61,7 @@ function MessagesInboxInner() {
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      const res = await fetch("/api/conversations/inbox", { credentials: "same-origin" });
+      const res = await fetch("/api/conversations/inbox", { credentials: "same-origin", cache: "no-store" });
       if (res.status === 401) {
         if (!cancelled) {
           setUnauth(true);
@@ -80,7 +80,7 @@ function MessagesInboxInner() {
       }
     };
     void load();
-    const t = window.setInterval(() => void load(), 25_000);
+    const t = window.setInterval(() => void load(), 8000);
     const onVis = () => {
       if (document.visibilityState === "visible") void load();
     };
