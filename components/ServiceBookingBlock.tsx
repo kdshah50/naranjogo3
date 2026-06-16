@@ -750,9 +750,28 @@ export default function ServiceBookingBlock({
             </p>
           </div>
 
-          {booking.usingAgreedPrice &&
+          {requiresQuote &&
             booking.agreedSubtotalMxnCents != null &&
             booking.agreedSubtotalMxnCents > 0 && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 leading-relaxed">
+                {listingLang === "en" ? (
+                  <>
+                    <strong>Official quote total:</strong> {formatMXN(booking.agreedSubtotalMxnCents)} — platform
+                    fee below is calculated on this amount.
+                  </>
+                ) : (
+                  <>
+                    <strong>Total de cotización oficial:</strong> {formatMXN(booking.agreedSubtotalMxnCents)} — la
+                    tarifa de plataforma abajo se calcula sobre este monto.
+                  </>
+                )}
+              </div>
+            )}
+
+          {booking.usingAgreedPrice &&
+            booking.agreedSubtotalMxnCents != null &&
+            booking.agreedSubtotalMxnCents > 0 &&
+            !requiresQuote && (
               <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 leading-relaxed">
                 {listingLang === "en" ? (
                   <>

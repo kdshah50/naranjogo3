@@ -24,7 +24,7 @@ import {
 import { applyServiceBookingStatusTruthPass } from "@/lib/booking-status-truth";
 import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
 import { providerServiceRequiresQuoteAccept } from "@/lib/provider-services";
-import { loadServiceQuoteGateForBuyerPool } from "@/lib/service-quote-server";
+import { loadServiceQuoteGateForBuyerPool, agreedGateFromQuoteRow } from "@/lib/service-quote-server";
 
 export const dynamic = "force-dynamic";
 
@@ -154,6 +154,12 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
     const myPool = await expandUserAccountIdPool(supabase, userId);
 
+    const slug = inferProviderSlugFromListingTitle(String(listing.title_es ?? ""));
+    const requiresQuoteAccept = providerServiceRequiresQuoteAccept(slug);
+    const quoteGate = requiresQuoteAccept
+      ? await loadServiceQuoteGateForBuyerPool(supabase, listingId, myPool)
+      : null;
+
     const { data: gate } = await supabase
       .from("listing_service_contact_gate")
       .select("contacted_in_app,agreed_subtotal_mxn_cents,seller_set_agreed_price_at")
@@ -242,12 +248,14 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       package_total_price_mxn: listingPricing?.package_total_price_mxn,
     };
     const listingBaseMxnCents = effectiveListingPriceMxnCents(listingPricingRow);
-    const gateForPricing = gate
-      ? {
-          agreed_subtotal_mxn_cents: gate.agreed_subtotal_mxn_cents as number | null,
-          seller_set_agreed_price_at: gate.seller_set_agreed_price_at as string | null,
-        }
-      : null;
+    const gateForPricing =
+      agreedGateFromQuoteRow(quoteGate) ??
+      (gate?.seller_set_agreed_price_at != null && gate?.agreed_subtotal_mxn_cents != null
+        ? {
+            agreed_subtotal_mxn_cents: Number(gate.agreed_subtotal_mxn_cents),
+            seller_set_agreed_price_at: String(gate.seller_set_agreed_price_at),
+          }
+        : null);
     const pricingBaseMxnCents = resolveServicePricingBaseMxnCents({
       listing: listingPricingRow,
       gate: gateForPricing,
@@ -285,9 +293,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       sellerId != null ? Boolean(await loadSellerConnectId(supabase, String(sellerId))) : false;
 
     const agreedSubtotalMxnCents =
-      gateForPricing?.seller_set_agreed_price_at != null && gateForPricing?.agreed_subtotal_mxn_cents != null
-        ? Number(gateForPricing.agreed_subtotal_mxn_cents)
-        : null;
+      quoteGate?.agreedSubtotalMxnCents != null && quoteGate.agreedSubtotalMxnCents >= 100
+        ? quoteGate.agreedSubtotalMxnCents
+        : gateForPricing?.agreed_subtotal_mxn_cents != null
+          ? Number(gateForPricing.agreed_subtotal_mxn_cents)
+          : null;
     const usingAgreedPrice =
       agreedSubtotalMxnCents != null &&
       Number.isFinite(agreedSubtotalMxnCents) &&
@@ -326,11 +336,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       };
     }
 
-    const slug = inferProviderSlugFromListingTitle(String(listing.title_es ?? ""));
-    const requiresQuoteAccept = providerServiceRequiresQuoteAccept(slug);
-    const quoteGate = requiresQuoteAccept
-      ? await loadServiceQuoteGateForBuyerPool(supabase, listingId, myPool)
-      : null;
     const quoteStatus = quoteGate?.quoteStatus ?? "none";
     const canPayDeposit = requiresQuoteAccept ? quoteStatus === "accepted" : true;
     const quoteAwaitingProvider =

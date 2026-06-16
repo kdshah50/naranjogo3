@@ -226,6 +226,18 @@ export function effectiveServiceMenuForListing(
   return starterMenuForProviderSlug(providerSlug);
 }
 
+/** Parse listing menu jsonb or fall back to provider starter template (quote-gated slugs). */
+export function resolveListingServiceMenu(
+  raw: unknown,
+  providerSlug: string | null | undefined,
+): ParsedServiceMenu {
+  const parsed = parseServiceMenu(raw);
+  if (parsed.ok) return parsed;
+  const starter = starterMenuForProviderSlug(providerSlug);
+  if (hasServiceMenu(starter)) return { ok: true, menu: starter };
+  return parsed;
+}
+
 export type ServiceMenuFormRow = { name: string; pesos: string };
 
 /** Form rows for the menu editor UI (signup or profile). */

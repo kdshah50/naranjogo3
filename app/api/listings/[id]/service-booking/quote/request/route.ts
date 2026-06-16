@@ -6,7 +6,7 @@ import {
 } from "@/lib/auth-server";
 import { buyerHasSentInAppMessage, ensureContactGateFromMessages } from "@/lib/contact-gate";
 import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
-import { parseServiceMenu } from "@/lib/listing-service-menu";
+import { resolveListingServiceMenu } from "@/lib/listing-service-menu";
 import { providerServiceRequiresQuoteAccept } from "@/lib/provider-services";
 import {
   buildMenuQuoteMessage,
@@ -23,6 +23,8 @@ import {
 } from "@/lib/buyer-quote-contact";
 import {
   insertListingChatMessage,
+  loadServiceQuoteGate,
+  replicateServiceQuoteGateToBuyerPool,
   resolveConversationForBuyer,
 } from "@/lib/service-quote-server";
 import { notifySellerBuyerServiceRequest } from "@/lib/service-quote-notify";
@@ -97,9 +99,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       return NextResponse.json({ error: "Este anuncio no usa solicitud estructurada" }, { status: 400 });
     }
 
-    const parsedMenu = parseServiceMenu(listing.service_menu);
+    const parsedMenu = resolveListingServiceMenu(listing.service_menu, slug);
     if (!parsedMenu.ok) {
-      return NextResponse.json({ error: "Menú de servicio no disponible" }, { status: 400 });
+      return NextResponse.json({ error: parsedMenu.error || "Menú de servicio no disponible" }, { status: 400 });
     }
 
     const lineItems = lineItemsFromCart(parsedMenu.menu, cartLines);
@@ -186,6 +188,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       },
       { onConflict: "listing_id,buyer_id" },
     );
+
+    const savedGate = await loadServiceQuoteGate(supabase, listingId, conv.buyer_id);
+    if (savedGate) {
+      try {
+        await replicateServiceQuoteGateToBuyerPool(supabase, listingId, conv.buyer_id, savedGate);
+      } catch (syncErr) {
+        console.error("[service-quote/request] pool sync (non-fatal)", syncErr);
+      }
+    }
 
     void notifySellerBuyerServiceRequest({
       supabase,

@@ -364,9 +364,9 @@ export default function ListingChat({
     };
   }, [role, listingId, agreedPriceBuyerId]);
 
-  const loadQuoteState = useCallback(async () => {
+  const loadQuoteState = useCallback(async (opts?: { silent?: boolean }) => {
     if (!requiresQuoteAccept) return;
-    setQuoteLoading(true);
+    if (!opts?.silent) setQuoteLoading(true);
     try {
       const buyerQuery =
         role === "seller" && agreedPriceBuyerId
@@ -397,7 +397,7 @@ export default function ListingChat({
   // Buyer: poll quote gate so rebook reset + provider quote appear without refresh.
   useEffect(() => {
     if (role !== "buyer" || !requiresQuoteAccept) return;
-    const t = setInterval(() => void loadQuoteState(), 5000);
+    const t = setInterval(() => void loadQuoteState({ silent: true }), 5000);
     return () => clearInterval(t);
   }, [role, requiresQuoteAccept, loadQuoteState]);
 
@@ -524,7 +524,12 @@ export default function ListingChat({
     };
 
     void (async () => {
+      const awaitingProvider =
+        quoteStatus === "none" && (quoteLineItems?.length ?? 0) > 0;
+      const activeQuote = quoteStatus === "pending" || quoteStatus === "accepted";
+
       if (highlightRebook) {
+        if (awaitingProvider || activeQuote) return;
         await runRebookPrepare("highlight");
         return;
       }
@@ -542,12 +547,10 @@ export default function ListingChat({
         const paidSt = String(d.paidBookingStatus ?? "").toLowerCase();
         if (paidSt !== "completed") return;
 
-        const needsReset =
-          quoteStatus === "accepted" ||
-          quoteStatus === "pending" ||
-          (quoteStatus === "none" && (quoteLineItems?.length ?? 0) > 0);
-
-        if (needsReset) await runRebookPrepare("completed");
+        // Only clear stale accepted/pending from a prior job — never wipe a fresh buyer request.
+        if (quoteStatus === "accepted" || quoteStatus === "pending") {
+          await runRebookPrepare("completed");
+        }
       } catch {
         /* non-fatal */
       }
@@ -777,11 +780,11 @@ export default function ListingChat({
   const showBuyerQuotePanel =
     role === "buyer" &&
     requiresQuoteAccept &&
-    !quoteLoading &&
     !rebookPreparing &&
     quoteNeedsBuyerResponse;
   const rebookCartPrefill =
     rebookPrefillLines?.map((x) => ({ sku: x.sku, qty: x.qty })) ?? undefined;
+  const buyerFormKey = `${listingId}-${highlightRebook ? "rebook" : "new"}-${rebookPrefillLines?.length ?? 0}`;
 
   const refreshBuyerChat = async () => {
     await loadListingScope();
@@ -1012,6 +1015,7 @@ export default function ListingChat({
             </p>
           ) : null}
           <ServiceMenuQuoteBuilder
+            key={buyerFormKey}
             menu={effectiveMenu}
             lang={lang === "en" ? "en" : "es"}
             quoteLayout={quoteLayout}

@@ -107,6 +107,23 @@ export async function loadServiceQuoteGateForBuyerPool(
   return best;
 }
 
+/** Map quote gate row → pricing override for commission / checkout base. */
+export function agreedGateFromQuoteRow(
+  gate: ServiceQuoteGateRow | null | undefined,
+): { agreed_subtotal_mxn_cents: number; seller_set_agreed_price_at: string } | null {
+  if (
+    gate?.sellerSetAgreedPriceAt &&
+    gate.agreedSubtotalMxnCents != null &&
+    gate.agreedSubtotalMxnCents >= 100
+  ) {
+    return {
+      agreed_subtotal_mxn_cents: gate.agreedSubtotalMxnCents,
+      seller_set_agreed_price_at: gate.sellerSetAgreedPriceAt,
+    };
+  }
+  return null;
+}
+
 export async function insertListingChatMessage(
   supabase: SupabaseClient,
   conversationId: string,

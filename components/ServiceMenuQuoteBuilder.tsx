@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   computeHousekeepingQuoteTotals,
   computeServiceMenuQuoteCents,
@@ -99,6 +99,11 @@ export default function ServiceMenuQuoteBuilder({
   const [serviceAddress, setServiceAddress] = useState("");
   const [preferredAtLocal, setPreferredAtLocal] = useState("");
   const [contactErr, setContactErr] = useState("");
+  const cartPrefillAppliedRef = useRef(false);
+
+  useEffect(() => {
+    cartPrefillAppliedRef.current = false;
+  }, [menu, variant]);
 
   useEffect(() => {
     if (variant !== "buyer" || !requiresBuyerContact || !initialBuyerContact) return;
@@ -117,7 +122,8 @@ export default function ServiceMenuQuoteBuilder({
   ]);
 
   useEffect(() => {
-    if (!initialCartLines?.length) return;
+    if (!initialCartLines?.length || cartPrefillAppliedRef.current) return;
+    cartPrefillAppliedRef.current = true;
     const next: Record<string, number> = {};
     for (const { sku, qty } of initialCartLines) {
       if (sku && qty > 0) next[sku] = qty;
