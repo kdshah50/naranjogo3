@@ -12,6 +12,11 @@ import ServiceQuoteBuyerPanel from "@/components/ServiceQuoteBuyerPanel";
 import ServiceQuoteSellerRequestPanel from "@/components/ServiceQuoteSellerRequestPanel";
 import type { ServiceQuoteLineItem, ServiceQuoteMetadata, ServiceQuoteStatus } from "@/lib/service-quote";
 import { chatMessagesChanged, type ChatPollMessage } from "@/lib/listing-chat-poll";
+import {
+  conversationDayKey,
+  formatConversationDayLabel,
+  formatDateTimeShort,
+} from "@/lib/locale-format";
 
 type Msg = ChatPollMessage;
 
@@ -21,6 +26,7 @@ type Thread = {
   buyer_name: string;
   last_body: string;
   last_at: string;
+  ticket_code?: string | null;
 };
 
 export default function ListingChat({
@@ -65,6 +71,8 @@ export default function ListingChat({
   const [error, setError] = useState("");
   const [role, setRole] = useState<"buyer" | "seller" | null>(null);
   const [threads, setThreads] = useState<Thread[]>([]);
+  const [threadsTotal, setThreadsTotal] = useState(0);
+  const [buyerTicketCode, setBuyerTicketCode] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   /** Seller: buyer_id for the open thread — stable; do not tie agreed-price fetch to `threads` poll refreshes. */
   const [agreedPriceBuyerId, setAgreedPriceBuyerId] = useState<string | null>(null);
@@ -152,7 +160,9 @@ export default function ListingChat({
     setRole(data.role);
     if (data.role === "seller") {
       setThreads(data.threads ?? []);
+      setThreadsTotal(Number(data.threadsTotal ?? data.threads?.length ?? 0));
     } else {
+      setBuyerTicketCode((data.ticket_code as string | null | undefined) ?? null);
       if (data.conversation?.id) {
         setSelectedId(data.conversation.id);
         const fresh: Msg[] = data.messages ?? [];
@@ -822,7 +832,14 @@ export default function ListingChat({
       <div className="px-4 py-3 border-b border-[#E5E0D8] bg-[#F4F0EB] flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-bold text-[#1C1917]">Mensajes en la app</h3>
-          <p className="text-xs text-[#6B7280] mt-0.5">El vendedor verá tus mensajes aquí y en “Mensajes”.</p>
+          <p className="text-xs text-[#6B7280] mt-0.5">
+            {lang === "en"
+              ? "Primary channel for quotes and updates. WhatsApp sends alerts with a link back here."
+              : "Canal principal para cotizaciones y avisos. WhatsApp envía alertas con enlace de regreso."}
+          </p>
+          {role === "buyer" && buyerTicketCode ? (
+            <p className="text-xs font-mono font-bold text-[#065F46] mt-1">{buyerTicketCode}</p>
+          ) : null}
         </div>
         {showFullListingLink && fullListingHref ? (
           <Link
@@ -858,11 +875,14 @@ export default function ListingChat({
       {role === "seller" && threads.length > 0 && (
         <div className="border-b border-[#E5E0D8]">
           <p className="px-4 pt-2 pb-1 text-[10px] font-bold text-[#6B7280] uppercase tracking-wider">
-            Compradores ({threads.length})
+            {lang === "en"
+              ? `Recent buyers (${threads.length}${threadsTotal > threads.length ? ` of ${threadsTotal}` : ""})`
+              : `Compradores recientes (${threads.length}${threadsTotal > threads.length ? ` de ${threadsTotal}` : ""})`}
           </p>
           <div className="max-h-36 overflow-y-auto divide-y divide-[#E5E0D8]">
             {threads.map((t) => {
               const isActive = selectedId === t.conversationId;
+              const label = t.ticket_code ? `${t.ticket_code} · ${t.buyer_name}` : t.buyer_name;
               return (
                 <button
                   key={t.conversationId}
@@ -878,9 +898,14 @@ export default function ListingChat({
                     {(t.buyer_name?.[0] ?? "C").toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <span className={`font-semibold ${isActive ? "text-[#065F46]" : "text-[#1C1917]"}`}>
-                      {t.buyer_name}
-                    </span>
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className={`font-semibold truncate ${isActive ? "text-[#065F46]" : "text-[#1C1917]"}`}>
+                        {label}
+                      </span>
+                      <span className="text-[10px] text-[#9CA3AF] shrink-0 tabular-nums">
+                        {formatDateTimeShort(t.last_at, lang)}
+                      </span>
+                    </div>
                     <span className="block text-xs text-[#6B7280] truncate">{t.last_body || "Sin mensajes aún"}</span>
                   </div>
                   {isActive && <span className="text-[#059669] text-xs">●</span>}
@@ -888,6 +913,13 @@ export default function ListingChat({
               );
             })}
           </div>
+          {threadsTotal > threads.length ? (
+            <p className="px-4 py-2 text-[10px] text-[#6B7280] border-t border-[#E5E0D8]">
+              <Link href="/messages" className="font-semibold text-[#1B4332] hover:underline">
+                {lang === "en" ? "All conversations in Messages" : "Todas las conversaciones en Mensajes"}
+              </Link>
+            </p>
+          ) : null}
         </div>
       )}
 
@@ -904,7 +936,10 @@ export default function ListingChat({
               {(active.buyer_name?.[0] ?? "C").toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-[#065F46]">Chateando con: {active.buyer_name}</p>
+              <p className="text-sm font-bold text-[#065F46] truncate">
+                {active.ticket_code ? `${active.ticket_code} · ` : ""}
+                {lang === "en" ? "Chat with" : "Chateando con"}: {active.buyer_name}
+              </p>
             </div>
             <span className="text-[10px] text-[#059669] font-semibold px-2 py-0.5 rounded-full bg-[#D1FAE5]">Activo</span>
           </div>
@@ -1092,21 +1127,38 @@ export default function ListingChat({
         ref={messagesScrollRef}
         className="max-h-64 overflow-y-auto overflow-x-hidden px-4 py-3 space-y-2 overscroll-y-contain"
       >
-        {messages.map((m) => {
+        {messages.map((m, idx) => {
           const mine = myUserId && m.sender_id === myUserId;
           const isSystem = m.body.startsWith("[Naranjogo]");
+          const dayKey = conversationDayKey(m.created_at);
+          const prevDayKey = idx > 0 ? conversationDayKey(messages[idx - 1].created_at) : null;
+          const showDay = dayKey !== prevDayKey;
           return (
-            <div key={m.id} className={`flex ${isSystem ? "justify-center" : mine ? "justify-end" : "justify-start"}`}>
-              <div
-                className={`max-w-[85%] rounded-xl px-3 py-2 text-sm ${
-                  isSystem
-                    ? "bg-amber-50 border border-amber-200 text-amber-950 text-xs leading-relaxed"
-                    : mine
-                      ? "bg-[#1B4332] text-white"
-                      : "bg-[#F4F0EB] text-[#1C1917]"
-                }`}
-              >
-                {m.body}
+            <div key={m.id} className="space-y-2">
+              {showDay ? (
+                <p className="text-center text-[10px] font-semibold text-[#9CA3AF] uppercase tracking-wide py-1">
+                  {formatConversationDayLabel(m.created_at, lang)}
+                </p>
+              ) : null}
+              <div className={`flex ${isSystem ? "justify-center" : mine ? "justify-end" : "justify-start"}`}>
+                <div className={`flex flex-col gap-0.5 max-w-[85%] ${mine ? "items-end" : "items-start"}`}>
+                  <div
+                    className={`rounded-xl px-3 py-2 text-sm ${
+                      isSystem
+                        ? "bg-amber-50 border border-amber-200 text-amber-950 text-xs leading-relaxed"
+                        : mine
+                          ? "bg-[#1B4332] text-white"
+                          : "bg-[#F4F0EB] text-[#1C1917]"
+                    }`}
+                  >
+                    {m.body}
+                  </div>
+                  {!isSystem ? (
+                    <span className={`text-[10px] tabular-nums ${mine ? "text-[#9CA3AF]" : "text-[#9CA3AF]"}`}>
+                      {formatDateTimeShort(m.created_at, lang)}
+                    </span>
+                  ) : null}
+                </div>
               </div>
             </div>
           );

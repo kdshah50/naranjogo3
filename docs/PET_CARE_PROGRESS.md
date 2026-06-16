@@ -1,5 +1,7 @@
 # Pet Care Services — Progress Log
 
+> **Merge reminder:** Pet Care preview (`pet-care-service`) is behind `housekeeping-service`. After PM signs off on cleaning E2E, merge `housekeeping-service` into this branch before pet care testing. See `docs/HOUSEKEEPING_PROGRESS.md` → "Before testing Pet Care or Veterinary".
+
 Mirror format of `docs/VETERINARY_PROGRESS.md` and `docs/HOUSEKEEPING_PROGRESS.md`.
 
 ---

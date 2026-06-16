@@ -114,3 +114,49 @@ Only after real booking demand.
 ## Rollback
 
 Remove `limpieza` from `PROVIDER_SERVICES_WITH_MENU` and redeploy — listings with menus keep data until cleared.
+
+---
+
+## PM sign-off checklist (Jun 2026 — `housekeeping-service` @ `da1f1ea`)
+
+Preview: `https://naranjogo3-git-housekeeping-service-jigna-shahs-projects.vercel.app`
+
+**Buyer — new booking**
+
+- [ ] Book again / rebook → contact form + service menu (prefill OK)
+- [ ] Submit request → provider sees message + WhatsApp
+- [ ] Provider sends official quote → buyer sees **Accept / Reject** (chat + booking section)
+- [ ] Accept → deposit fee matches **quoted total** (~10% of quote, not listing default)
+- [ ] Pay deposit → **NG- ticket** appears in My bookings + WhatsApp
+
+**Buyer — rebook after completed/cancelled**
+
+- [ ] Cancelled/completed card → **Book again** → fresh request cycle (no wiped request)
+
+**Provider**
+
+- [ ] In-app messages update without manual refresh (~4–8s)
+- [ ] Request panel → send quote → buyer notified
+
+**Supabase (once per environment)**
+
+- [ ] `20260605120000_service_quote_gate.sql`
+- [ ] `20260606120000_housekeeping_balance_tip_appointment.sql`
+
+---
+
+## Before testing Pet Care or Veterinary previews — MERGE REMINDER
+
+Today's quote/rebook fixes are **only on `housekeeping-service`** until merged.
+
+When PM approves housekeeping, **before** E2E on other branches:
+
+1. Merge `housekeeping-service` → `pet-care-service` → push (redeploy pet preview)
+2. Merge `housekeeping-service` → `veterinary-service` → push (redeploy vet preview)
+3. Run same Supabase migrations on shared DB if not applied
+
+Shared fixes (all quote-gated slugs): contact form, Accept/Reject, fee on quote, chat polling, rebook gate, starter menu fallback.
+
+Pet Care slugs: `paseador`, `pet_sitting`, `estetica_canina`. Vet: `veterinaria`.
+
+See also: `docs/PET_CARE_PROGRESS.md`, `docs/VETERINARY_PROGRESS.md`.

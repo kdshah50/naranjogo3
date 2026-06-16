@@ -42,8 +42,8 @@ const BS: Record<
     seller: string;
     feePaid: string;
     providerContact: string;
-    waBtn: string;
-    waNote: string;
+    inAppBtn: string;
+    inAppNote: string;
     backListing: string;
     myBookings: string;
     messages: string;
@@ -79,9 +79,9 @@ const BS: Record<
     retryBtn: "Reintentar confirmación",
     seller: "Proveedor:",
     feePaid: "Tarifa pagada:",
-    providerContact: "Contacto del proveedor",
-    waBtn: "Contactar por WhatsApp",
-    waNote: "Abrimos WhatsApp por ti; no mostramos el número en pantalla.",
+    providerContact: "Siguiente paso",
+    inAppBtn: "Abrir mensajes en la app",
+    inAppNote: "Canal principal para coordinar. WhatsApp solo envía alertas con enlace de regreso.",
     backListing: "← Volver al anuncio",
     myBookings: "Mis reservas",
     messages: "Mensajes",
@@ -90,7 +90,7 @@ const BS: Record<
     problems: "¿Problemas con el servicio?",
     refund: "Solicita un reembolso",
     contactFooter:
-      "Este contacto también está disponible en la página del servicio mientras tu reserva esté activa.",
+      "Los mensajes del servicio están en la app y en la página del anuncio mientras tu reserva esté activa.",
     guaranteeCta: "Centro de garantía y ayuda",
     bookingLifecycleHeading: "Estado del servicio",
     bookingLifecycleHint:
@@ -119,9 +119,9 @@ const BS: Record<
     retryBtn: "Retry confirmation",
     seller: "Provider:",
     feePaid: "Platform fee paid:",
-    providerContact: "Provider contact",
-    waBtn: "Contact via WhatsApp",
-    waNote: "We open WhatsApp for you; we don't show the phone number on screen.",
+    providerContact: "Next step",
+    inAppBtn: "Open in-app messages",
+    inAppNote: "Primary channel to coordinate. WhatsApp only sends alerts with a link back here.",
     backListing: "← Back to listing",
     myBookings: "My bookings",
     messages: "Messages",
@@ -129,7 +129,7 @@ const BS: Record<
       "When the provider marks the service complete, we'll notify you on WhatsApp so you can leave your review in",
     problems: "Issues with the service?",
     refund: "Request a refund",
-    contactFooter: "This contact is also on the service page while your booking is active.",
+    contactFooter: "Service messages live in the app and on the listing page while your booking is active.",
     guaranteeCta: "Guarantee & support hub",
     bookingLifecycleHeading: "Booking status",
     bookingLifecycleHint:
@@ -397,20 +397,16 @@ function BookingSuccessContent() {
             </div>
           )}
 
-          {/* WhatsApp only — phone number not shown */}
-          {isPaid && data.contact?.whatsappUrl && (
+          {isPaid && data.listingId && (
             <div className="px-6 py-5 space-y-3">
               <p className="text-xs text-[#6B7280] font-medium uppercase tracking-wide">{t.providerContact}</p>
-              <a
-                href={data.contact.whatsappUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full py-4 rounded-xl font-semibold text-base flex items-center justify-center gap-2 transition-colors"
-                style={{ background: "#25D366", color: "white" }}
+              <Link
+                href={withLang(`/listing/${data.listingId}#listing-inapp-chat`, lang)}
+                className="w-full py-4 rounded-xl font-semibold text-base flex items-center justify-center gap-2 bg-[#1B4332] text-white transition-colors hover:brightness-110"
               >
-                {t.waBtn}
-              </a>
-              <p className="text-[11px] text-[#6B7280] text-center leading-snug">{t.waNote}</p>
+                {t.inAppBtn}
+              </Link>
+              <p className="text-[11px] text-[#6B7280] text-center leading-snug">{t.inAppNote}</p>
             </div>
           )}
 

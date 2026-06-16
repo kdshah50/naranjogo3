@@ -1,5 +1,7 @@
 # Veterinary Services MVP — Progress Log
 
+> **Merge reminder:** Vet preview (`veterinary-service`) is behind `housekeeping-service`. After PM signs off on cleaning E2E, merge `housekeeping-service` into this branch before vet quote-flow testing. See `docs/HOUSEKEEPING_PROGRESS.md` → "Before testing Pet Care or Veterinary".
+
 A running log of what's built, what's deployed, and how to verify each step.
 Mirror format of `docs/TAILORING_PROGRESS.md`. Keep updating after every step.
 

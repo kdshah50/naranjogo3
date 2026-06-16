@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Lang } from "@/lib/i18n-lang";
-import { formatDateTimeShort } from "@/lib/locale-format";
+import { formatDateTimeShort, conversationDayKey, formatConversationDayLabel } from "@/lib/locale-format";
 import {
   hasServiceMenu,
   type ServiceMenu,
@@ -69,6 +69,7 @@ export default function ConversationThread({
   const [error, setError] = useState("");
   const [title, setTitle] = useState("");
   const [otherName, setOtherName] = useState("");
+  const [ticketCode, setTicketCode] = useState<string | null>(null);
   const [role, setRole] = useState<ConvRole>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [draft, setDraft] = useState("");
@@ -102,6 +103,7 @@ export default function ConversationThread({
     setTitle(data.listing?.title_es ?? strings.conversation);
     setRole(data.role ?? null);
     setOtherName(data.other_name ?? "");
+    setTicketCode((data.ticket_code as string | null | undefined) ?? null);
     const listingFromApi = data.listing as
       | { id?: string; service_menu?: ServiceMenu | null; category_id?: string | null }
       | undefined;
@@ -287,7 +289,10 @@ export default function ConversationThread({
   return (
     <div className="rounded-xl border border-[#E5E0D8] bg-white overflow-hidden">
       <div className="px-4 py-3 border-b border-[#E5E0D8] bg-[#F4F0EB]">
-        <h1 className="text-sm font-bold text-[#1C1917] truncate">{title}</h1>
+        <h1 className="text-sm font-bold text-[#1C1917] truncate">
+          {ticketCode ? `${ticketCode} · ` : ""}
+          {title}
+        </h1>
         {otherName && (
           <p className="text-xs text-[#065F46] font-semibold mt-0.5">
             {role === "seller" ? u.buyer : u.seller}: {otherName}
@@ -355,28 +360,38 @@ export default function ConversationThread({
         ref={messagesScrollRef}
         className="max-h-[50vh] overflow-y-auto overflow-x-hidden px-4 py-3 space-y-2 min-h-[120px] overscroll-y-contain"
       >
-        {messages.map((m) => {
+        {messages.map((m, idx) => {
           const mine = myUserId && m.sender_id.trim().toLowerCase() === myUserId.trim().toLowerCase();
           const isSystem = m.body.startsWith("[Naranjogo]");
+          const dayKey = conversationDayKey(m.created_at);
+          const prevDayKey = idx > 0 ? conversationDayKey(messages[idx - 1].created_at) : null;
+          const showDay = dayKey !== prevDayKey;
           return (
-            <div key={m.id} className={`flex ${isSystem ? "justify-center" : mine ? "justify-end" : "justify-start"}`}>
-              <div className={`flex flex-col gap-0.5 max-w-[85%] ${mine ? "items-end" : "items-start"}`}>
-                <div
-                  className={`rounded-xl px-3 py-2 text-sm ${
-                    isSystem
-                      ? "bg-amber-50 border border-amber-200 text-amber-950 text-xs leading-relaxed"
-                      : mine
-                        ? "bg-[#1B4332] text-white"
-                        : "bg-[#F4F0EB] text-[#1C1917]"
-                  }`}
-                >
-                  {m.body}
+            <div key={m.id} className="space-y-2">
+              {showDay ? (
+                <p className="text-center text-[10px] font-semibold text-[#9CA3AF] uppercase tracking-wide py-1">
+                  {formatConversationDayLabel(m.created_at, lang)}
+                </p>
+              ) : null}
+              <div className={`flex ${isSystem ? "justify-center" : mine ? "justify-end" : "justify-start"}`}>
+                <div className={`flex flex-col gap-0.5 max-w-[85%] ${mine ? "items-end" : "items-start"}`}>
+                  <div
+                    className={`rounded-xl px-3 py-2 text-sm ${
+                      isSystem
+                        ? "bg-amber-50 border border-amber-200 text-amber-950 text-xs leading-relaxed"
+                        : mine
+                          ? "bg-[#1B4332] text-white"
+                          : "bg-[#F4F0EB] text-[#1C1917]"
+                    }`}
+                  >
+                    {m.body}
+                  </div>
+                  {!isSystem ? (
+                    <span className="text-[10px] tabular-nums text-[#9CA3AF]">
+                      {formatDateTimeShort(m.created_at, lang)}
+                    </span>
+                  ) : null}
                 </div>
-                {!isSystem ? (
-                  <span className={`text-[10px] tabular-nums ${mine ? "text-[#A7F3D0]" : "text-[#9CA3AF]"}`}>
-                    {formatDateTimeShort(m.created_at, lang)}
-                  </span>
-                ) : null}
               </div>
             </div>
           );

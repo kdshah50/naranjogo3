@@ -375,13 +375,13 @@ export default function ServiceBookingBlock({
 
   const liveHintEn =
     liveAvailability?.syncEnabled && (liveAvailability.upcomingSlotCount ?? 0) > 0
-      ? " You can reference a time from the live openings above; the provider still confirms on WhatsApp."
+      ? " You can reference a time from the live openings above; the provider confirms in app messages."
       : liveAvailability?.syncEnabled
         ? " This provider syncs their office calendar here; new openings appear when their agenda updates."
         : "";
   const liveHintEs =
     liveAvailability?.syncEnabled && (liveAvailability.upcomingSlotCount ?? 0) > 0
-      ? " Puedes citar un horario de los espacios en azul arriba; el proveedor confirma por WhatsApp."
+      ? " Puedes citar un horario de los espacios en azul arriba; el proveedor confirma en los mensajes de la app."
       : liveAvailability?.syncEnabled
         ? " Este proveedor sincroniza su agenda en la app; los espacios se actualizan cuando cambia su calendario."
         : "";
@@ -391,20 +391,20 @@ export default function ServiceBookingBlock({
       ? {
           label: "Message for the provider (optional)",
           hint:
-            "Suggest times that work for you (e.g. weekday mornings, after 4pm). The exact time is confirmed on WhatsApp — not by this note alone." +
+            "Suggest times that work for you (e.g. weekday mornings, after 4pm). The exact time is confirmed in app messages — not by this note alone." +
             liveHintEn,
           ph: "Preferred windows: e.g. Tue/Thu afternoons, or Sat before 1pm…",
         }
       : {
           label: "Mensaje para el proveedor (opcional)",
           hint:
-            "Indica horarios o días que te funcionan (ej. mañanas, después de las 16 h). La hora exacta se confirma por WhatsApp — no solo con esta nota." +
+            "Indica horarios o días que te funcionan (ej. mañanas, después de las 16 h). La hora exacta se confirma en los mensajes de la app — no solo con esta nota." +
             liveHintEs,
           ph: "Ventanas preferidas: ej. mar/jue por la tarde, o sábado antes de 13 h…",
         };
 
-  // STEP 3: Contact revealed — buyer has paid (WhatsApp link only; phone not exposed in UI/API)
-  if (hasPaid && booking.revealedWhatsappUrl) {
+  // STEP 3: Paid — in-app messaging primary (no WhatsApp green bar for buyers)
+  if (hasPaid) {
     const paidTitle =
       listingLang === "en"
         ? isService
@@ -416,32 +416,16 @@ export default function ServiceBookingBlock({
 
     const paidLeadService =
       listingLang === "en"
-        ? "You've already paid the service fee. The service provider will contact you shortly to confirm your scheduled booking time."
-        : "Ya pagaste la tarifa de servicio. El proveedor te contactará en breve para confirmar la fecha y hora de tu reserva.";
+        ? "Your deposit is confirmed. Continue in app messages below for scheduling and updates — we also send WhatsApp alerts with a link back here."
+        : "Tu depósito está confirmado. Sigue en los mensajes de la app abajo para agendar y recibir avisos — también enviamos alertas por WhatsApp con enlace de regreso.";
 
     const paidLeadGoods =
       listingLang === "en"
-        ? "You've already paid the connection fee. Open WhatsApp below to message the seller."
-        : "Ya pagaste la tarifa de conexión. Abre WhatsApp abajo para escribir al vendedor.";
+        ? "Your connection fee is paid. Message the seller in the app below — WhatsApp alerts include a link back here."
+        : "Ya pagaste la tarifa de conexión. Escribe al vendedor en la app abajo — las alertas por WhatsApp incluyen enlace de regreso.";
 
-    const whatsAppCta =
-      listingLang === "en"
-        ? isService
-          ? "Contact your service provider"
-          : "Contact on WhatsApp"
-        : isService
-          ? "Contactar al proveedor del servicio"
-          : "Contactar por WhatsApp";
-
-    const paidFooterService =
-      listingLang === "en"
-        ? "You can reach the provider sooner via the green button below. Naranjogo does not hold the provider's calendar — timing is agreed between you and the provider."
-        : "Si quieres adelantar contacto con el proveedor del servicio, usa el botón verde abajo. Naranjogo no aparta la agenda del proveedor: la hora la acuerdan ustedes.";
-
-    const paidFooterGoods =
-      listingLang === "en"
-        ? "Confirm date and time with the seller on WhatsApp. Naranjogo does not reserve their calendar — agreement is between you and the seller."
-        : "Confirma fecha y hora exactas con el vendedor por WhatsApp. Naranjogo no aparta la agenda del vendedor: el acuerdo es entre ustedes.";
+    const inAppCta =
+      listingLang === "en" ? "Open in-app messages" : "Abrir mensajes en la app";
 
     return (
       <div className="rounded-xl border border-emerald-200 bg-emerald-50 overflow-hidden">
@@ -455,8 +439,8 @@ export default function ServiceBookingBlock({
           {booking.hasPackage && booking.packageSessionCount != null && booking.packageSessionCount >= 2 && (
             <p className="text-xs text-emerald-900 font-medium bg-white/60 rounded-lg px-2 py-1.5 border border-emerald-200/80">
               {listingLang === "en"
-                ? `This payment covers your ${booking.packageSessionCount}-visit plan. Schedule each visit on WhatsApp—your next rebook on Naranjogo can unlock loyalty discounts.`
-                : `Este pago cubre tu plan de ${booking.packageSessionCount} visitas. Agenda cada cita por WhatsApp; tu próxima reserva en Naranjogo puede sumar descuentos por lealtad.`}
+                ? `This payment covers your ${booking.packageSessionCount}-visit plan. Schedule each visit in app messages — your next rebook on Naranjogo can unlock loyalty discounts.`
+                : `Este pago cubre tu plan de ${booking.packageSessionCount} visitas. Agenda cada cita en los mensajes de la app; tu próxima reserva en Naranjogo puede sumar descuentos por lealtad.`}
             </p>
           )}
           {(booking.paidBookingStatus || booking.ticketCode) && (
@@ -482,20 +466,15 @@ export default function ServiceBookingBlock({
               )}
             </div>
           )}
-          {booking.revealedWhatsappUrl && (
-            <a
-              href={booking.revealedWhatsappUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="w-full py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-colors"
-              style={{ background: "#25D366", color: "white" }}
-            >
-              {whatsAppCta}
-            </a>
-          )}
-          <p className="text-xs text-emerald-900/90 leading-relaxed border-t border-emerald-200/60 pt-3">
-            {isService ? paidFooterService : paidFooterGoods}
-          </p>
+          <button
+            type="button"
+            onClick={() => {
+              document.getElementById("listing-inapp-chat")?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+            className="w-full py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 bg-[#1B4332] text-white transition-colors hover:brightness-110"
+          >
+            {inAppCta}
+          </button>
         </div>
       </div>
     );

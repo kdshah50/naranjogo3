@@ -5,6 +5,7 @@ import {
   idMatchVariantsForIn,
 } from "@/lib/auth-server";
 import { expandUserAccountIdPool, poolsOverlap, userParticipatesInConversation } from "@/lib/user-account-pool";
+import { latestTicketForListingBuyer } from "@/lib/conversation-ticket";
 
 export const dynamic = "force-dynamic";
 
@@ -70,12 +71,15 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         || (otherUser?.phone ? `…${otherUser.phone.replace(/\D/g, "").slice(-4)}` : "");
     }
 
+    const ticketCode = await latestTicketForListingBuyer(supabase, conv.listing_id, conv.buyer_id);
+
     return NextResponse.json({
       conversation: conv,
       listing: listing ?? { id: conv.listing_id, title_es: "", seller_id: conv.seller_id },
       messages: messages ?? [],
       role: isSeller ? "seller" : "buyer",
       other_name: otherName,
+      ticket_code: ticketCode,
     });
   } catch (e) {
     console.error("[conversations/:id] GET", e);

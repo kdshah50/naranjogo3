@@ -6,7 +6,7 @@ import ServiceBookingBlock from "@/components/ServiceBookingBlock";
 import ServiceMenuPublic from "@/components/ServiceMenuPublic";
 import type { ServiceMenu } from "@/lib/listing-service-menu";
 import { effectiveServiceMenuForListing } from "@/lib/listing-service-menu";
-import WhatsAppCTA from "@/components/WhatsAppCTA";
+import ListingInAppCTA from "@/components/ListingInAppCTA";
 import SellerReviews, { RatingSummary } from "@/components/SellerReviews";
 import ReportButton from "@/components/ReportButton";
 import GuaranteeBadge from "@/components/GuaranteeBadge";
@@ -253,8 +253,8 @@ export default async function ListingPage({
               </p>
               <p className="text-[10px] text-[#059669] mt-2 leading-snug">
                 {listingLang === "en"
-                  ? "Exact time for your visit is agreed on WhatsApp after you connect."
-                  : "La hora exacta del servicio se acuerda por WhatsApp al conectar con el proveedor."}
+                  ? "Exact visit time is agreed in app messages after you connect."
+                  : "La hora exacta del servicio se acuerda en los mensajes de la app al conectar."}
               </p>
             </div>
           )}
@@ -266,22 +266,8 @@ export default async function ListingPage({
             slots={liveSlots}
           />
         )}
-        {/* WhatsApp CTA — hero button (contact gate + commission same as services) */}
         <div className="mb-6">
-          <WhatsAppCTA listingId={params.id} lang={listingLang} serviceListing={isServiceListing} />
-          <p className="text-center text-xs text-[#6B7280] mt-2">
-            {listingLang === "en"
-              ? isServiceListing
-                ? packagePromoActive
-                  ? "Multi-visit plan: first send a message in the app to schedule, pay one platform fee, and you will be contacted by the provider for the full plan."
-                  : "First, send a message in the app to schedule, pay the platform fee, and you will be contacted by the provider."
-                : "Message in the app, pay the connection fee, then you’ll get the seller’s WhatsApp."
-              : isServiceListing
-                ? packagePromoActive
-                  ? "Plan de varias visitas: primero escribe en la app para agendar, paga una sola tarifa de plataforma y el proveedor te contactará para todo el plan."
-                  : "Primero envía un mensaje en la app para agendar, paga la tarifa de plataforma y el proveedor te contactará."
-                : "Escribe por la app, paga la tarifa de conexión y recibirás el WhatsApp del vendedor."}
-          </p>
+          <ListingInAppCTA lang={listingLang} serviceListing={isServiceListing} />
         </div>
 
         {!isServiceListing && (

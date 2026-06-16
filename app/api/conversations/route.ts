@@ -5,6 +5,7 @@ import {
   poolsOverlap,
   userIsListingSellerAccount,
 } from "@/lib/user-account-pool";
+import { latestTicketsForListingBuyers, MAX_INBOX_THREADS, latestTicketForListingBuyer } from "@/lib/conversation-ticket";
 
 export const dynamic = "force-dynamic";
 
@@ -86,6 +87,8 @@ export async function GET(req: NextRequest) {
         }
       }
 
+      const ticketMap = await latestTicketsForListingBuyers(supabase, listing.id, buyerIds);
+
       const threads = await Promise.all(
         convs.map(async (c) => {
           const { data: last } = await supabase
@@ -104,14 +107,20 @@ export async function GET(req: NextRequest) {
             buyer_name: buyerLabel,
             last_body: last?.body ?? "",
             last_at: last?.created_at ?? c.updated_at,
+            ticket_code: ticketMap.get(c.buyer_id.trim().toLowerCase()) ?? null,
           };
         })
       );
 
+      threads.sort((a, b) => new Date(b.last_at).getTime() - new Date(a.last_at).getTime());
+      const threadsTotal = threads.length;
+
       return NextResponse.json({
         role: "seller",
         listing: { id: listing.id, title_es: listing.title_es },
-        threads,
+        threads: threads.slice(0, MAX_INBOX_THREADS),
+        threadsTotal,
+        hasMoreThreads: threadsTotal > MAX_INBOX_THREADS,
       });
     }
 
@@ -134,6 +143,7 @@ export async function GET(req: NextRequest) {
         listing: { id: listing.id, title_es: listing.title_es },
         conversation: null,
         messages: [],
+        ticket_code: null,
       });
     }
 
@@ -148,11 +158,14 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "No se pudo cargar mensajes" }, { status: 500 });
     }
 
+    const ticketCode = await latestTicketForListingBuyer(supabase, listing.id, userId);
+
     return NextResponse.json({
       role: "buyer",
       listing: { id: listing.id, title_es: listing.title_es },
       conversation: { id: conv.id },
       messages: messages ?? [],
+      ticket_code: ticketCode,
     });
   } catch (e) {
     console.error("[conversations] GET", e);

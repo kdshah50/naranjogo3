@@ -14,6 +14,7 @@ type Thread = {
   other_name: string;
   last_body: string;
   last_at: string;
+  ticket_code?: string | null;
 };
 
 const COPY: Record<
@@ -27,27 +28,30 @@ const COPY: Record<
     roleBuyer: string;
     roleSeller: string;
     noPreview: string;
+    showingRecent: string;
   }
 > = {
   es: {
     loginPrompt: "Inicia sesión para ver tus mensajes.",
     loginLink: "Entrar",
     title: "Mensajes",
-    subtitle: "Conversaciones por anuncio",
+    subtitle: "Últimas conversaciones — cotizaciones y reservas en la app",
     empty: "Aún no tienes mensajes. Abre un anuncio y escribe al vendedor.",
     roleBuyer: "Comprador",
     roleSeller: "Vendedor",
     noPreview: "Sin mensajes",
+    showingRecent: "Mostrando las 2 conversaciones más recientes.",
   },
   en: {
     loginPrompt: "Log in to see your messages.",
     loginLink: "Log in",
     title: "Messages",
-    subtitle: "Conversations by listing",
+    subtitle: "Recent conversations — quotes and bookings in the app",
     empty: "You have no messages yet. Open a listing and message the seller.",
     roleBuyer: "Buyer",
     roleSeller: "Seller",
     noPreview: "No messages",
+    showingRecent: "Showing your 2 most recent conversations.",
   },
 };
 
@@ -55,6 +59,7 @@ function MessagesInboxInner() {
   const lang = useAppLang();
   const t = COPY[lang];
   const [threads, setThreads] = useState<Thread[]>([]);
+  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [unauth, setUnauth] = useState(false);
 
@@ -76,6 +81,7 @@ function MessagesInboxInner() {
       const data = await res.json();
       if (!cancelled) {
         setThreads(data.threads ?? []);
+        setHasMore(Boolean(data.hasMore));
         setLoading(false);
       }
     };
@@ -115,7 +121,8 @@ function MessagesInboxInner() {
     <main className="min-h-screen bg-[#FDF8F1] px-4 py-8">
       <div className="max-w-lg mx-auto">
         <h1 className="font-serif text-2xl font-bold text-[#1C1917] mb-2">{t.title}</h1>
-        <p className="text-sm text-[#6B7280] mb-6">{t.subtitle}</p>
+        <p className="text-sm text-[#6B7280] mb-2">{t.subtitle}</p>
+        {hasMore ? <p className="text-xs text-[#9CA3AF] mb-4">{t.showingRecent}</p> : <div className="mb-4" />}
         {threads.length === 0 ? (
           <div className="rounded-xl border border-[#E5E0D8] bg-white p-8 text-center text-sm text-[#6B7280]">{t.empty}</div>
         ) : (
@@ -127,10 +134,13 @@ function MessagesInboxInner() {
                   className="block rounded-xl border border-[#E5E0D8] bg-white p-4 hover:border-[#1B4332] transition-colors"
                 >
                   <div className="flex justify-between gap-2 mb-1">
-                    <span className="text-xs font-semibold text-[#1B4332] uppercase tracking-wide">
+                    <span className="text-xs font-semibold text-[#1B4332] uppercase tracking-wide truncate">
+                      {thread.ticket_code ? (
+                        <span className="font-mono normal-case">{thread.ticket_code} · </span>
+                      ) : null}
                       {thread.role === "seller" ? t.roleBuyer : t.roleSeller} · {thread.other_name}
                     </span>
-                    <span className="text-[10px] text-[#9CA3AF] shrink-0">
+                    <span className="text-[10px] text-[#9CA3AF] shrink-0 tabular-nums">
                       {formatDateTimeShort(thread.last_at, lang)}
                     </span>
                   </div>
