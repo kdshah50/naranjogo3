@@ -18,6 +18,7 @@ import { getServiceRoleRestHeaders, getSupabaseUrl } from "@/lib/service-rest";
 import { SellerVerificationBadges } from "@/components/SellerVerificationBadges";
 import { embeddedSellerRow, verificationPropsFromSellerRow } from "@/lib/seller-trust-display";
 import { langFromParam } from "@/lib/i18n-lang";
+import { listingPageCopy } from "@/lib/listing-page-copy";
 import ListingPhotoGallery from "@/components/ListingPhotoGallery";
 import ListingLiveAvailability from "@/components/ListingLiveAvailability";
 import { fetchLiveSlotsViaRest } from "@/lib/live-availability";
@@ -99,7 +100,11 @@ export default async function ListingPage({
         : 0;
   }
 
-  const price = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 0 }).format(listing.price_mxn / 100);
+  const listingLang = langFromParam(searchParams?.lang);
+  const lp = listingPageCopy(listingLang);
+  const priceLocale = listingLang === "en" ? "en-MX" : "es-MX";
+
+  const price = new Intl.NumberFormat(priceLocale, { style: "currency", currency: "MXN", maximumFractionDigits: 0 }).format(listing.price_mxn / 100);
   const isServiceListing = isServicesListing(listing);
   const providerSlug = inferProviderSlugFromListingTitle(listing.title_es);
   const menuQuoteLayout = quoteLayoutForSlug(providerSlug);
@@ -107,7 +112,6 @@ export default async function ListingPage({
   const highlightQuote = searchParams?.quote === "1" || searchParams?.quote === "true";
   const highlightRequest = searchParams?.request === "1" || searchParams?.request === "true";
   const highlightRebook = searchParams?.rebook === "1" || searchParams?.rebook === "true";
-  const listingLang = langFromParam(searchParams?.lang);
   const rawServiceMenu = (listing as { service_menu?: ServiceMenu | null }).service_menu ?? null;
   const effectiveServiceMenu = effectiveServiceMenuForListing(rawServiceMenu, providerSlug);
   const listingQueryBase = new URLSearchParams();
@@ -171,11 +175,11 @@ export default async function ListingPage({
             {price}
             <span className="text-base font-semibold text-[#6B7280] ml-2">MXN</span>
           </span>
-          {listing.negotiable && <span className="text-sm text-[#6B7280] italic">Negociable</span>}
+          {listing.negotiable && <span className="text-sm text-[#6B7280] italic">{lp.negotiable}</span>}
         </div>
         <div className="flex items-start justify-between gap-3 mb-4">
           <h1 className="text-xl font-semibold text-[#1C1917] flex-1 min-w-0">{listing.title_es}</h1>
-          <FavoriteButton listingId={params.id} />
+          <FavoriteButton listingId={params.id} lang={listingLang} />
         </div>
         {packagePromoActive &&
           listingAsPkg.package_session_count != null &&
@@ -201,11 +205,7 @@ export default async function ListingPage({
                     : `Ahorra ~${packageSavings.savingsPctApprox}% vs pagar ${listing.package_session_count} visitas al precio publicado.`}
                 </p>
               )}
-              <p className="text-amber-900/90 text-xs mt-3 leading-relaxed">
-                {listingLang === "en"
-                  ? "One Naranjogo platform fee unlocks this whole plan. Book each visit with your provider on WhatsApp. Rebook through Naranjogo to keep loyalty discounts and guarantee protection."
-                  : "Un solo pago de tarifa de Naranjogo cubre todo el plan. Agenda cada visita con tu proveedor por WhatsApp. Vuelve a reservar en la app para mantener descuentos por lealtad y la garantía."}
-              </p>
+              <p className="text-amber-900/90 text-xs mt-3 leading-relaxed">{lp.packageRebookHint}</p>
               <p className="text-amber-800/85 text-[11px] mt-2 leading-snug italic">
                 {listingLang === "en"
                   ? "Best for ongoing care—like several sessions a month—without paying per visit at full list price."
@@ -223,7 +223,7 @@ export default async function ListingPage({
           <ListingTrustStrip
             lang={listingLang}
             isService={isServiceListing}
-            displayName={seller?.display_name ?? "Proveedor"}
+            displayName={seller?.display_name ?? lp.provider}
             trustBadge={sellerTrust.trustBadge}
             ineVerified={sellerTrust.ineVerified}
             rfcVerified={sellerTrust.rfcVerified}
@@ -234,7 +234,7 @@ export default async function ListingPage({
         )}
         <div className="flex flex-wrap gap-2 mb-6">
           {listing.shipping_available && (
-            <span className="px-3 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700">Envio disponible</span>
+            <span className="px-3 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700">{lp.shipping}</span>
           )}
           <span className="px-3 py-1 rounded-full text-xs font-medium bg-[#F4F0EB] text-[#6B7280]">{listing.condition}</span>
           {listing.location_city && (
@@ -276,11 +276,9 @@ export default async function ListingPage({
               listingId={params.id}
               titleEs={listing.title_es}
               priceMxnCents={Number(listing.price_mxn) || 0}
+              lang={listingLang}
             />
-            <p className="text-xs text-[#6B7280] text-center">
-              O compra por carrito: verás comisión (admin), IVA y total antes de pagar. Con Stripe Connect activo para
-              vendedores, el subtotal va al vendedor; si no, el cargo es a la plataforma (reparto manual).
-            </p>
+            <p className="text-xs text-[#6B7280] text-center">{lp.cartHint}</p>
           </div>
         )}
 
@@ -298,7 +296,7 @@ export default async function ListingPage({
               </div>
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                  <span className="font-semibold text-sm">{seller?.display_name ?? "Vendedor"}</span>
+                  <span className="font-semibold text-sm">{seller?.display_name ?? lp.seller}</span>
                   <SellerVerificationBadges
                     trustBadge={sellerTrust.trustBadge}
                     ineVerified={sellerTrust.ineVerified}
@@ -311,7 +309,7 @@ export default async function ListingPage({
                   {reviewCount > 0 && <RatingSummary average={avgRating} total={reviewCount} />}
                 </div>
                 <span className="text-xs text-[#6B7280]">
-                  Miembro desde{" "}
+                  {lp.memberSince}{" "}
                   {seller?.created_at ? new Date(seller.created_at).getFullYear() : "—"}
                 </span>
               </div>
@@ -384,7 +382,7 @@ export default async function ListingPage({
 
         {/* Report */}
         <div className="mt-8 pt-6 border-t border-[#E5E0D8] flex justify-center">
-          <ReportButton listingId={params.id} sellerId={sellerId} />
+          <ReportButton listingId={params.id} sellerId={sellerId} lang={listingLang} />
         </div>
       </div>
     </main>

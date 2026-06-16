@@ -12,6 +12,8 @@ import ServiceQuoteBuyerPanel from "@/components/ServiceQuoteBuyerPanel";
 import ServiceQuoteSellerRequestPanel from "@/components/ServiceQuoteSellerRequestPanel";
 import type { ServiceQuoteLineItem, ServiceQuoteMetadata, ServiceQuoteStatus } from "@/lib/service-quote";
 import { chatMessagesChanged, type ChatPollMessage } from "@/lib/listing-chat-poll";
+import { listingChatCopy } from "@/lib/listing-chat-copy";
+import { withLang } from "@/lib/i18n-lang";
 import {
   conversationDayKey,
   formatConversationDayLabel,
@@ -66,6 +68,7 @@ export default function ListingChat({
   /** Deep link ?rebook=1 — reset gate and show buyer request form with prefill. */
   highlightRebook?: boolean;
 }) {
+  const c = listingChatCopy(lang);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
@@ -152,7 +155,7 @@ export default function ListingChat({
     }
     if (!res.ok) {
       const d = await res.json().catch(() => ({}));
-      setError((d as { error?: string }).error ?? "No se pudo cargar el chat");
+      setError((d as { error?: string }).error ?? c.loadChatErr);
       setLoading(false);
       return;
     }
@@ -193,7 +196,7 @@ export default function ListingChat({
         });
         if (!res.ok) {
           const d = await res.json().catch(() => ({}));
-          setError((d as { error?: string }).error ?? "No se pudo cargar");
+          setError((d as { error?: string }).error ?? c.loadErr);
           setSelectedId(null);
           setAgreedPriceBuyerId(null);
           conversationListingIdRef.current = null;
@@ -216,7 +219,7 @@ export default function ListingChat({
           lastThreadActivityRef.current = `${lastMsg.created_at}:${lastMsg.body}`;
         }
       } catch {
-        setError("Error de conexión");
+        setError(c.networkErr);
         setSelectedId(null);
         setAgreedPriceBuyerId(null);
         conversationListingIdRef.current = null;
@@ -354,7 +357,7 @@ export default function ListingChat({
         const d = await r.json().catch(() => ({}));
         if (!r.ok) {
           if (!cancelled) {
-            setAgreedErr((d as { error?: string }).error ?? "No se pudo cargar precio acordado");
+            setAgreedErr((d as { error?: string }).error ?? c.loadErr);
             setAgreedPesos("");
           }
           return;
@@ -364,7 +367,7 @@ export default function ListingChat({
           setAgreedPesos(cents != null && Number.isFinite(Number(cents)) ? String(Number(cents) / 100) : "");
         }
       } catch {
-        if (!cancelled) setAgreedErr("Error de red");
+        if (!cancelled) setAgreedErr(c.networkErrAgreed);
       } finally {
         if (!cancelled) setAgreedLoading(false);
       }
@@ -516,7 +519,7 @@ export default function ListingChat({
         );
         const d = (await r.json().catch(() => ({}))) as { error?: string; message?: string };
         if (!r.ok) {
-          const msg = d.message ?? d.error ?? (lang === "en" ? "Could not prepare rebook" : "No se pudo preparar la reserva");
+          const msg = d.message ?? d.error ?? c.prepareRebookErr;
           setRebookPrepareError(msg);
           if (reason === "highlight") return;
         } else {
@@ -526,7 +529,7 @@ export default function ListingChat({
         }
       } catch {
         setRebookPrepareError(
-          lang === "en" ? "Network error preparing rebook form" : "Error de red al preparar el formulario",
+          lang === "en" ? "Network error preparing rebook form" : c.prepareRebookNetwork,
         );
       } finally {
         setRebookPreparing(false);
@@ -600,7 +603,7 @@ export default function ListingChat({
       }),
     });
     const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error((d as { error?: string; message?: string }).message ?? (d as { error?: string }).error ?? "No se pudo enviar cotización");
+    if (!r.ok) throw new Error((d as { error?: string; message?: string }).message ?? (d as { error?: string }).error ?? c.sendQuoteErr);
     setAgreedPesos(String(payload.totalCents / 100));
     const connectWarning = (d as { connectWarning?: string | null }).connectWarning;
     if (connectWarning) {
@@ -630,7 +633,7 @@ export default function ListingChat({
       }),
     });
     const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error((d as { error?: string }).error ?? "No se pudo enviar solicitud");
+    if (!r.ok) throw new Error((d as { error?: string }).error ?? c.sendRequestErr);
     const msg = (d as { message?: Msg }).message;
     const convId = (d as { conversationId?: string }).conversationId;
     if (convId) {
@@ -682,7 +685,7 @@ export default function ListingChat({
     });
     if (!res.ok) {
       const d = await res.json().catch(() => ({}));
-      throw new Error((d as { error?: string }).error ?? "No se pudo iniciar el chat");
+      throw new Error((d as { error?: string }).error ?? c.startChatErr);
     }
     const { conversationId } = await res.json();
     return conversationId as string;
@@ -700,12 +703,12 @@ export default function ListingChat({
           cid = selectedId;
         } else {
           cid = await ensureConversation();
-          if (!cid) throw new Error("Sin conversación");
+          if (!cid) throw new Error(c.noConversation);
           conversationListingIdRef.current = listingId;
           setSelectedId(cid);
         }
       }
-      if (!cid) throw new Error("Selecciona una conversación");
+      if (!cid) throw new Error(c.pickConversation);
       const res = await fetch(`/api/conversations/${cid}/messages`, {
         method: "POST",
         credentials: "same-origin",
@@ -714,7 +717,7 @@ export default function ListingChat({
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
-        throw new Error((d as { error?: string }).error ?? "No se pudo enviar");
+        throw new Error((d as { error?: string }).error ?? c.sendMsgErr);
       }
       const { message } = await res.json();
       setMessages((m) => [...m, message as Msg]);
@@ -749,7 +752,7 @@ export default function ListingChat({
         : { buyerId: agreedPriceBuyerId, agreedSubtotalMxnCents: cents };
       if (!clear) {
         if (!Number.isFinite(pesos) || cents < 100) {
-          throw new Error(lang === "en" ? "Enter a valid amount (at least $1 MXN)." : "Monto inválido (mín. $1 MXN).");
+          throw new Error(lang === "en" ? "Enter a valid amount (at least $1 MXN)." : c.invalidAmount);
         }
       }
       const r = await fetch(`/api/listings/${encodeURIComponent(listingId)}/service-booking/agreed-price`, {
@@ -759,7 +762,7 @@ export default function ListingChat({
         body: JSON.stringify(body),
       });
       const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error((d as { error?: string }).error ?? "No se pudo guardar");
+      if (!r.ok) throw new Error((d as { error?: string }).error ?? c.saveErr);
       if (clear) setAgreedPesos("");
       window.dispatchEvent(new CustomEvent("tianguis:agreed-price-updated", { detail: { listingId } }));
     } catch (e: unknown) {
@@ -808,7 +811,7 @@ export default function ListingChat({
         id="listing-inapp-chat"
         className="rounded-xl border border-[#E5E0D8] bg-white p-4 text-center text-sm text-[#6B7280]"
       >
-        Cargando mensajes…
+        {c.loading}
       </div>
     );
   }
@@ -816,12 +819,12 @@ export default function ListingChat({
   if (!role) {
     return (
       <div id="listing-inapp-chat" className="rounded-xl border border-[#E5E0D8] bg-[#F4F0EB] p-4 text-center">
-        <p className="text-sm text-[#374151] mb-3">Inicia sesión para escribir al vendedor dentro de la app.</p>
+        <p className="text-sm text-[#374151] mb-3">{c.loginLead}</p>
         <Link
           href={`/auth/login?returnTo=${encodeURIComponent(loginReturnTo ?? `/listing/${listingId}`)}`}
           className="inline-block px-4 py-2 rounded-xl bg-[#1B4332] text-white text-sm font-semibold"
         >
-          Entrar
+          {c.loginBtn}
         </Link>
       </div>
     );
@@ -831,12 +834,8 @@ export default function ListingChat({
     <div id="listing-inapp-chat" className="rounded-xl border border-[#E5E0D8] bg-white overflow-hidden">
       <div className="px-4 py-3 border-b border-[#E5E0D8] bg-[#F4F0EB] flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-bold text-[#1C1917]">Mensajes en la app</h3>
-          <p className="text-xs text-[#6B7280] mt-0.5">
-            {lang === "en"
-              ? "Primary channel for quotes and updates. WhatsApp sends alerts with a link back here."
-              : "Canal principal para cotizaciones y avisos. WhatsApp envía alertas con enlace de regreso."}
-          </p>
+          <h3 className="text-sm font-bold text-[#1C1917]">{c.title}</h3>
+          <p className="text-xs text-[#6B7280] mt-0.5">{c.subtitle}</p>
           {role === "buyer" && buyerTicketCode ? (
             <p className="text-xs font-mono font-bold text-[#065F46] mt-1">{buyerTicketCode}</p>
           ) : null}
@@ -846,7 +845,7 @@ export default function ListingChat({
             href={`${fullListingHref}#listing-top`}
             className="text-xs font-semibold text-[#1B4332] hover:underline shrink-0"
           >
-            {lang === "en" ? "View listing page" : "Ver ficha del anuncio"}
+            {c.viewListing}
           </Link>
         ) : null}
         {role === "buyer" ? (
@@ -855,7 +854,7 @@ export default function ListingChat({
             onClick={() => void refreshBuyerChat()}
             className="text-xs font-semibold text-[#1B4332] hover:underline shrink-0"
           >
-            {lang === "en" ? "Refresh" : "Actualizar"}
+            {c.refresh}
           </button>
         ) : null}
       </div>
@@ -868,16 +867,14 @@ export default function ListingChat({
 
       {role === "buyer" && rebookPreparing ? (
         <div className="px-4 py-2 border-b border-[#E5E0D8] bg-[#FFFBEB] text-xs text-[#78350F]">
-          {lang === "en" ? "Preparing your rebook form…" : "Preparando formulario para reservar de nuevo…"}
+          {c.rebookPreparing}
         </div>
       ) : null}
 
       {role === "seller" && threads.length > 0 && (
         <div className="border-b border-[#E5E0D8]">
           <p className="px-4 pt-2 pb-1 text-[10px] font-bold text-[#6B7280] uppercase tracking-wider">
-            {lang === "en"
-              ? `Recent buyers (${threads.length}${threadsTotal > threads.length ? ` of ${threadsTotal}` : ""})`
-              : `Compradores recientes (${threads.length}${threadsTotal > threads.length ? ` de ${threadsTotal}` : ""})`}
+            {c.recentBuyers(threads.length, threadsTotal)}
           </p>
           <div className="max-h-36 overflow-y-auto divide-y divide-[#E5E0D8]">
             {threads.map((t) => {
@@ -906,7 +903,7 @@ export default function ListingChat({
                         {formatDateTimeShort(t.last_at, lang)}
                       </span>
                     </div>
-                    <span className="block text-xs text-[#6B7280] truncate">{t.last_body || "Sin mensajes aún"}</span>
+                    <span className="block text-xs text-[#6B7280] truncate">{t.last_body || c.noMessagesYet}</span>
                   </div>
                   {isActive && <span className="text-[#059669] text-xs">●</span>}
                 </button>
@@ -915,8 +912,8 @@ export default function ListingChat({
           </div>
           {threadsTotal > threads.length ? (
             <p className="px-4 py-2 text-[10px] text-[#6B7280] border-t border-[#E5E0D8]">
-              <Link href="/messages" className="font-semibold text-[#1B4332] hover:underline">
-                {lang === "en" ? "All conversations in Messages" : "Todas las conversaciones en Mensajes"}
+              <Link href={withLang("/messages", lang)} className="font-semibold text-[#1B4332] hover:underline">
+                {c.allConversations}
               </Link>
             </p>
           ) : null}
@@ -924,7 +921,7 @@ export default function ListingChat({
       )}
 
       {role === "seller" && threads.length === 0 && (
-        <p className="px-4 py-3 text-sm text-[#6B7280]">Aún no hay mensajes de compradores en este anuncio.</p>
+        <p className="px-4 py-3 text-sm text-[#6B7280]">{c.noBuyerThreads}</p>
       )}
 
       {/* Active chat header — shows who you're talking to */}
@@ -938,24 +935,18 @@ export default function ListingChat({
             <div className="flex-1 min-w-0">
               <p className="text-sm font-bold text-[#065F46] truncate">
                 {active.ticket_code ? `${active.ticket_code} · ` : ""}
-                {lang === "en" ? "Chat with" : "Chateando con"}: {active.buyer_name}
+                {c.chatWith}: {active.buyer_name}
               </p>
             </div>
-            <span className="text-[10px] text-[#059669] font-semibold px-2 py-0.5 rounded-full bg-[#D1FAE5]">Activo</span>
+            <span className="text-[10px] text-[#059669] font-semibold px-2 py-0.5 rounded-full bg-[#D1FAE5]">{c.active}</span>
           </div>
         ) : null;
       })()}
 
       {role === "seller" && selectedId && (
         <div className="px-4 py-2 border-b border-[#E5E0D8] bg-[#FFFBEB] text-xs space-y-2">
-          <p className="font-semibold text-[#78350F]">
-            {lang === "en" ? "Agreed job total (this buyer)" : "Precio acordado del trabajo (este comprador)"}
-          </p>
-          <p className="text-[#92400E] leading-snug">
-            {lang === "en"
-              ? "Optional: total for this job in MXN (same base as listing/package unless you set this). Buyer pays the platform fee on this amount, or can pay the full service in-app if you have Stripe payouts."
-              : "Opcional: total del trabajo en MXN (si no lo pones, se usa el precio del anuncio o paquete). El comprador paga la tarifa de Naranjogo sobre este monto, o puede pagar el servicio completo en la app si activaste cobros con Stripe."}
-          </p>
+          <p className="font-semibold text-[#78350F]">{c.agreedTitle}</p>
+          <p className="text-[#92400E] leading-snug">{c.agreedHelp}</p>
           <div className="flex flex-wrap items-end gap-2">
             <label className="flex-1 min-w-[120px]">
               <span className="sr-only">MXN</span>
@@ -965,7 +956,7 @@ export default function ListingChat({
                 value={agreedPesos}
                 onChange={(e) => setAgreedPesos(e.target.value)}
                 disabled={!agreedPriceBuyerId || agreedSaving}
-                placeholder={lang === "en" ? "e.g. 850" : "ej. 850"}
+                placeholder={c.agreedPh}
                 className="w-full rounded-lg border border-amber-200 px-2 py-1.5 text-sm text-[#1C1917] outline-none focus:border-[#B45309]"
               />
             </label>
@@ -975,7 +966,7 @@ export default function ListingChat({
               onClick={() => void saveAgreedPrice(false)}
               className="px-3 py-1.5 rounded-lg bg-[#B45309] text-white text-[11px] font-semibold disabled:opacity-40"
             >
-              {agreedSaving ? "…" : lang === "en" ? "Save" : "Guardar"}
+              {agreedSaving ? "…" : c.agreedSave}
             </button>
             <button
               type="button"
@@ -983,13 +974,13 @@ export default function ListingChat({
               onClick={() => void saveAgreedPrice(true)}
               className="px-3 py-1.5 rounded-lg border border-amber-300 text-[#78350F] text-[11px] font-semibold disabled:opacity-40"
             >
-              {lang === "en" ? "Clear" : "Quitar"}
+              {c.agreedClear}
             </button>
           </div>
           {agreedLoading ? (
-            <p className="text-[#A16207]">{lang === "en" ? "Loading agreed total…" : "Cargando precio acordado…"}</p>
+            <p className="text-[#A16207]">{c.agreedLoading}</p>
           ) : !agreedPriceBuyerId && selectedId ? (
-            <p className="text-[#A16207]">{lang === "en" ? "Loading thread…" : "Cargando conversación…"}</p>
+            <p className="text-[#A16207]">{c.loadingThread}</p>
           ) : null}
           {agreedErr ? <p className="text-red-600">{agreedErr}</p> : null}
           {requiresQuoteAccept &&
@@ -1034,9 +1025,7 @@ export default function ListingChat({
 
       {role === "buyer" && requiresQuoteAccept && hasServiceMenu(effectiveMenu) && quoteAwaitingProvider && !isRebookFormCycle && (
         <div className="px-4 py-2 border-b border-[#E5E0D8] bg-blue-50 text-xs text-blue-900">
-          {lang === "en"
-            ? "✓ Request sent — waiting for your provider’s official quote. You’ll get Accept / Decline buttons here when they send it."
-            : "✓ Solicitud enviada — esperando la cotización oficial del proveedor. Verás Aceptar / Rechazar aquí cuando la envíe."}
+          {c.requestSent}
         </div>
       )}
 
@@ -1044,9 +1033,7 @@ export default function ListingChat({
         <div className="px-4 py-2 border-b border-[#E5E0D8] bg-[#FFFBEB]">
           {isRebookFormCycle ? (
             <p className="text-xs text-[#78350F] font-medium mb-2">
-              {lang === "en"
-                ? "Book again — review your contact details and service request, then send a new quote request."
-                : "Reservar de nuevo — revisa tus datos y la solicitud, luego envía una nueva cotización."}
+              {c.rebookLead}
             </p>
           ) : null}
           <ServiceMenuQuoteBuilder
@@ -1088,24 +1075,18 @@ export default function ListingChat({
       {role === "seller" && requiresQuoteAccept && agreedPriceBuyerId && !quoteLoading && quoteStatus !== "none" && (
         <div className="px-4 py-2 border-b border-[#E5E0D8] text-xs">
           <p className="font-semibold text-[#78350F]">
-            {lang === "en" ? "Quote status" : "Estado de cotización"}:{" "}
+            {c.quoteStatus}:{" "}
             <span className="text-[#92400E]">
               {quoteStatus === "pending"
-                ? lang === "en"
-                  ? "Waiting for customer"
-                  : "Esperando al cliente"
+                ? c.quotePending
                 : quoteStatus === "accepted"
-                  ? lang === "en"
-                    ? "Accepted — customer can pay deposit"
-                    : "Aceptada — cliente puede pagar depósito"
-                  : lang === "en"
-                    ? "Declined"
-                    : "Rechazada"}
+                  ? c.quoteAccepted
+                  : c.quoteDeclined}
             </span>
           </p>
           {quoteAgreedCents != null && quoteAgreedCents > 0 ? (
             <p className="text-[#92400E] mt-1">
-              {lang === "en" ? "Total" : "Total"}:{" "}
+              {lang === "en" ? "Total" : c.total}:{" "}
               {new Intl.NumberFormat(lang === "en" ? "en-MX" : "es-MX", {
                 style: "currency",
                 currency: "MXN",
@@ -1115,9 +1096,7 @@ export default function ListingChat({
           ) : null}
           {quoteStatus === "declined" ? (
             <p className="text-[#B45309] mt-2 leading-snug">
-              {lang === "en"
-                ? "Customer declined — adjust rooms or price in the quote builder below, then tap Send official quote again."
-                : "El cliente rechazó — ajusta habitaciones o precio abajo y vuelve a pulsar «Enviar cotización al cliente»."}
+              {c.quoteDeclinedHint}
             </p>
           ) : null}
         </div>
@@ -1173,7 +1152,7 @@ export default function ListingChat({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), void sendMessage())}
-          placeholder={role === "seller" && !selectedId ? "Elige un comprador arriba…" : "Escribe un mensaje…"}
+          placeholder={role === "seller" && !selectedId ? c.placeholderSeller : c.placeholder}
           disabled={(role === "seller" && !selectedId) || sending}
           className="flex-1 rounded-xl border border-[#E5E0D8] px-3 py-2 text-sm outline-none focus:border-[#1B4332]"
         />
@@ -1183,13 +1162,13 @@ export default function ListingChat({
           onClick={() => void sendMessage()}
           className="px-4 py-2 rounded-xl bg-[#1B4332] text-white text-sm font-semibold disabled:opacity-40"
         >
-          {sending ? "…" : "Enviar"}
+          {sending ? "…" : c.send}
         </button>
       </div>
 
       <div className="px-3 pb-3 text-center">
-        <Link href="/messages" className="text-xs text-[#1B4332] font-semibold hover:underline">
-          Ver todos los mensajes
+        <Link href={withLang("/messages", lang)} className="text-xs text-[#1B4332] font-semibold hover:underline">
+          {c.allMessages}
         </Link>
       </div>
     </div>

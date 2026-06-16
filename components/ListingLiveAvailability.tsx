@@ -24,7 +24,7 @@ export default function ListingLiveAvailability({
             "This provider links their real calendar here; free times appear below when the next sync runs.",
           syncMeta: "Last updated",
           disclaimer:
-            "Times are for planning only. You still message in the app, pay the platform fee, and confirm the exact visit on WhatsApp with the provider.",
+            "Times are for planning only. You still message in the app, pay the platform fee, and confirm the exact visit in app messages with the provider.",
           slotAria: "Upcoming opening",
         }
       : {
@@ -36,7 +36,7 @@ export default function ListingLiveAvailability({
             "Este proveedor conecta su agenda real; los espacios libres aparecerán aquí cuando se actualice la sincronización.",
           syncMeta: "Última actualización",
           disclaimer:
-            "Los horarios son orientativos. Sigues el mismo flujo: mensaje en la app, tarifa de la plataforma y confirmación final por WhatsApp con el proveedor.",
+            "Los horarios son orientativos. Sigues el mismo flujo: mensaje en la app, tarifa de la plataforma y confirmación final en los mensajes de la app con el proveedor.",
           slotAria: "Próximo espacio disponible",
         };
 

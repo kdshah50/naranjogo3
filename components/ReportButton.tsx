@@ -1,23 +1,19 @@
 "use client";
 
 import { useState } from "react";
-
-const REASONS = [
-  { value: "fraud", label: "Fraude / estafa" },
-  { value: "fake_listing", label: "Anuncio falso" },
-  { value: "misleading", label: "Información engañosa" },
-  { value: "inappropriate", label: "Contenido inapropiado" },
-  { value: "spam", label: "Spam" },
-  { value: "other", label: "Otro" },
-] as const;
+import type { Lang } from "@/lib/i18n-lang";
+import { reportCopy } from "@/lib/report-button-copy";
 
 export default function ReportButton({
   listingId,
   sellerId,
+  lang = "es",
 }: {
   listingId?: string;
   sellerId?: string;
+  lang?: Lang;
 }) {
+  const t = reportCopy(lang);
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [details, setDetails] = useState("");
@@ -27,7 +23,7 @@ export default function ReportButton({
 
   const submit = async () => {
     if (!reason) {
-      setError("Selecciona un motivo");
+      setError(t.pickReason);
       return;
     }
     setSubmitting(true);
@@ -47,15 +43,15 @@ export default function ReportButton({
       if (!res.ok) {
         const data = await res.json().catch(() => null);
         if (res.status === 401) {
-          setError("Inicia sesión para reportar");
+          setError(t.loginRequired);
         } else {
-          setError(data?.error ?? "Error al enviar");
+          setError(data?.error ?? t.sendErr);
         }
         return;
       }
       setDone(true);
     } catch {
-      setError("Error de conexión");
+      setError(t.networkErr);
     } finally {
       setSubmitting(false);
     }
@@ -64,7 +60,7 @@ export default function ReportButton({
   if (done) {
     return (
       <div className="text-center py-2">
-        <span className="text-xs text-emerald-600 font-semibold">✓ Reporte enviado — lo revisaremos pronto</span>
+        <span className="text-xs text-emerald-600 font-semibold">{t.done}</span>
       </div>
     );
   }
@@ -80,7 +76,7 @@ export default function ReportButton({
           <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
           <line x1="4" y1="22" x2="4" y2="15" />
         </svg>
-        Reportar
+        {t.button}
       </button>
 
       {open && (
@@ -91,7 +87,7 @@ export default function ReportButton({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-[#1C1917]">Reportar anuncio</h3>
+              <h3 className="font-semibold text-[#1C1917]">{t.title}</h3>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
@@ -101,12 +97,10 @@ export default function ReportButton({
               </button>
             </div>
 
-            <p className="text-xs text-[#6B7280] mb-4">
-              Tu reporte es anónimo para el vendedor. Nuestro equipo lo revisará en 24 horas.
-            </p>
+            <p className="text-xs text-[#6B7280] mb-4">{t.blurb}</p>
 
             <div className="space-y-2 mb-4">
-              {REASONS.map((r) => (
+              {t.reasons.map((r) => (
                 <label
                   key={r.value}
                   className={`flex items-center gap-3 rounded-xl border px-4 py-3 cursor-pointer transition-colors ${
@@ -131,7 +125,7 @@ export default function ReportButton({
             <textarea
               value={details}
               onChange={(e) => setDetails(e.target.value)}
-              placeholder="Detalles adicionales (opcional)"
+              placeholder={t.detailsPh}
               maxLength={2000}
               rows={3}
               className="w-full rounded-xl border border-[#E5E0D8] px-4 py-3 text-sm text-[#1C1917] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-red-300 resize-none mb-3"
@@ -145,7 +139,7 @@ export default function ReportButton({
                 onClick={() => setOpen(false)}
                 className="flex-1 py-3 rounded-xl border border-[#E5E0D8] text-sm font-semibold text-[#6B7280] hover:bg-[#F4F0EB] transition-colors"
               >
-                Cancelar
+                {t.cancel}
               </button>
               <button
                 type="button"
@@ -153,7 +147,7 @@ export default function ReportButton({
                 disabled={submitting || !reason}
                 className="flex-1 py-3 rounded-xl bg-red-500 text-white text-sm font-semibold disabled:opacity-50 hover:bg-red-600 transition-colors"
               >
-                {submitting ? "Enviando…" : "Enviar reporte"}
+                {submitting ? t.submitting : t.submit}
               </button>
             </div>
           </div>

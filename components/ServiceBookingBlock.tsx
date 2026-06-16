@@ -9,6 +9,8 @@ import {
   serviceDepositConfirmLine,
 } from "@/lib/service-quote-vertical";
 import ServiceQuoteBuyerPanel from "@/components/ServiceQuoteBuyerPanel";
+import { serviceBookingCopy } from "@/lib/service-booking-copy";
+import { intlLocale } from "@/lib/i18n-lang";
 
 type BookingState = {
   isService: boolean;
@@ -59,8 +61,8 @@ type BookingState = {
   } | null;
 };
 
-function formatMXN(cents: number): string {
-  return new Intl.NumberFormat("es-MX", {
+function formatMXN(cents: number, lang: Lang): string {
+  return new Intl.NumberFormat(intlLocale(lang), {
     style: "currency",
     currency: "MXN",
     maximumFractionDigits: 0,
@@ -307,7 +309,7 @@ export default function ServiceBookingBlock({
       if (!res.ok) {
         const detail = typeof (data as { detail?: string }).detail === "string" ? (data as { detail: string }).detail : "";
         const serverMsg = typeof (data as { message?: string }).message === "string" ? (data as { message: string }).message : "";
-        const err = (data as { error?: string }).error ?? "Error al crear pago";
+        const err = (data as { error?: string }).error ?? serviceBookingCopy(listingLang).checkoutErr;
         throw new Error(serverMsg || (detail ? `${err} ${detail}` : err));
       }
       if (data.url) {
@@ -320,10 +322,12 @@ export default function ServiceBookingBlock({
     }
   };
 
+  const sb = serviceBookingCopy(listingLang);
+
   if (loading || meId === undefined) {
     return (
       <div className="rounded-xl border border-[#E5E0D8] bg-white p-4 text-sm text-[#6B7280]">
-        Cargando reservas…
+        {sb.loading}
       </div>
     );
   }
@@ -331,12 +335,8 @@ export default function ServiceBookingBlock({
   if (iAmSellerOnThisListing) {
     return (
       <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-        <p className="font-semibold mb-1">{isService ? "Tu servicio" : "Tu anuncio"}</p>
-        <p className="text-amber-800">
-          {isService
-            ? "Los clientes deben escribirte por mensajes en la app y pagar la tarifa de servicio antes de poder abrir tu WhatsApp desde Naranjogo."
-            : "Los compradores deben escribirte por la app y pagar la tarifa de conexión antes de poder abrir tu WhatsApp desde Naranjogo."}
-        </p>
+        <p className="font-semibold mb-1">{isService ? sb.yourService : sb.yourListing}</p>
+        <p className="text-amber-800">{isService ? sb.sellerServiceLead : sb.sellerGoodsLead}</p>
       </div>
     );
   }
@@ -345,18 +345,16 @@ export default function ServiceBookingBlock({
     return (
       <div className="rounded-xl border border-[#E5E0D8] bg-[#F4F0EB] p-4">
         <p className="text-sm font-semibold text-[#1C1917] mb-2">
-          {isService ? "Reservar este servicio" : "Contactar al vendedor"}
+          {isService ? sb.loginTitleService : sb.loginTitleGoods}
         </p>
         <p className="text-xs text-[#6B7280] mb-3">
-          {isService
-            ? "Inicia sesión, platica con el proveedor y paga la tarifa de servicio para abrir su WhatsApp desde aquí."
-            : "Inicia sesión, envía un mensaje en la app y paga la tarifa de conexión para desbloquear WhatsApp."}
+          {isService ? sb.loginLeadService : sb.loginLeadGoods}
         </p>
         <Link
           href={`/auth/login?returnTo=${encodeURIComponent(loginReturnTo ?? `/listing/${listingId}`)}`}
           className="inline-block px-4 py-2 rounded-xl bg-[#1B4332] text-white text-sm font-semibold"
         >
-          Iniciar sesión para continuar
+          {sb.loginBtn}
         </Link>
       </div>
     );
@@ -483,7 +481,7 @@ export default function ServiceBookingBlock({
   return (
     <div className="rounded-xl border border-[#E5E0D8] bg-white overflow-hidden">
       <div className="px-4 py-3 border-b border-[#E5E0D8] bg-[#F4F0EB]">
-        <h3 className="text-sm font-bold text-[#1C1917]">{isService ? "Reservar servicio" : "Comprar / contactar"}</h3>
+        <h3 className="text-sm font-bold text-[#1C1917]">{isService ? sb.bookService : sb.buyContact}</h3>
         {booking.hasPackage && booking.packageSessionCount && booking.packageTotalMxnCents != null && (
           <div className="mt-2 rounded-xl bg-gradient-to-br from-amber-50 to-orange-50/90 border-2 border-amber-200 px-3 py-3 text-xs text-amber-950 space-y-2">
             <p className="font-bold text-sm">
@@ -493,7 +491,7 @@ export default function ServiceBookingBlock({
             </p>
             <p>
               <strong>{listingLang === "en" ? "Total for the plan:" : "Total del plan:"}</strong>{" "}
-              {formatMXN(booking.packageTotalMxnCents)}{" "}
+              {formatMXN(booking.packageTotalMxnCents, listingLang)}{" "}
               {listingLang === "en"
                 ? "— platform fee below is calculated on this agreed amount (one payment unlocks the whole plan)."
                 : "— la tarifa de plataforma abajo se calcula sobre este monto (un solo pago desbloquea todo el plan)."}
@@ -506,9 +504,7 @@ export default function ServiceBookingBlock({
               </p>
             )}
             <p className="text-amber-900/95 text-[11px] leading-relaxed border-t border-amber-200/80 pt-2">
-              {listingLang === "en"
-                ? "Schedule each visit on WhatsApp with your provider. Rebook follow-ups through Naranjogo to keep discounts and guarantee coverage—stays on-platform."
-                : "Coordina cada cita por WhatsApp. Para seguimiento y nuevas reservas, usa Naranjogo: ahí aplican tus descuentos por lealtad y la garantía (te encaja si sueles ir varias veces al mes)."}
+              {sb.packageScheduleHint}
             </p>
           </div>
         )}
@@ -540,10 +536,7 @@ export default function ServiceBookingBlock({
               </>
             )
           ) : (
-            <>
-              El precio del artículo lo acuerdas con el vendedor (o pagas fuera de la app). Aquí solo pagas la{" "}
-              <strong>tarifa de conexión</strong> de Naranjogo (comisión; mín. $10 MXN) para desbloquear su WhatsApp.
-            </>
+            sb.goodsFeeBlurb
           )}
         </p>
       </div>
@@ -569,13 +562,13 @@ export default function ServiceBookingBlock({
           <span>
             {booking.hasPackage
               ? listingLang === "en"
-                ? `Pay one platform fee for the full plan (${formatMXN(booking.commissionAmountCents)})`
-                : `Paga una tarifa para todo el plan (${formatMXN(booking.commissionAmountCents)})`
+                ? `Pay one platform fee for the full plan (${formatMXN(booking.commissionAmountCents, listingLang)})`
+                : `Paga una tarifa para todo el plan (${formatMXN(booking.commissionAmountCents, listingLang)})`
               : listingLang === "en"
                 ? isService
-                  ? `Pay the service fee (${formatMXN(booking.commissionAmountCents)})`
-                  : `Pay the connection fee (${formatMXN(booking.commissionAmountCents)})`
-                : `Paga la tarifa ${isService ? "de servicio" : "de conexión"} (${formatMXN(booking.commissionAmountCents)})`}
+                  ? `Pay the service fee (${formatMXN(booking.commissionAmountCents, listingLang)})`
+                  : `Pay the connection fee (${formatMXN(booking.commissionAmountCents, listingLang)})`
+                : `Paga la tarifa ${isService ? "de servicio" : "de conexión"} (${formatMXN(booking.commissionAmountCents, listingLang)})`}
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -585,15 +578,15 @@ export default function ServiceBookingBlock({
           <span>
             {isService
               ? booking.hasPackage && booking.packageSessionCount
-                ? listingLang === "en"
-                  ? `Open the service provider's WhatsApp (${booking.packageSessionCount}-visit plan)`
-                  : `Abre el WhatsApp del proveedor del servicio (${booking.packageSessionCount} visitas)`
-                : listingLang === "en"
-                  ? "Open the service provider's WhatsApp"
-                  : "Abre el WhatsApp del proveedor del servicio"
+                ? sb.step3InAppPackage(booking.packageSessionCount)
+                : sb.step3InApp
               : booking.hasPackage && booking.packageSessionCount
-                ? `WhatsApp del proveedor para las ${booking.packageSessionCount} visitas`
-                : "Abre WhatsApp del vendedor (enlace en la app)"}
+                ? listingLang === "en"
+                  ? `Continue in app messages (${booking.packageSessionCount}-visit plan)`
+                  : `Continúa en mensajes de la app (plan de ${booking.packageSessionCount} visitas)`
+                : listingLang === "en"
+                  ? "Continue in app messages"
+                  : "Continúa en mensajes de la app"}
           </span>
         </div>
       </div>
@@ -640,7 +633,7 @@ export default function ServiceBookingBlock({
             disabled={refreshing || loading}
             className="w-full py-2.5 rounded-xl border border-[#1B4332] text-[#1B4332] text-xs font-semibold hover:bg-[#ECFDF5] disabled:opacity-50"
           >
-            {refreshing ? "Actualizando…" : "Ya envié mi mensaje — actualizar"}
+            {refreshing ? sb.refreshBusy : sb.refreshBtn}
           </button>
         </div>
       )}
@@ -724,8 +717,8 @@ export default function ServiceBookingBlock({
                     ? "Pay the service fee below to continue."
                     : "Paga la tarifa de servicio abajo para continuar."
                   : listingLang === "en"
-                    ? "Pay the connection fee to open the seller’s WhatsApp."
-                    : "Paga la tarifa de conexión para recibir el WhatsApp del vendedor."}
+                    ? "Pay the connection fee to continue in the app."
+                    : "Paga la tarifa de conexión para continuar en la app."}
             </p>
           </div>
 
@@ -735,12 +728,12 @@ export default function ServiceBookingBlock({
               <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 leading-relaxed">
                 {listingLang === "en" ? (
                   <>
-                    <strong>Official quote total:</strong> {formatMXN(booking.agreedSubtotalMxnCents)} — platform
+                    <strong>Official quote total:</strong> {formatMXN(booking.agreedSubtotalMxnCents, listingLang)} — platform
                     fee below is calculated on this amount.
                   </>
                 ) : (
                   <>
-                    <strong>Total de cotización oficial:</strong> {formatMXN(booking.agreedSubtotalMxnCents)} — la
+                    <strong>Total de cotización oficial:</strong> {formatMXN(booking.agreedSubtotalMxnCents, listingLang)} — la
                     tarifa de plataforma abajo se calcula sobre este monto.
                   </>
                 )}
@@ -754,12 +747,12 @@ export default function ServiceBookingBlock({
               <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 leading-relaxed">
                 {listingLang === "en" ? (
                   <>
-                    <strong>Agreed job total:</strong> {formatMXN(booking.agreedSubtotalMxnCents)} (set by your provider).
+                    <strong>Agreed job total:</strong> {formatMXN(booking.agreedSubtotalMxnCents, listingLang)} (set by your provider).
                     Platform fee is calculated on this amount.
                   </>
                 ) : (
                   <>
-                    <strong>Precio acordado del trabajo:</strong> {formatMXN(booking.agreedSubtotalMxnCents)} (fijado por tu
+                    <strong>Precio acordado del trabajo:</strong> {formatMXN(booking.agreedSubtotalMxnCents, listingLang)} (fijado por tu
                     proveedor). La tarifa de Naranjogo se calcula sobre este monto.
                   </>
                 )}
@@ -870,23 +863,23 @@ export default function ServiceBookingBlock({
               <div className="text-xs text-[#374151] space-y-1">
                 <div className="flex justify-between gap-2">
                   <span className="text-[#6B7280]">{listingLang === "en" ? "Service" : "Servicio"}</span>
-                  <span className="font-tabular-nums">{formatMXN(booking.fullConnectPreview.subtotalCents)}</span>
+                  <span className="font-tabular-nums">{formatMXN(booking.fullConnectPreview.subtotalCents, listingLang)}</span>
                 </div>
                 <div className="flex justify-between gap-2">
                   <span className="text-[#6B7280]">
                     {listingLang === "en" ? "Platform fee" : "Tarifa plataforma"} ({booking.commissionPct}%)
                   </span>
-                  <span className="font-tabular-nums">{formatMXN(booking.fullConnectPreview.commissionCents)}</span>
+                  <span className="font-tabular-nums">{formatMXN(booking.fullConnectPreview.commissionCents, listingLang)}</span>
                 </div>
                 <div className="flex justify-between gap-2">
                   <span className="text-[#6B7280]">
                     IVA ({booking.fullConnectPreview.vatPercent}%)
                   </span>
-                  <span className="font-tabular-nums">{formatMXN(booking.fullConnectPreview.vatCents)}</span>
+                  <span className="font-tabular-nums">{formatMXN(booking.fullConnectPreview.vatCents, listingLang)}</span>
                 </div>
                 <div className="flex justify-between gap-2 pt-1 border-t border-[#E5E0D8] font-bold text-[#1C1917]">
                   <span>{listingLang === "en" ? "You pay" : "Pagas"}</span>
-                  <span className="font-tabular-nums text-base">{formatMXN(booking.fullConnectPreview.totalCents)}</span>
+                  <span className="font-tabular-nums text-base">{formatMXN(booking.fullConnectPreview.totalCents, listingLang)}</span>
                 </div>
               </div>
             </div>
@@ -902,16 +895,16 @@ export default function ServiceBookingBlock({
                   {booking.commissionBeforeLoyaltyCents != null &&
                     booking.commissionBeforeLoyaltyCents > booking.commissionAmountCents && (
                       <p className="text-sm text-[#9CA3AF] line-through decoration-[#9CA3AF]">
-                        {formatMXN(booking.commissionBeforeLoyaltyCents)}
+                        {formatMXN(booking.commissionBeforeLoyaltyCents, listingLang)}
                       </p>
                     )}
-                  <p className="text-lg font-bold text-[#1C1917]">{formatMXN(booking.commissionAmountCents)}</p>
+                  <p className="text-lg font-bold text-[#1C1917]">{formatMXN(booking.commissionAmountCents, listingLang)}</p>
                 </div>
                 {booking.loyaltyDiscountCents != null && booking.loyaltyDiscountCents > 0 && (
                   <p className="text-[11px] text-emerald-700 font-semibold mt-1">
                     {listingLang === "en"
-                      ? `You save ${formatMXN(booking.loyaltyDiscountCents)} on the fee.`
-                      : `Ahorras ${formatMXN(booking.loyaltyDiscountCents)} en la tarifa.`}
+                      ? `You save ${formatMXN(booking.loyaltyDiscountCents, listingLang)} on the fee.`
+                      : `Ahorras ${formatMXN(booking.loyaltyDiscountCents, listingLang)} en la tarifa.`}
                   </p>
                 )}
               </div>
@@ -931,19 +924,19 @@ export default function ServiceBookingBlock({
                 : "Procesando…"
               : checkoutMode === "full_connect" && booking.fullConnectPreview
                 ? listingLang === "en"
-                  ? `Pay ${formatMXN(booking.fullConnectPreview.totalCents)} (full checkout)`
-                  : `Pagar ${formatMXN(booking.fullConnectPreview.totalCents)} (total)`
+                  ? `Pay ${formatMXN(booking.fullConnectPreview.totalCents, listingLang)} (full checkout)`
+                  : `Pagar ${formatMXN(booking.fullConnectPreview.totalCents, listingLang)} (total)`
                 : isService
                   ? listingLang === "en"
                     ? requiresQuote
-                      ? `Pay deposit ${formatMXN(booking.commissionAmountCents)}`
-                      : `Pay ${formatMXN(booking.commissionAmountCents)}`
+                      ? `Pay deposit ${formatMXN(booking.commissionAmountCents, listingLang)}`
+                      : `Pay ${formatMXN(booking.commissionAmountCents, listingLang)}`
                     : requiresQuote
-                      ? `Pagar depósito ${formatMXN(booking.commissionAmountCents)}`
-                      : `Pagar ${formatMXN(booking.commissionAmountCents)}`
+                      ? `Pagar depósito ${formatMXN(booking.commissionAmountCents, listingLang)}`
+                      : `Pagar ${formatMXN(booking.commissionAmountCents, listingLang)}`
                   : listingLang === "en"
-                    ? `Pay ${formatMXN(booking.commissionAmountCents)} and open WhatsApp`
-                    : `Pagar ${formatMXN(booking.commissionAmountCents)} y abrir WhatsApp`}
+                    ? `Pay ${formatMXN(booking.commissionAmountCents, listingLang)}`
+                    : `Pagar ${formatMXN(booking.commissionAmountCents, listingLang)}`}
           </button>
 
           <p className="text-center text-xs text-[#6B7280]">
@@ -952,8 +945,8 @@ export default function ServiceBookingBlock({
                 ? "Secure checkout with Stripe."
                 : "Pago seguro con Stripe."
               : listingLang === "en"
-                ? "Secure payment with Stripe. After paying you can open the seller’s WhatsApp from here."
-                : `Pago seguro con Stripe. Al pagar podrás abrir el WhatsApp del ${partyLabel} desde aquí.`}
+                ? "Secure payment with Stripe. After paying, continue coordinating in app messages."
+                : "Pago seguro con Stripe. Al pagar, sigue coordinando en los mensajes de la app."}
           </p>
 
           {loyaltyHint && loyaltyHint.discountPct > 0 && booking.commissionBeforeLoyaltyCents == null && (
