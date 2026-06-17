@@ -12,7 +12,7 @@ import ServiceQuoteBuyerPanel from "@/components/ServiceQuoteBuyerPanel";
 import ServiceQuoteSellerRequestPanel from "@/components/ServiceQuoteSellerRequestPanel";
 import type { ServiceQuoteLineItem, ServiceQuoteMetadata, ServiceQuoteStatus } from "@/lib/service-quote";
 import { chatMessagesChanged, type ChatPollMessage } from "@/lib/listing-chat-poll";
-import { listingChatCopy } from "@/lib/listing-chat-copy";
+import { listingChatCopy, formatListingChatSystemBody } from "@/lib/listing-chat-copy";
 import { withLang } from "@/lib/i18n-lang";
 import {
   conversationDayKey,
@@ -1119,6 +1119,7 @@ export default function ListingChat({
           const mine =
             myUserId && String(m.sender_id).trim().toLowerCase() === myUserId.trim().toLowerCase();
           const isSystem = m.body.startsWith("[Naranjogo]");
+          const displayBody = isSystem ? formatListingChatSystemBody(m.body, role, lang) : m.body;
           const dayKey = conversationDayKey(m.created_at);
           const prevDayKey = idx > 0 ? conversationDayKey(messages[idx - 1].created_at) : null;
           const showDay = dayKey !== prevDayKey;
@@ -1140,7 +1141,7 @@ export default function ListingChat({
                           : "bg-[#F4F0EB] text-[#1C1917]"
                     }`}
                   >
-                    {m.body}
+                    {displayBody}
                   </div>
                   {!isSystem ? (
                     <span className={`text-[10px] tabular-nums ${mine ? "text-[#9CA3AF]" : "text-[#9CA3AF]"}`}>

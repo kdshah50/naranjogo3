@@ -25,6 +25,7 @@ type SellerBooking = {
   balance_payment_status?: string | null;
   listing_title: string;
   buyer_name: string;
+  listing_chat_path?: string;
   has_review?: boolean;
 };
 
@@ -83,6 +84,7 @@ function SellerBookingsInner() {
       : "If they just paid, the ticket may take a few seconds. Use ‘Refresh list’ above.",
     refreshList: es ? "Actualizar lista" : "Refresh list",
     viewListing: es ? "Abrir anuncio" : "Open listing",
+    messageClient: es ? "Mensajes con el cliente" : "Message client",
     planVisits: (n: number) => (es ? `Plan: ${n} visitas` : `${n}-visit plan`),
     strikeIntro: es ? "Ranking / garantía:" : "Ranking / guarantee:",
     strikeOne: es
@@ -579,12 +581,22 @@ function SellerBookingsInner() {
                           </>
                         )}
                       </div>
-                      <Link
-                        href={`/listing/${b.listing_id}`}
-                        className="inline-block mt-2 text-xs font-semibold text-[#1B4332] hover:underline"
-                      >
-                        {t.viewListing} →
-                      </Link>
+                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                        <Link
+                          href={
+                            b.listing_chat_path ?? `/listing/${b.listing_id}#listing-inapp-chat`
+                          }
+                          className="text-xs font-semibold text-[#1B4332] hover:underline"
+                        >
+                          {t.messageClient} →
+                        </Link>
+                        <Link
+                          href={`/listing/${b.listing_id}`}
+                          className="text-xs font-semibold text-[#6B7280] hover:underline"
+                        >
+                          {t.viewListing} →
+                        </Link>
+                      </div>
                     </div>
                     <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-full shrink-0 ${ph.cls}`}>
                       {ph.label}

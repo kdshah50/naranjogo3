@@ -29,8 +29,8 @@ export async function appendListingChatPaymentNotice(
   const ticket = booking.ticket_code?.trim();
   const idTag = `id:${booking.id}`;
   const body = ticket
-    ? `[Naranjogo] Tarifa de plataforma pagada. Ticket: ${ticket}. ${idTag}`
-    : `[Naranjogo] Tarifa de plataforma pagada. ${idTag}`;
+    ? `[Naranjogo] Reserva confirmada — depósito de plataforma pagado. Ticket: ${ticket}. ${idTag}`
+    : `[Naranjogo] Reserva confirmada — depósito de plataforma pagado. ${idTag}`;
 
   const { data: dup } = await supabase
     .from("listing_messages")

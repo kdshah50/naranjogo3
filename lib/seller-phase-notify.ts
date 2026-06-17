@@ -6,6 +6,7 @@ import { e164DigitsForWhatsAppRecipient } from "@/lib/phone";
 import { phoneDigitsForAccountPool } from "@/lib/user-phone-notify";
 import { sendWhatsAppToE164Digits, isTwilioWhatsAppConfigured } from "@/lib/twilio";
 import { hasSellerPhaseNotify, recordSellerPhaseNotify } from "@/lib/booking-lifecycle";
+import { listingChatAbsoluteUrl, findListingConversationIdForBuyer } from "@/lib/listing-chat-deep-link";
 
 export type SellerPhaseWhatsAppResult =
   | { delivered: true }
@@ -83,24 +84,18 @@ export async function notifySellerLifecyclePhase(
     buyerRows?.[0]?.display_name?.trim() ||
     (buyerRows?.[0]?.phone ? `Cliente …${buyerRows[0].phone.replace(/\D/g, "").slice(-4)}` : "Cliente");
 
-  const buyerPoolForConv = await expandUserAccountIdPool(supabase, String(booking.buyer_id));
-  const { data: convRows } = await supabase
-    .from("listing_conversations")
-    .select("id")
-    .in("listing_id", listingIdVars)
-    .in("buyer_id", buyerPoolForConv)
-    .order("updated_at", { ascending: false })
-    .limit(1);
-  const convId = convRows?.[0]?.id;
+  const convId = await findListingConversationIdForBuyer(
+    supabase,
+    String(booking.listing_id),
+    String(booking.buyer_id),
+  );
 
   const appUrl = getPublicAppUrl();
   const ticket = booking.ticket_code ? String(booking.ticket_code) : null;
   const sellerBookingsUrl = ticket
     ? `${appUrl}/seller-bookings?ticket=${encodeURIComponent(ticket)}`
     : `${appUrl}/seller-bookings`;
-  const listingUrl = convId
-    ? `${appUrl}/listing/${booking.listing_id}?chat=${convId}`
-    : `${appUrl}/listing/${booking.listing_id}`;
+  const listingUrl = listingChatAbsoluteUrl(String(booking.listing_id), convId);
   const appt = formatAppointmentEs(booking.appointment_at);
 
   const body =
@@ -201,23 +196,18 @@ export async function notifySellerBookingCompleted(
     buyerRows?.[0]?.display_name?.trim() ||
     (buyerRows?.[0]?.phone ? `Cliente …${buyerRows[0].phone.replace(/\D/g, "").slice(-4)}` : "Cliente");
 
-  const { data: convRows } = await supabase
-    .from("listing_conversations")
-    .select("id")
-    .in("listing_id", listingIdVars)
-    .in("buyer_id", buyerPool)
-    .order("updated_at", { ascending: false })
-    .limit(1);
-  const convId = convRows?.[0]?.id;
+  const convId = await findListingConversationIdForBuyer(
+    supabase,
+    String(booking.listing_id),
+    String(booking.buyer_id),
+  );
 
   const appUrl = getPublicAppUrl();
   const ticket = booking.ticket_code ? String(booking.ticket_code) : null;
   const sellerBookingsUrl = ticket
     ? `${appUrl}/seller-bookings?ticket=${encodeURIComponent(ticket)}`
     : `${appUrl}/seller-bookings`;
-  const listingUrl = convId
-    ? `${appUrl}/listing/${booking.listing_id}?chat=${convId}`
-    : `${appUrl}/listing/${booking.listing_id}`;
+  const listingUrl = listingChatAbsoluteUrl(String(booking.listing_id), convId);
 
   const balanceCents = Math.round(Number(booking.balance_due_mxn_cents ?? 0));
   const balancePending =

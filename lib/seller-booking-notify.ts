@@ -6,6 +6,7 @@ import { getPublicAppUrl } from "@/lib/app-url";
 import { phoneDigitsForAccountPool } from "@/lib/user-phone-notify";
 import { e164DigitsForWhatsAppRecipient } from "@/lib/phone";
 import { appendListingChatPaymentNotice } from "@/lib/payment-confirmed-chat";
+import { listingChatAbsoluteUrl, findListingConversationIdForBuyer } from "@/lib/listing-chat-deep-link";
 
 /** If the process dies mid-notify, another worker can reclaim after this many ms. */
 const STALE_NOTIFY_CLAIM_MS = 3 * 60 * 1000;
@@ -119,7 +120,12 @@ export async function notifySellerBookingCommissionPaid(supabase: SupabaseClient
 
     const mxn = Math.round((row.commission_amount_cents ?? 0) / 100);
     const appUrl = getPublicAppUrl();
-    const listingUrl = `${appUrl}/listing/${row.listing_id}`;
+    const convId = await findListingConversationIdForBuyer(
+      supabase,
+      String(row.listing_id),
+      String(row.buyer_id),
+    );
+    const listingUrl = listingChatAbsoluteUrl(String(row.listing_id), convId);
     const sellerBookingsUrl = ticketCode
       ? `${appUrl}/seller-bookings?ticket=${encodeURIComponent(String(ticketCode))}`
       : `${appUrl}/seller-bookings`;

@@ -116,3 +116,24 @@ export const LISTING_CHAT_COPY = {
 export function listingChatCopy(lang: Lang) {
   return LISTING_CHAT_COPY[lang];
 }
+
+/** Rephrase stored [Naranjogo] lines so providers see client-facing copy, not “your payment”. */
+export function formatListingChatSystemBody(
+  body: string,
+  role: "buyer" | "seller" | null,
+  lang: Lang,
+): string {
+  if (!body.startsWith("[Naranjogo]") || role !== "seller") return body;
+
+  const ticketMatch = body.match(/Ticket:\s*([A-Z0-9-]+)/i);
+  const ticket = ticketMatch?.[1];
+
+  if (/Tarifa de plataforma pagada|depósito de plataforma pagado/i.test(body)) {
+    if (lang === "en") {
+      return `[Naranjogo] Your client paid the platform deposit.${ticket ? ` Ticket: ${ticket}.` : ""} Message them below to schedule the visit.`;
+    }
+    return `[Naranjogo] Tu cliente pagó el depósito de plataforma.${ticket ? ` Ticket: ${ticket}.` : ""} Escríbele abajo para coordinar la visita.`;
+  }
+
+  return body;
+}

@@ -20,6 +20,7 @@ import { notifyBuyerHousekeepingBalanceDue } from "@/lib/housekeeping-balance-no
 import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
 import { providerServiceRequiresQuoteAccept } from "@/lib/provider-services";
 import { prepareQuoteGateForRebook } from "@/lib/service-quote-server";
+import { resolveListingChatPath } from "@/lib/listing-chat-deep-link";
 
 export const dynamic = "force-dynamic";
 
@@ -79,6 +80,14 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         : null;
 
     const appUrl = getPublicAppUrl();
+    const listingChatPath = await resolveListingChatPath(
+      supabase,
+      String(booking.listing_id),
+      String(booking.buyer_id),
+    );
+    const sellerBookingsPath = booking.ticket_code
+      ? `/seller-bookings?ticket=${encodeURIComponent(String(booking.ticket_code))}`
+      : "/seller-bookings";
 
     return NextResponse.json({
       id: booking.id,
@@ -102,10 +111,14 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       paidAt: booking.paid_at,
       createdAt: booking.created_at,
       isBuyer,
+      isSeller,
+      listingChatPath,
+      sellerBookingsPath,
       tracking: {
         buyerBookingsUrl: `${appUrl}/my-bookings`,
-        sellerBookingsUrl: `${appUrl}/seller-bookings`,
+        sellerBookingsUrl: `${appUrl}${sellerBookingsPath}`,
         listingUrl: `${appUrl}/listing/${booking.listing_id}`,
+        listingChatUrl: `${appUrl}${listingChatPath}`,
         claimsUrl: `${appUrl}/claims?booking=${encodeURIComponent(booking.id)}`,
       },
       listing: listing

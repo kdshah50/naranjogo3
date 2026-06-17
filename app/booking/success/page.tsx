@@ -19,6 +19,9 @@ type BookingData = {
   commissionAmountCents: number;
   paidAt: string | null;
   isBuyer: boolean;
+  isSeller?: boolean;
+  listingChatPath?: string;
+  sellerBookingsPath?: string;
   listing: { title: string; photo: string | null; priceMxn: number } | null;
   seller: { displayName: string; avatarUrl: string | null } | null;
   contact: { whatsappUrl: string | null } | null;
@@ -61,6 +64,12 @@ const BS: Record<
     bookingPhaseCompleted: string;
     bookingPhaseCancelled: string;
     bookingPhaseOther: string;
+    sellerPaidTitle: string;
+    sellerPaidSub: string;
+    sellerInAppBtn: string;
+    sellerInAppNote: string;
+    sellerManageBookings: string;
+    sellerLifecycleHint: string;
   }
 > = {
   es: {
@@ -102,6 +111,12 @@ const BS: Record<
     bookingPhaseCompleted: "El proveedor marcó el servicio como completado",
     bookingPhaseCancelled: "Reserva cancelada",
     bookingPhaseOther: "Estado",
+    sellerPaidTitle: "Cliente pagó el depósito",
+    sellerPaidSub: "La reserva está confirmada. Abre el chat para coordinar la visita con el cliente.",
+    sellerInAppBtn: "Abrir chat con el cliente",
+    sellerInAppNote: "Aquí coordinas horario y detalles — no es otra pantalla de pago.",
+    sellerManageBookings: "Gestionar reserva",
+    sellerLifecycleHint: "Marca agendado → en curso → completado en Reservas de clientes.",
   },
   en: {
     loadFallback: "Loading…",
@@ -141,6 +156,12 @@ const BS: Record<
     bookingPhaseCompleted: "Provider marked this service as completed",
     bookingPhaseCancelled: "Booking cancelled",
     bookingPhaseOther: "Status",
+    sellerPaidTitle: "Client deposit received",
+    sellerPaidSub: "The booking is confirmed. Open chat to schedule the visit with your client.",
+    sellerInAppBtn: "Open chat with client",
+    sellerInAppNote: "Coordinate timing and details here — this is not another payment screen.",
+    sellerManageBookings: "Manage booking",
+    sellerLifecycleHint: "Mark scheduled → in progress → completed under Client bookings.",
   },
 };
 
@@ -314,10 +335,22 @@ function BookingSuccessContent() {
   }
 
   const isPaid = data.paymentStatus === "paid";
+  const isSellerView = Boolean(data.isSeller) && !data.isBuyer;
   const myBookingsHref =
     isPaid && data.ticketCode
       ? withLang(`/my-bookings?ticket=${encodeURIComponent(String(data.ticketCode))}`, lang)
       : withLang("/my-bookings", lang);
+  const sellerBookingsHref = withLang(
+    data.sellerBookingsPath ??
+      (data.ticketCode
+        ? `/seller-bookings?ticket=${encodeURIComponent(String(data.ticketCode))}`
+        : "/seller-bookings"),
+    lang,
+  );
+  const listingChatHref = withLang(
+    data.listingChatPath ?? `/listing/${data.listingId}#listing-inapp-chat`,
+    lang,
+  );
   const showRetryPaid =
     Boolean(stripeSessionId) &&
     !isPaid &&
@@ -331,10 +364,18 @@ function BookingSuccessContent() {
           <div className={`px-6 py-5 text-center ${isPaid ? "bg-emerald-50" : "bg-amber-50"}`}>
             <div className="text-4xl mb-2">{isPaid ? "✓" : "⏳"}</div>
             <h1 className="text-xl font-bold text-[#1C1917]">
-              {isPaid ? t.paidTitle : t.pendingTitle}
+              {isPaid
+                ? isSellerView
+                  ? t.sellerPaidTitle
+                  : t.paidTitle
+                : t.pendingTitle}
             </h1>
             <p className="text-sm text-[#6B7280] mt-1">
-              {isPaid ? t.paidSub : t.pendingSub}
+              {isPaid
+                ? isSellerView
+                  ? t.sellerPaidSub
+                  : t.paidSub
+                : t.pendingSub}
             </p>
             {showRetryPaid && (
               <div className="mt-4 space-y-2">
@@ -392,21 +433,35 @@ function BookingSuccessContent() {
                 </p>
               ) : null}
               {data.status !== "completed" && data.status !== "cancelled" ? (
-                <p className="text-[11px] text-[#6B7280] mt-2 leading-snug">{t.bookingLifecycleHint}</p>
+                <p className="text-[11px] text-[#6B7280] mt-2 leading-snug">
+                  {isSellerView ? t.sellerLifecycleHint : t.bookingLifecycleHint}
+                </p>
               ) : null}
             </div>
           )}
 
           {isPaid && data.listingId && (
             <div className="px-6 py-5 space-y-3">
-              <p className="text-xs text-[#6B7280] font-medium uppercase tracking-wide">{t.providerContact}</p>
+              <p className="text-xs text-[#6B7280] font-medium uppercase tracking-wide">
+                {isSellerView ? (lang === "es" ? "Siguiente paso" : "Next step") : t.providerContact}
+              </p>
               <Link
-                href={withLang(`/listing/${data.listingId}#listing-inapp-chat`, lang)}
+                href={listingChatHref}
                 className="w-full py-4 rounded-xl font-semibold text-base flex items-center justify-center gap-2 bg-[#1B4332] text-white transition-colors hover:brightness-110"
               >
-                {t.inAppBtn}
+                {isSellerView ? t.sellerInAppBtn : t.inAppBtn}
               </Link>
-              <p className="text-[11px] text-[#6B7280] text-center leading-snug">{t.inAppNote}</p>
+              <p className="text-[11px] text-[#6B7280] text-center leading-snug">
+                {isSellerView ? t.sellerInAppNote : t.inAppNote}
+              </p>
+              {isSellerView ? (
+                <Link
+                  href={sellerBookingsHref}
+                  className="w-full py-3 rounded-xl font-semibold text-sm flex items-center justify-center border border-[#1B4332] text-[#1B4332] hover:bg-[#F4F0EB]"
+                >
+                  {t.sellerManageBookings}
+                </Link>
+              ) : null}
             </div>
           )}
 
@@ -418,12 +473,20 @@ function BookingSuccessContent() {
             >
               {t.backListing}
             </Link>
-            <Link href={myBookingsHref} className="text-sm text-[#1B4332] font-semibold hover:underline">
-              {t.myBookings}
-            </Link>
-            <Link href={withLang("/messages", lang)} className="text-sm text-[#1B4332] font-semibold hover:underline">
-              {t.messages}
-            </Link>
+            {isSellerView ? (
+              <Link href={sellerBookingsHref} className="text-sm text-[#1B4332] font-semibold hover:underline">
+                {t.sellerManageBookings}
+              </Link>
+            ) : (
+              <>
+                <Link href={myBookingsHref} className="text-sm text-[#1B4332] font-semibold hover:underline">
+                  {t.myBookings}
+                </Link>
+                <Link href={withLang("/messages", lang)} className="text-sm text-[#1B4332] font-semibold hover:underline">
+                  {t.messages}
+                </Link>
+              </>
+            )}
           </div>
         </div>
 
@@ -433,7 +496,7 @@ function BookingSuccessContent() {
           </div>
         )}
 
-        {isPaid && (
+        {isPaid && data.isBuyer && (
           <div className="mt-6 px-6">
             <p className="text-center text-sm text-[#374151] mb-2">
               {t.reviewBlurb}{" "}
@@ -445,7 +508,7 @@ function BookingSuccessContent() {
           </div>
         )}
 
-        {isPaid && (
+        {isPaid && data.isBuyer && (
           <div className="mt-6">
             <GuaranteeBadge lang={lang} />
             <p className="text-center text-xs text-[#6B7280] mt-3">
@@ -461,7 +524,7 @@ function BookingSuccessContent() {
           </div>
         )}
 
-        {isPaid && <p className="text-center text-xs text-[#6B7280] mt-4">{t.contactFooter}</p>}
+        {isPaid && data.isBuyer && <p className="text-center text-xs text-[#6B7280] mt-4">{t.contactFooter}</p>}
       </div>
     </main>
   );
