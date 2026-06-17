@@ -614,6 +614,7 @@ export default function ListingChat({
     window.dispatchEvent(new CustomEvent("tianguis:quote-updated", { detail: { listingId } }));
     window.dispatchEvent(new CustomEvent("tianguis:agreed-price-updated", { detail: { listingId } }));
     await loadQuoteState();
+    if (selectedId) await loadConversation(selectedId, agreedPriceBuyerId ?? undefined);
   };
 
   const submitCleaningRequest = async (payload: QuoteBuilderPayload) => {
@@ -945,42 +946,46 @@ export default function ListingChat({
 
       {role === "seller" && selectedId && (
         <div className="px-4 py-2 border-b border-[#E5E0D8] bg-[#FFFBEB] text-xs space-y-2">
-          <p className="font-semibold text-[#78350F]">{c.agreedTitle}</p>
-          <p className="text-[#92400E] leading-snug">{c.agreedHelp}</p>
-          <div className="flex flex-wrap items-end gap-2">
-            <label className="flex-1 min-w-[120px]">
-              <span className="sr-only">MXN</span>
-              <input
-                type="text"
-                inputMode="decimal"
-                value={agreedPesos}
-                onChange={(e) => setAgreedPesos(e.target.value)}
-                disabled={!agreedPriceBuyerId || agreedSaving}
-                placeholder={c.agreedPh}
-                className="w-full rounded-lg border border-amber-200 px-2 py-1.5 text-sm text-[#1C1917] outline-none focus:border-[#B45309]"
-              />
-            </label>
-            <button
-              type="button"
-              disabled={!agreedPriceBuyerId || agreedLoading || agreedSaving}
-              onClick={() => void saveAgreedPrice(false)}
-              className="px-3 py-1.5 rounded-lg bg-[#B45309] text-white text-[11px] font-semibold disabled:opacity-40"
-            >
-              {agreedSaving ? "…" : c.agreedSave}
-            </button>
-            <button
-              type="button"
-              disabled={!agreedPriceBuyerId || agreedLoading || agreedSaving}
-              onClick={() => void saveAgreedPrice(true)}
-              className="px-3 py-1.5 rounded-lg border border-amber-300 text-[#78350F] text-[11px] font-semibold disabled:opacity-40"
-            >
-              {c.agreedClear}
-            </button>
-          </div>
-          {agreedLoading ? (
-            <p className="text-[#A16207]">{c.agreedLoading}</p>
-          ) : !agreedPriceBuyerId && selectedId ? (
-            <p className="text-[#A16207]">{c.loadingThread}</p>
+          {!requiresQuoteAccept ? (
+            <>
+              <p className="font-semibold text-[#78350F]">{c.agreedTitle}</p>
+              <p className="text-[#92400E] leading-snug">{c.agreedHelp}</p>
+              <div className="flex flex-wrap items-end gap-2">
+                <label className="flex-1 min-w-[120px]">
+                  <span className="sr-only">MXN</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={agreedPesos}
+                    onChange={(e) => setAgreedPesos(e.target.value)}
+                    disabled={!agreedPriceBuyerId || agreedSaving}
+                    placeholder={c.agreedPh}
+                    className="w-full rounded-lg border border-amber-200 px-2 py-1.5 text-sm text-[#1C1917] outline-none focus:border-[#B45309]"
+                  />
+                </label>
+                <button
+                  type="button"
+                  disabled={!agreedPriceBuyerId || agreedLoading || agreedSaving}
+                  onClick={() => void saveAgreedPrice(false)}
+                  className="px-3 py-1.5 rounded-lg bg-[#B45309] text-white text-[11px] font-semibold disabled:opacity-40"
+                >
+                  {agreedSaving ? "…" : c.agreedSave}
+                </button>
+                <button
+                  type="button"
+                  disabled={!agreedPriceBuyerId || agreedLoading || agreedSaving}
+                  onClick={() => void saveAgreedPrice(true)}
+                  className="px-3 py-1.5 rounded-lg border border-amber-300 text-[#78350F] text-[11px] font-semibold disabled:opacity-40"
+                >
+                  {c.agreedClear}
+                </button>
+              </div>
+              {agreedLoading ? (
+                <p className="text-[#A16207]">{c.agreedLoading}</p>
+              ) : !agreedPriceBuyerId && selectedId ? (
+                <p className="text-[#A16207]">{c.loadingThread}</p>
+              ) : null}
+            </>
           ) : null}
           {agreedErr ? <p className="text-red-600">{agreedErr}</p> : null}
           {requiresQuoteAccept &&
@@ -1009,15 +1014,19 @@ export default function ListingChat({
               initialCartLines={quoteLineItems?.map((x) => ({ sku: x.sku, qty: x.qty }))}
               initialVisitFrequency={quoteMetadata?.visitFrequency}
               initialQuoteBasis={quoteMetadata?.quoteBasis}
-              onApplyTotal={(pesos) => setAgreedPesos(pesos)}
+              onApplyTotal={requiresQuoteAccept ? undefined : (pesos) => setAgreedPesos(pesos)}
               onSendOfficialQuote={requiresQuoteAccept ? sendOfficialQuote : undefined}
-              onInsertAsMessage={async (body) => {
-                try {
-                  await postMessageBody(body);
-                } catch (e: unknown) {
-                  setAgreedErr(e instanceof Error ? e.message : "Error");
-                }
-              }}
+              onInsertAsMessage={
+                requiresQuoteAccept
+                  ? undefined
+                  : async (body) => {
+                      try {
+                        await postMessageBody(body);
+                      } catch (e: unknown) {
+                        setAgreedErr(e instanceof Error ? e.message : "Error");
+                      }
+                    }
+              }
             />
           )}
         </div>
@@ -1107,7 +1116,8 @@ export default function ListingChat({
         className="max-h-64 overflow-y-auto overflow-x-hidden px-4 py-3 space-y-2 overscroll-y-contain"
       >
         {messages.map((m, idx) => {
-          const mine = myUserId && m.sender_id === myUserId;
+          const mine =
+            myUserId && String(m.sender_id).trim().toLowerCase() === myUserId.trim().toLowerCase();
           const isSystem = m.body.startsWith("[Naranjogo]");
           const dayKey = conversationDayKey(m.created_at);
           const prevDayKey = idx > 0 ? conversationDayKey(messages[idx - 1].created_at) : null;

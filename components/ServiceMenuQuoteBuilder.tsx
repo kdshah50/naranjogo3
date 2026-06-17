@@ -201,6 +201,7 @@ export default function ServiceMenuQuoteBuilder({
     .filter((x) => x.qty > 0);
 
   const applyDisabled = disabled || totalCents <= 0 || busy;
+  const officialQuoteFlow = Boolean(onSendOfficialQuote && quoteLayout === "housekeeping");
 
   const applyToAgreedPrice = () => {
     onApplyTotal?.(String(totalCents / 100));
@@ -638,6 +639,13 @@ export default function ServiceMenuQuoteBuilder({
         </label>
       )}
       <div className="flex flex-wrap gap-2">
+        {officialQuoteFlow ? (
+          <p className="text-[10px] text-[#065F46] leading-snug w-full">
+            {lang === "en"
+              ? "Use the green button so the customer gets Accept / Decline and WhatsApp — not «Send as message»."
+              : "Usa el botón verde para que el cliente reciba Aceptar / Rechazar y WhatsApp — no «Enviar al chat»."}
+          </p>
+        ) : null}
         {variant === "seller" && onSendOfficialQuote && quoteLayout === "housekeeping" ? (
           <button
             type="button"
@@ -666,7 +674,7 @@ export default function ServiceMenuQuoteBuilder({
                 : "Enviar solicitud al proveedor"}
           </button>
         ) : null}
-        {variant === "seller" && onApplyTotal ? (
+        {variant === "seller" && onApplyTotal && !officialQuoteFlow ? (
           <button
             type="button"
             onClick={applyToAgreedPrice}
@@ -676,7 +684,7 @@ export default function ServiceMenuQuoteBuilder({
             {lang === "en" ? "Apply to agreed price" : "Aplicar al precio acordado"}
           </button>
         ) : null}
-        {variant === "seller" && onInsertAsMessage && (
+        {variant === "seller" && onInsertAsMessage && !officialQuoteFlow && (
           <button
             type="button"
             onClick={() => void insertAsMessage()}

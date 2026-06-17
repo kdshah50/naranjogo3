@@ -5,6 +5,7 @@ import { sendWhatsAppToE164Digits } from "@/lib/twilio";
 import { getPublicAppUrl } from "@/lib/app-url";
 import { phoneDigitsForAccountPool } from "@/lib/user-phone-notify";
 import { e164DigitsForWhatsAppRecipient } from "@/lib/phone";
+import { appendListingChatPaymentNotice } from "@/lib/payment-confirmed-chat";
 
 /** If the process dies mid-notify, another worker can reclaim after this many ms. */
 const STALE_NOTIFY_CLAIM_MS = 3 * 60 * 1000;
@@ -139,6 +140,17 @@ export async function notifySellerBookingCommissionPaid(supabase: SupabaseClient
     }
 
     await markDelivered();
+
+    try {
+      await appendListingChatPaymentNotice(supabase, {
+        id: String(row.id),
+        listing_id: String(row.listing_id),
+        buyer_id: String(row.buyer_id),
+        ticket_code: ticketCode ? String(ticketCode) : null,
+      });
+    } catch (chatErr) {
+      console.error("[seller-booking-notify] payment in-app chat (non-fatal)", chatErr);
+    }
   } catch (e) {
     console.error("[seller-booking-notify]", e);
     await releaseClaim();

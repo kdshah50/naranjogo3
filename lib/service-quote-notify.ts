@@ -6,7 +6,13 @@ import { phoneDigitsForAccountPool } from "@/lib/user-phone-notify";
 import { sendWhatsAppToE164Digits, isTwilioWhatsAppConfigured } from "@/lib/twilio";
 
 async function loadUserPhone(supabase: SupabaseClient, userId: string): Promise<string> {
-  return phoneDigitsForAccountPool(supabase, userId);
+  const digits = await phoneDigitsForAccountPool(supabase, userId);
+  if (!digits) {
+    console.warn("[service-quote-notify] no WhatsApp digits for user pool", {
+      userIdTail: String(userId).slice(-8),
+    });
+  }
+  return digits;
 }
 
 export async function notifyBuyerServiceQuoteSent(opts: {
@@ -52,7 +58,12 @@ export async function notifyBuyerServiceQuoteSent(opts: {
           link,
         ].join("\n");
 
-  await sendWhatsAppToE164Digits(digits, msg);
+  const ok = await sendWhatsAppToE164Digits(digits, msg);
+  if (!ok) {
+    console.error("[service-quote-notify] buyer quote WhatsApp send failed", {
+      buyerIdTail: String(opts.buyerId).slice(-8),
+    });
+  }
 }
 
 export async function notifySellerBuyerServiceRequest(opts: {
@@ -101,7 +112,65 @@ export async function notifySellerBuyerServiceRequest(opts: {
           link,
         ].join("\n");
 
-  await sendWhatsAppToE164Digits(digits, msg);
+  const ok = await sendWhatsAppToE164Digits(digits, msg);
+  if (!ok) {
+    console.error("[service-quote-notify] seller request WhatsApp send failed", {
+      sellerIdTail: String(opts.sellerId).slice(-8),
+    });
+  }
+}
+
+/** Confirmation to the provider after they send an official quote (pending Accept/Decline). */
+export async function notifySellerQuoteSent(opts: {
+  supabase: SupabaseClient;
+  sellerId: string;
+  listingId: string;
+  listingTitle: string;
+  conversationId: string;
+  buyerName: string;
+  totalCents: number;
+  lang?: "es" | "en";
+}): Promise<void> {
+  if (!isTwilioWhatsAppConfigured()) return;
+  const digits = await loadUserPhone(opts.supabase, opts.sellerId);
+  if (!digits) return;
+
+  const lang = opts.lang ?? "es";
+  const appUrl = getPublicAppUrl();
+  const link = `${appUrl}/listing/${opts.listingId}?chat=${opts.conversationId}`;
+  const total = formatMxn(opts.totalCents, lang);
+
+  const msg =
+    lang === "en"
+      ? [
+          "📋 *Official quote sent — Naranjogo*",
+          "",
+          `To: *${opts.buyerName}*`,
+          `Service: *${opts.listingTitle}*`,
+          `Total: *${total}*`,
+          "",
+          "The customer gets WhatsApp with Accept / Decline. You’ll be notified when they respond.",
+          "",
+          link,
+        ].join("\n")
+      : [
+          "📋 *Cotización oficial enviada — Naranjogo*",
+          "",
+          `Para: *${opts.buyerName}*`,
+          `Servicio: *${opts.listingTitle}*`,
+          `Total: *${total}*`,
+          "",
+          "El cliente recibe WhatsApp con Aceptar / Rechazar. Te avisamos cuando responda.",
+          "",
+          link,
+        ].join("\n");
+
+  const ok = await sendWhatsAppToE164Digits(digits, msg);
+  if (!ok) {
+    console.error("[service-quote-notify] seller quote-sent WhatsApp failed", {
+      sellerIdTail: String(opts.sellerId).slice(-8),
+    });
+  }
 }
 
 /** @deprecated Use notifySellerBuyerServiceRequest */

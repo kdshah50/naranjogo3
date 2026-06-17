@@ -19,8 +19,9 @@ import {
   replicateServiceQuoteGateToBuyerPool,
   resolveConversationForBuyer,
 } from "@/lib/service-quote-server";
-import { notifyBuyerServiceQuoteSent } from "@/lib/service-quote-notify";
+import { notifyBuyerServiceQuoteSent, notifySellerQuoteSent } from "@/lib/service-quote-notify";
 import { sellerHasConnectForHousekeeping } from "@/lib/housekeeping-payments";
+import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 import { userIsListingSellerAccount } from "@/lib/user-account-pool";
 
 export const dynamic = "force-dynamic";
@@ -138,16 +139,45 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       return NextResponse.json({ error: "Cotización guardada pero no se pudo publicar en el chat" }, { status: 500 });
     }
 
-    void notifyBuyerServiceQuoteSent({
-      supabase,
-      buyerId: gateBuyerId,
-      listingId,
-      listingTitle: String(listing.title_es ?? "Servicio"),
-      conversationId: conv.id,
-      totalCents: agreedSubtotalMxnCents,
-      lang,
-      providerSlug: slug,
-    });
+    try {
+      await notifyBuyerServiceQuoteSent({
+        supabase,
+        buyerId: gateBuyerId,
+        listingId,
+        listingTitle: String(listing.title_es ?? "Servicio"),
+        conversationId: conv.id,
+        totalCents: agreedSubtotalMxnCents,
+        lang,
+        providerSlug: slug,
+      });
+    } catch (e) {
+      console.error("[service-quote/send] buyer WhatsApp failed (non-fatal)", e);
+    }
+
+    const buyerPool = await expandUserAccountIdPool(supabase, gateBuyerId);
+    const { data: buyerRows } = await supabase
+      .from("users")
+      .select("display_name,phone")
+      .in("id", buyerPool)
+      .limit(1);
+    const buyerName =
+      buyerRows?.[0]?.display_name?.trim() ||
+      (buyerRows?.[0]?.phone ? `Cliente …${buyerRows[0].phone.replace(/\D/g, "").slice(-4)}` : "Cliente");
+
+    try {
+      await notifySellerQuoteSent({
+        supabase,
+        sellerId: String(listing.seller_id),
+        listingId,
+        listingTitle: String(listing.title_es ?? "Servicio"),
+        conversationId: conv.id,
+        buyerName,
+        totalCents: agreedSubtotalMxnCents,
+        lang,
+      });
+    } catch (e) {
+      console.error("[service-quote/send] seller WhatsApp failed (non-fatal)", e);
+    }
 
     return NextResponse.json({
       ok: true,

@@ -198,17 +198,21 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       }
     }
 
-    void notifySellerBuyerServiceRequest({
-      supabase,
-      sellerId: String(listing.seller_id),
-      listingId,
-      listingTitle: String(listing.title_es ?? "Servicio"),
-      conversationId: conv.id,
-      buyerName: `${buyerContact.firstName} ${buyerContact.lastName}`.trim(),
-      totalCents,
-      lang,
-      providerSlug: slug,
-    });
+    try {
+      await notifySellerBuyerServiceRequest({
+        supabase,
+        sellerId: String(listing.seller_id),
+        listingId,
+        listingTitle: String(listing.title_es ?? "Servicio"),
+        conversationId: conv.id,
+        buyerName: `${buyerContact.firstName} ${buyerContact.lastName}`.trim(),
+        totalCents,
+        lang,
+        providerSlug: slug,
+      });
+    } catch (e) {
+      console.error("[service-quote/request] seller WhatsApp failed (non-fatal)", e);
+    }
 
     return NextResponse.json({
       ok: true,
