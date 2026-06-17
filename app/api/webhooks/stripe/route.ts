@@ -6,7 +6,7 @@ import { maybeAwardReferralBonus } from "@/lib/referral";
 import { notifyBuyerBookingCommissionPaid } from "@/lib/buyer-booking-notify";
 import { notifySellerBookingCommissionPaid } from "@/lib/seller-booking-notify";
 import { appendBookingEvent, ensureTicketCodeForPaidBooking, statusAfterPaymentSucceeded } from "@/lib/booking-lifecycle";
-import { appendListingChatPaymentNotice } from "@/lib/payment-confirmed-chat";
+import { appendListingChatPaymentNotice, appendListingChatPaymentNoticeForBookingId } from "@/lib/payment-confirmed-chat";
 
 export const dynamic = "force-dynamic";
 
@@ -158,6 +158,12 @@ export async function POST(req: NextRequest) {
       await ensureTicketCodeForPaidBooking(supabase, bookingIdMeta);
     } catch (tcErr) {
       console.error("[stripe-webhook] ticket_code (non-fatal)", tcErr);
+    }
+
+    try {
+      await appendListingChatPaymentNoticeForBookingId(supabase, bookingIdMeta);
+    } catch (chatErr) {
+      console.error("[stripe-webhook] payment-confirmed-chat early (non-fatal)", chatErr);
     }
 
     try {

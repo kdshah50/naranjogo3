@@ -57,6 +57,27 @@ export async function appendListingChatPaymentNotice(
     .eq("id", conv.id);
 }
 
+/** Load paid booking row and append chat notice (idempotent). Safe to call from webhook + verify-session. */
+export async function appendListingChatPaymentNoticeForBookingId(
+  supabase: SupabaseClient,
+  bookingId: string,
+): Promise<void> {
+  const idVars = idMatchVariantsForIn(String(bookingId));
+  if (idVars.length === 0) return;
+  const { data: row } = await supabase
+    .from("service_bookings")
+    .select("id,listing_id,buyer_id,ticket_code,payment_status")
+    .in("id", idVars)
+    .maybeSingle();
+  if (!row || row.payment_status !== "paid") return;
+  await appendListingChatPaymentNotice(supabase, {
+    id: String(row.id),
+    listing_id: String(row.listing_id),
+    buyer_id: String(row.buyer_id),
+    ticket_code: row.ticket_code ? String(row.ticket_code) : null,
+  });
+}
+
 /** In-app notice when buyer accepts an official quote (seller may not receive browser events). */
 export async function appendListingChatQuoteAcceptNotice(
   supabase: SupabaseClient,

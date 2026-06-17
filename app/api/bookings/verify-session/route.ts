@@ -5,7 +5,7 @@ import { getPublicAppUrl } from "@/lib/app-url";
 import { notifyBuyerBookingCommissionPaid } from "@/lib/buyer-booking-notify";
 import { notifySellerBookingCommissionPaid } from "@/lib/seller-booking-notify";
 import { appendBookingEvent, ensureTicketCodeForPaidBooking, statusAfterPaymentSucceeded } from "@/lib/booking-lifecycle";
-import { appendListingChatPaymentNotice } from "@/lib/payment-confirmed-chat";
+import { appendListingChatPaymentNotice, appendListingChatPaymentNoticeForBookingId } from "@/lib/payment-confirmed-chat";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -177,6 +177,11 @@ export async function GET(req: NextRequest) {
           console.error("[verify-session] ticket_code (non-fatal)", tcErr);
         }
         try {
+          await appendListingChatPaymentNoticeForBookingId(supabase, bookingRowId);
+        } catch (chatErr) {
+          console.error("[verify-session] payment-confirmed-chat early (non-fatal)", chatErr);
+        }
+        try {
           await appendBookingEvent(supabase, {
             bookingId: bookingRowId,
             actorId: null,
@@ -208,6 +213,11 @@ export async function GET(req: NextRequest) {
           await ensureTicketCodeForPaidBooking(supabase, bookingRowId);
         } catch (tcErr) {
           console.error("[verify-session] ticket_code race (non-fatal)", tcErr);
+        }
+        try {
+          await appendListingChatPaymentNoticeForBookingId(supabase, bookingRowId);
+        } catch (chatErr) {
+          console.error("[verify-session] payment-confirmed-chat race (non-fatal)", chatErr);
         }
         try {
           await notifySellerBookingCommissionPaid(supabase, bookingRowId);
