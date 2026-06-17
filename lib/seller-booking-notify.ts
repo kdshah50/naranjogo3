@@ -84,6 +84,25 @@ export async function notifySellerBookingCommissionPaid(supabase: SupabaseClient
       buyerRows?.[0]?.display_name?.trim() ||
       (buyerRows?.[0]?.phone ? `Cliente …${buyerRows[0].phone.replace(/\D/g, "").slice(-4)}` : "Un cliente");
 
+    const { data: ticketRow } = await supabase
+      .from("service_bookings")
+      .select("ticket_code")
+      .eq("id", row.id)
+      .maybeSingle();
+    const ticketCode = ticketRow?.ticket_code ?? row.ticket_code;
+
+    // In-app first: MX WhatsApp often fails on +52 while +521 delivers; provider still needs the update.
+    try {
+      await appendListingChatPaymentNotice(supabase, {
+        id: String(row.id),
+        listing_id: String(row.listing_id),
+        buyer_id: String(row.buyer_id),
+        ticket_code: ticketCode ? String(ticketCode) : null,
+      });
+    } catch (chatErr) {
+      console.error("[seller-booking-notify] payment in-app chat (non-fatal)", chatErr);
+    }
+
     let sellerDigits = e164DigitsForWhatsAppRecipient(row.seller_phone_snapshot?.trim() ?? "");
     if (!sellerDigits) {
       sellerDigits = await phoneDigitsForAccountPool(supabase, String(row.seller_id));
@@ -97,13 +116,6 @@ export async function notifySellerBookingCommissionPaid(supabase: SupabaseClient
       await releaseClaim();
       return;
     }
-
-    const { data: ticketRow } = await supabase
-      .from("service_bookings")
-      .select("ticket_code")
-      .eq("id", row.id)
-      .maybeSingle();
-    const ticketCode = ticketRow?.ticket_code ?? row.ticket_code;
 
     const mxn = Math.round((row.commission_amount_cents ?? 0) / 100);
     const appUrl = getPublicAppUrl();
@@ -140,17 +152,6 @@ export async function notifySellerBookingCommissionPaid(supabase: SupabaseClient
     }
 
     await markDelivered();
-
-    try {
-      await appendListingChatPaymentNotice(supabase, {
-        id: String(row.id),
-        listing_id: String(row.listing_id),
-        buyer_id: String(row.buyer_id),
-        ticket_code: ticketCode ? String(ticketCode) : null,
-      });
-    } catch (chatErr) {
-      console.error("[seller-booking-notify] payment in-app chat (non-fatal)", chatErr);
-    }
   } catch (e) {
     console.error("[seller-booking-notify]", e);
     await releaseClaim();
