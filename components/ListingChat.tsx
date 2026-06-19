@@ -74,7 +74,8 @@ export default function ListingChat({
   highlightRebook?: boolean;
 }) {
   const c = listingChatCopy(lang);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !initialConversationId?.trim());
+  const [scopeLoaded, setScopeLoaded] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [role, setRole] = useState<"buyer" | "seller" | null>(null);
@@ -114,6 +115,20 @@ export default function ListingChat({
   const activeConversationIdRef = useRef<string | null>(null);
   const conversationLoadSeqRef = useRef(0);
   const selectedIdRef = useRef<string | null>(null);
+  const initialConversationIdRef = useRef(initialConversationId?.trim() || null);
+
+  useEffect(() => {
+    initialConversationIdRef.current = initialConversationId?.trim() || null;
+  }, [initialConversationId]);
+
+  // Deep link: bind thread id immediately so polls start before listing scope returns.
+  useEffect(() => {
+    const cid = initialConversationId?.trim();
+    if (!cid) return;
+    setSelectedId(cid);
+    selectedIdRef.current = cid;
+    activeConversationIdRef.current = normalizeConversationId(cid);
+  }, [initialConversationId]);
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
@@ -142,57 +157,82 @@ export default function ListingChat({
     });
   };
 
-  const loadListingScope = useCallback(async () => {
+  const loadListingScope = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false;
     setError("");
     const listingChanged = lastScopeListingIdRef.current !== listingId;
-    if (listingChanged && !initialConversationId) {
-      lastScopeListingIdRef.current = listingId;
-      // Avoid stale thread/messages from another anuncio (SPA navigation) or a buyer id from another listing
-      setLoading(true);
-      setSelectedId(null);
-      setAgreedPriceBuyerId(null);
-      setMessages([]);
-      setThreads([]);
-      conversationListingIdRef.current = null;
-    } else if (listingChanged) {
-      lastScopeListingIdRef.current = listingId;
-      setLoading(true);
-    }
+    const deepLinked = Boolean(initialConversationId?.trim());
 
-    const res = await fetch(`/api/conversations?listingId=${encodeURIComponent(listingId)}`, {
-      credentials: "same-origin",
-      cache: "no-store",
-    });
-    if (res.status === 401) {
-      setRole(null);
-      setLoading(false);
-      return;
-    }
-    if (!res.ok) {
-      const d = await res.json().catch(() => ({}));
-      setError((d as { error?: string }).error ?? c.loadChatErr);
-      setLoading(false);
-      return;
-    }
-    const data = await res.json();
-    setRole(data.role);
-    if (data.role === "seller") {
-      setThreads(data.threads ?? []);
-      setThreadsTotal(Number(data.threadsTotal ?? data.threads?.length ?? 0));
-    } else {
-      setBuyerTicketCode((data.ticket_code as string | null | undefined) ?? null);
-      if (data.conversation?.id) {
-        setSelectedId(data.conversation.id);
-        const fresh: Msg[] = data.messages ?? [];
-        setMessages((prev) => applyChatPollUpdate(prev, fresh));
-        conversationListingIdRef.current = listingId;
+    if (listingChanged) {
+      lastScopeListingIdRef.current = listingId;
+      if (!silent && !deepLinked) {
+        setLoading(true);
+        setSelectedId(null);
+        setAgreedPriceBuyerId(null);
+        setMessages([]);
+        setThreads([]);
+        conversationListingIdRef.current = null;
+      } else if (!silent && deepLinked) {
+        setLoading(false);
       }
     }
-    setLoading(false);
-  }, [listingId, initialConversationId]);
+
+    try {
+      const scopeQuery = deepLinked
+        ? `listingId=${encodeURIComponent(listingId)}&conversationId=${encodeURIComponent(initialConversationId!.trim())}`
+        : `listingId=${encodeURIComponent(listingId)}`;
+      const res = await fetch(`/api/conversations?${scopeQuery}`, {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      if (res.status === 401) {
+        setRole(null);
+        setScopeLoaded(true);
+        return;
+      }
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setError((d as { error?: string }).error ?? c.loadChatErr);
+        return;
+      }
+      const data = await res.json();
+      setRole(data.role);
+      if (data.role === "seller") {
+        setThreads(data.threads ?? []);
+        setThreadsTotal(Number(data.threadsTotal ?? data.threads?.length ?? 0));
+        const focus = data.focusConversation as
+          | { id?: string; buyer_id?: string; messages?: Msg[] }
+          | null
+          | undefined;
+        if (focus?.id) {
+          setSelectedId(String(focus.id));
+          if (focus.buyer_id) setAgreedPriceBuyerId(String(focus.buyer_id));
+          const fresh = (focus.messages ?? []) as Msg[];
+          if (fresh.length > 0) {
+            setMessages((prev) => applyChatPollUpdate(prev, fresh));
+          }
+          conversationListingIdRef.current = listingId;
+        }
+      } else {
+        setBuyerTicketCode((data.ticket_code as string | null | undefined) ?? null);
+        if (data.conversation?.id) {
+          setSelectedId(data.conversation.id);
+          const fresh: Msg[] = data.messages ?? [];
+          setMessages((prev) => applyChatPollUpdate(prev, fresh));
+          conversationListingIdRef.current = listingId;
+        }
+      }
+    } catch {
+      if (!silent) setError(c.networkErr);
+    } finally {
+      setScopeLoaded(true);
+      if (!silent) setLoading(false);
+    }
+  }, [listingId, initialConversationId, c.loadChatErr, c.networkErr]);
 
   useEffect(() => {
     deepLinkConvLoadedRef.current = false;
+    setScopeLoaded(false);
   }, [listingId, initialConversationId]);
 
   const loadConversation = useCallback(
@@ -219,10 +259,15 @@ export default function ListingChat({
           if (seq !== conversationLoadSeqRef.current) return;
           const d = await res.json().catch(() => ({}));
           setError((d as { error?: string }).error ?? c.loadErr);
-          setSelectedId(null);
-          setAgreedPriceBuyerId(null);
-          conversationListingIdRef.current = null;
-          activeConversationIdRef.current = null;
+          const deepId = initialConversationIdRef.current;
+          const keepDeepLink =
+            deepId && normalizeConversationId(deepId) === normId;
+          if (!keepDeepLink) {
+            setSelectedId(null);
+            setAgreedPriceBuyerId(null);
+            conversationListingIdRef.current = null;
+            activeConversationIdRef.current = null;
+          }
           return;
         }
         const data = await res.json();
@@ -306,7 +351,7 @@ export default function ListingChat({
     const onBookingPaid = (ev: Event) => {
       const d = (ev as CustomEvent<{ listingId?: string }>).detail;
       if (!d?.listingId || d.listingId === listingId) {
-        void loadListingScope();
+        void loadListingScope({ silent: true });
         if (selectedId) void loadConversation(selectedId, agreedPriceBuyerId ?? undefined);
       }
     };
@@ -321,7 +366,7 @@ export default function ListingChat({
         d?.listingId &&
         d.listingId.trim().toLowerCase() === listingId.trim().toLowerCase()
       ) {
-        void loadListingScope();
+        void loadListingScope({ silent: true });
         if (selectedId) void loadConversation(selectedId, agreedPriceBuyerId ?? undefined);
       }
     };
@@ -330,20 +375,20 @@ export default function ListingChat({
   }, [listingId, loadListingScope, loadConversation, selectedId, agreedPriceBuyerId]);
 
   useEffect(() => {
-    if (loading || !initialConversationId || deepLinkConvLoadedRef.current) return;
-    if (role === "seller") {
-      const th = threads.find(
-        (t) => normalizeConversationId(t.conversationId) === normalizeConversationId(initialConversationId),
-      );
-      deepLinkConvLoadedRef.current = true;
-      void loadConversation(initialConversationId, th?.buyer_id);
-      return;
-    }
-    if (role === "buyer") {
-      deepLinkConvLoadedRef.current = true;
-      void loadConversation(initialConversationId);
-    }
-  }, [loading, initialConversationId, role, threads, loadConversation]);
+    if (!initialConversationId?.trim() || deepLinkConvLoadedRef.current) return;
+    deepLinkConvLoadedRef.current = true;
+    void loadConversation(initialConversationId.trim());
+  }, [initialConversationId, loadConversation]);
+
+  useEffect(() => {
+    if (role !== "seller" || !initialConversationId?.trim()) return;
+    const th = threads.find(
+      (t) =>
+        normalizeConversationId(t.conversationId) ===
+        normalizeConversationId(initialConversationId),
+    );
+    if (th?.buyer_id) setAgreedPriceBuyerId(String(th.buyer_id));
+  }, [role, threads, initialConversationId]);
 
   // Sellers otherwise see an empty message pane until they click a buyer; they may think no message arrived.
   useEffect(() => {
@@ -388,7 +433,7 @@ export default function ListingChat({
     if (role !== "seller" || !listingId) return;
     const poll = setInterval(() => {
       if (document.visibilityState !== "visible") return;
-      void loadListingScope();
+      void loadListingScope({ silent: true });
       if (selectedIdRef.current) void syncConversationMessages(selectedIdRef.current);
     }, 4000);
     return () => clearInterval(poll);
@@ -407,7 +452,7 @@ export default function ListingChat({
     if (role !== "buyer" || !listingId) return;
     const poll = setInterval(() => {
       if (document.visibilityState !== "visible") return;
-      void loadListingScope();
+      void loadListingScope({ silent: true });
     }, 4000);
     return () => clearInterval(poll);
   }, [role, listingId, loadListingScope]);
@@ -497,7 +542,7 @@ export default function ListingChat({
     if (role !== "buyer") return;
     const refreshOnVisible = () => {
       if (document.visibilityState !== "visible") return;
-      void loadListingScope();
+      void loadListingScope({ silent: true });
       void loadQuoteState();
       if (selectedId) void loadConversation(selectedId);
     };
@@ -532,7 +577,7 @@ export default function ListingChat({
     if (role !== "seller") return;
     const refreshOnVisible = () => {
       if (document.visibilityState !== "visible") return;
-      void loadListingScope();
+      void loadListingScope({ silent: true });
       if (selectedId) void loadConversation(selectedId, agreedPriceBuyerId ?? undefined);
       if (requiresQuoteAccept) void loadQuoteState();
     };
@@ -901,7 +946,7 @@ export default function ListingChat({
     }
   };
 
-  if (loading) {
+  if (!scopeLoaded && !selectedId) {
     return (
       <div
         id="listing-inapp-chat"
@@ -912,7 +957,7 @@ export default function ListingChat({
     );
   }
 
-  if (!role) {
+  if (scopeLoaded && !role) {
     return (
       <div id="listing-inapp-chat" className="rounded-xl border border-[#E5E0D8] bg-[#F4F0EB] p-4 text-center">
         <p className="text-sm text-[#374151] mb-3">{c.loginLead}</p>

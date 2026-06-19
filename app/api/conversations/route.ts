@@ -109,12 +109,54 @@ export async function GET(req: NextRequest) {
       threads.sort((a, b) => new Date(b.last_at).getTime() - new Date(a.last_at).getTime());
       const threadsTotal = threads.length;
 
+      const focusConversationId = req.nextUrl.searchParams.get("conversationId")?.trim();
+      let focusConversation: {
+        id: string;
+        buyer_id: string;
+        messages: { id: string; sender_id: string; body: string; created_at: string }[];
+      } | null = null;
+
+      if (focusConversationId) {
+        const focusNorm = focusConversationId.trim().toLowerCase();
+        const focusRow =
+          convs.find((c) => c.id.trim().toLowerCase() === focusNorm) ?? null;
+        if (focusRow) {
+          const { data: focusMessages } = await supabase
+            .from("listing_messages")
+            .select("id,sender_id,body,created_at")
+            .eq("conversation_id", focusRow.id)
+            .order("created_at", { ascending: true });
+          focusConversation = {
+            id: focusRow.id,
+            buyer_id: focusRow.buyer_id,
+            messages: focusMessages ?? [],
+          };
+        }
+      }
+
+      const visibleThreads = threads.slice(0, MAX_INBOX_THREADS);
+      if (focusConversation) {
+        const inVisible = visibleThreads.some(
+          (t) => t.conversationId.trim().toLowerCase() === focusConversation!.id.trim().toLowerCase(),
+        );
+        if (!inVisible) {
+          const focusThread = threads.find(
+            (t) => t.conversationId.trim().toLowerCase() === focusConversation!.id.trim().toLowerCase(),
+          );
+          if (focusThread) {
+            visibleThreads.unshift(focusThread);
+            if (visibleThreads.length > MAX_INBOX_THREADS) visibleThreads.pop();
+          }
+        }
+      }
+
       return NextResponse.json({
         role: "seller",
         listing: { id: listing.id, title_es: listing.title_es },
-        threads: threads.slice(0, MAX_INBOX_THREADS),
+        threads: visibleThreads,
         threadsTotal,
         hasMoreThreads: threadsTotal > MAX_INBOX_THREADS,
+        focusConversation,
       });
     }
 
