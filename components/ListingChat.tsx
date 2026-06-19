@@ -10,7 +10,12 @@ import type { BuyerQuoteContact } from "@/lib/buyer-quote-contact";
 import { buyerContactPrefillFromMetadata } from "@/lib/buyer-quote-contact";
 import ServiceQuoteBuyerPanel from "@/components/ServiceQuoteBuyerPanel";
 import ServiceQuoteSellerRequestPanel from "@/components/ServiceQuoteSellerRequestPanel";
-import type { ServiceQuoteLineItem, ServiceQuoteMetadata, ServiceQuoteStatus } from "@/lib/service-quote";
+import {
+  buyerFacingQuoteStatus,
+  type ServiceQuoteLineItem,
+  type ServiceQuoteMetadata,
+  type ServiceQuoteStatus,
+} from "@/lib/service-quote";
 import {
   applyChatPollUpdate,
   normalizeConversationId,
@@ -515,15 +520,17 @@ export default function ListingChat({
       );
       const d = await r.json().catch(() => ({}));
       if (!r.ok) return;
-      setQuoteStatus((d as { quoteStatus?: ServiceQuoteStatus }).quoteStatus ?? "none");
+      const rawStatus = (d as { quoteStatus?: ServiceQuoteStatus }).quoteStatus ?? "none";
+      const sentAt = (d as { quoteSentAt?: string | null }).quoteSentAt ?? null;
+      setQuoteStatus(buyerFacingQuoteStatus(rawStatus, sentAt));
       const cents = (d as { agreedSubtotalMxnCents?: number | null }).agreedSubtotalMxnCents;
       setQuoteAgreedCents(cents != null ? Number(cents) : null);
-      setQuoteSentAt((d as { quoteSentAt?: string | null }).quoteSentAt ?? null);
+      setQuoteSentAt(sentAt);
       const items = (d as { quoteLineItems?: ServiceQuoteLineItem[] | null }).quoteLineItems;
       setQuoteLineItems(Array.isArray(items) && items.length > 0 ? items : null);
       setQuoteMetadata((d as { quoteMetadata?: ServiceQuoteMetadata | null }).quoteMetadata ?? null);
     } finally {
-      setQuoteLoading(false);
+      if (!opts?.silent) setQuoteLoading(false);
     }
   }, [requiresQuoteAccept, role, agreedPriceBuyerId, listingId]);
 
@@ -531,10 +538,10 @@ export default function ListingChat({
     void loadQuoteState();
   }, [loadQuoteState]);
 
-  // Buyer: poll quote gate so rebook reset + provider quote appear without refresh.
+  // Buyer: poll quote gate so provider quote + accept/decline appear without refresh.
   useEffect(() => {
     if (role !== "buyer" || !requiresQuoteAccept) return;
-    const t = setInterval(() => void loadQuoteState({ silent: true }), 5000);
+    const t = setInterval(() => void loadQuoteState({ silent: true }), 2000);
     return () => clearInterval(t);
   }, [role, requiresQuoteAccept, loadQuoteState]);
 

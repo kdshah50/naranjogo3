@@ -43,15 +43,39 @@ export async function loadServiceQuoteGate(
     };
   }
 
+  let quoteStatus = normalizeQuoteStatus(gate.quote_status);
+  const quoteSentAt = gate.quote_sent_at ?? null;
+  const quoteRespondedAt = gate.quote_responded_at ?? null;
+  const quoteMetadata = parseQuoteMetadata(gate.quote_metadata);
+
+  // Sent timestamp is source of truth when status column lagged or legacy rows omit pending.
+  if (
+    quoteSentAt &&
+    !quoteRespondedAt &&
+    quoteStatus !== "accepted" &&
+    quoteStatus !== "declined"
+  ) {
+    quoteStatus = "pending";
+  } else if (
+    quoteStatus === "none" &&
+    !quoteRespondedAt &&
+    gate.agreed_subtotal_mxn_cents != null &&
+    Number(gate.agreed_subtotal_mxn_cents) >= 100 &&
+    gate.seller_set_agreed_price_at &&
+    quoteMetadata?.kind === "provider_quote"
+  ) {
+    quoteStatus = "pending";
+  }
+
   return {
-    quoteStatus: normalizeQuoteStatus(gate.quote_status),
+    quoteStatus,
     agreedSubtotalMxnCents:
       gate.agreed_subtotal_mxn_cents != null ? Number(gate.agreed_subtotal_mxn_cents) : null,
     sellerSetAgreedPriceAt: gate.seller_set_agreed_price_at ?? null,
     quoteLineItems: parseQuoteLineItems(gate.quote_line_items),
-    quoteMetadata: parseQuoteMetadata(gate.quote_metadata),
-    quoteSentAt: gate.quote_sent_at ?? null,
-    quoteRespondedAt: gate.quote_responded_at ?? null,
+    quoteMetadata,
+    quoteSentAt,
+    quoteRespondedAt,
   };
 }
 

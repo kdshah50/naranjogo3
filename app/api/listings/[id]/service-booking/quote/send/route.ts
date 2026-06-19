@@ -49,10 +49,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     }
 
     const supabase = createAdminSupabase();
+    const listingIdVars = idMatchVariantsForIn(listingId);
     const { data: listing, error: le } = await supabase
       .from("listings")
       .select("id,seller_id,title_es,service_menu")
-      .eq("id", listingId)
+      .in("id", listingIdVars)
       .maybeSingle();
     if (le || !listing?.seller_id) {
       return NextResponse.json({ error: "Anuncio no encontrado" }, { status: 404 });

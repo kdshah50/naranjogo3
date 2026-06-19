@@ -8,6 +8,7 @@ import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-
 import { providerServiceRequiresQuoteAccept } from "@/lib/provider-services";
 import { loadServiceQuoteGate, loadServiceQuoteGateForBuyerPool } from "@/lib/service-quote-server";
 import { expandUserAccountIdPool, userIsListingSellerAccount } from "@/lib/user-account-pool";
+import { quoteLayoutForSlug } from "@/lib/service-quote-vertical";
 
 export const dynamic = "force-dynamic";
 
@@ -21,10 +22,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     if (!listingId) return NextResponse.json({ error: "listingId inválido" }, { status: 400 });
 
     const supabase = createAdminSupabase();
+    const listingIdVars = idMatchVariantsForIn(listingId);
     const { data: listing, error: le } = await supabase
       .from("listings")
       .select("id,seller_id,title_es")
-      .eq("id", listingId)
+      .in("id", listingIdVars)
       .maybeSingle();
     if (le || !listing?.seller_id) {
       return NextResponse.json({ error: "Anuncio no encontrado" }, { status: 404 });
@@ -32,6 +34,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
     const slug = inferProviderSlugFromListingTitle(listing.title_es as string);
     const requiresQuoteAccept = providerServiceRequiresQuoteAccept(slug);
+    const quoteLayout = quoteLayoutForSlug(slug);
 
     const buyerIdParam = req.nextUrl.searchParams.get("buyerId")?.trim() ?? "";
     const isSeller = await userIsListingSellerAccount(supabase, userId, listing.seller_id as string);
@@ -56,6 +59,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
     return NextResponse.json({
       requiresQuoteAccept,
+      quoteLayout,
+      providerSlug: slug,
       quoteStatus: gate?.quoteStatus ?? "none",
       agreedSubtotalMxnCents: gate?.agreedSubtotalMxnCents ?? null,
       sellerSetAgreedPriceAt: gate?.sellerSetAgreedPriceAt ?? null,

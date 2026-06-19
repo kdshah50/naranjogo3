@@ -43,6 +43,17 @@ export function normalizeQuoteStatus(raw: unknown): ServiceQuoteStatus {
   return (SERVICE_QUOTE_STATUSES as readonly string[]).includes(s) ? (s as ServiceQuoteStatus) : "none";
 }
 
+/** Buyer UI: treat sent-but-unresponded quotes as pending even if status column lagged. */
+export function buyerFacingQuoteStatus(
+  quoteStatus: ServiceQuoteStatus,
+  quoteSentAt?: string | null,
+): ServiceQuoteStatus {
+  if (quoteStatus === "pending" || quoteStatus === "accepted" || quoteStatus === "declined") {
+    return quoteStatus;
+  }
+  return quoteSentAt ? "pending" : quoteStatus;
+}
+
 export function parseQuoteLineItems(raw: unknown): ServiceQuoteLineItem[] | null {
   if (!Array.isArray(raw)) return null;
   const out: ServiceQuoteLineItem[] = [];
