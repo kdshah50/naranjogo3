@@ -3,13 +3,11 @@ import { createAdminSupabase, getUserIdFromRequest, idMatchVariantsForIn } from 
 import { getStripe } from "@/lib/stripe";
 import { getPublicAppUrl } from "@/lib/app-url";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
-import { loadSellerConnectId } from "@/lib/marketplace-cart-server";
 import { balancePayable, listingIsHousekeeping } from "@/lib/housekeeping-payments";
+import { connectNotReadyMessage, sellerConnectPayoutReady } from "@/lib/stripe-connect-ready";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
-
-const APP_URL = getPublicAppUrl();
 
 /** POST — buyer pays job balance after provider marks completed (housekeeping). */
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
@@ -19,6 +17,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     const bookingId = params.id?.trim();
     if (!bookingId) return NextResponse.json({ error: "ID inválido" }, { status: 400 });
+
+    const appUrl = getPublicAppUrl();
 
     const supabase = createAdminSupabase();
     const idVars = idMatchVariantsForIn(bookingId);
@@ -46,7 +46,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       return NextResponse.json({ error: "No hay saldo pendiente para pagar en este momento" }, { status: 400 });
     }
 
-    const connectId = await loadSellerConnectId(supabase, String(booking.seller_id));
+    const connectStatus = await sellerConnectPayoutReady(supabase, String(booking.seller_id));
+    if (!connectStatus.payoutReady) {
+      return NextResponse.json(
+        {
+          error: "provider_connect_required",
+          message: connectNotReadyMessage(connectStatus, "es"),
+          connectStatus,
+        },
+        { status: 409 },
+      );
+    }
+    const connectId = connectStatus.accountId;
     if (!connectId) {
       return NextResponse.json(
         {
@@ -101,8 +112,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         buyer_id: userId,
         seller_id: String(booking.seller_id),
       },
-      success_url: `${APP_URL}/my-bookings?ticket=${encodeURIComponent(String(booking.ticket_code ?? bookingId))}&balance_paid=1`,
-      cancel_url: `${APP_URL}/my-bookings?balance_cancelled=1`,
+      success_url: `${appUrl}/my-bookings?session_id={CHECKOUT_SESSION_ID}&balance_paid=1&ticket=${encodeURIComponent(String(booking.ticket_code ?? bookingId))}`,
+      cancel_url: `${appUrl}/my-bookings?balance_cancelled=1`,
     });
 
     await supabase
@@ -111,11 +122,23 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         balance_stripe_checkout_session_id: session.id,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", bookingId);
+      .in("id", idVars);
 
     return NextResponse.json({ url: session.url });
-  } catch (e) {
+  } catch (e: unknown) {
     console.error("[balance-checkout] POST", e);
+    const stripeMsg = e instanceof Error ? e.message : "";
+    if (stripeMsg.includes("account") || stripeMsg.includes("Connect")) {
+      return NextResponse.json(
+        {
+          error: "provider_connect_required",
+          message:
+            "Stripe rechazó el pago al proveedor — el proveedor debe terminar Stripe Connect en Mi perfil (modo prueba: usa datos de prueba de Stripe).",
+          detail: stripeMsg,
+        },
+        { status: 409 },
+      );
+    }
     return NextResponse.json({ error: "Error del servidor" }, { status: 500 });
   }
 }

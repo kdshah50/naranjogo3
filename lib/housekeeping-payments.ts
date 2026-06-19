@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
 import { HOUSEKEEPING_SERVICE } from "@/lib/provider-services";
-import { loadSellerConnectId } from "@/lib/marketplace-cart-server";
+import { sellerConnectPayoutReady } from "@/lib/stripe-connect-ready";
 
 export type HousekeepingPaymentRow = {
   id: string;
@@ -44,7 +44,8 @@ export async function sellerHasConnectForHousekeeping(
   supabase: SupabaseClient,
   sellerId: string,
 ): Promise<boolean> {
-  return Boolean(await loadSellerConnectId(supabase, sellerId));
+  const status = await sellerConnectPayoutReady(supabase, sellerId);
+  return status.payoutReady;
 }
 
 export function balancePayable(row: HousekeepingPaymentRow): boolean {

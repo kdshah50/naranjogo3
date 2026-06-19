@@ -16,6 +16,7 @@ type Props = {
   appointmentAt?: string | null;
   status: string;
   paymentStatus: string;
+  sellerConnectReady?: boolean;
   onPaid?: () => void;
 };
 
@@ -42,6 +43,7 @@ export default function HousekeepingBookingPayments({
   appointmentAt,
   status,
   paymentStatus,
+  sellerConnectReady = true,
   onPaid,
 }: Props) {
   const [busy, setBusy] = useState<"balance" | "tip" | null>(null);
@@ -62,8 +64,11 @@ export default function HousekeepingBookingPayments({
     tip_payment_status: tipPaymentStatus,
   };
 
-  const canPayBalance = balancePayable(row as Parameters<typeof balancePayable>[0]);
-  const canTip = tipPayable(row as Parameters<typeof tipPayable>[0]);
+  const canPayBalance =
+    balancePayable(row as Parameters<typeof balancePayable>[0]) && sellerConnectReady;
+  const balanceBlockedNoConnect =
+    balancePayable(row as Parameters<typeof balancePayable>[0]) && !sellerConnectReady;
+  const canTip = tipPayable(row as Parameters<typeof tipPayable>[0]) && sellerConnectReady;
 
   const t =
     lang === "es"
@@ -82,7 +87,9 @@ export default function HousekeepingBookingPayments({
           payTip: "Enviar propina",
           appointment: "Cita acordada",
           connectBlock:
-            "El proveedor debe activar Stripe Connect antes de recibir pagos en la app. Puedes coordinar por WhatsApp mientras tanto.",
+            "El proveedor aún no activó Stripe Connect en Naranjogo. Paga el saldo directamente al proveedor por WhatsApp hasta que active cobros en la app.",
+          connectBlockShort:
+            "El proveedor debe activar Stripe Connect en Mi perfil antes de que puedas pagar el saldo en la app. Coordina el pago por WhatsApp mientras tanto.",
         }
       : {
           title: "Cleaning summary",
@@ -99,7 +106,9 @@ export default function HousekeepingBookingPayments({
           payTip: "Send tip",
           appointment: "Agreed visit",
           connectBlock:
-            "The provider must enable Stripe Connect before in-app payouts. You can coordinate via WhatsApp meanwhile.",
+            "Your provider has not enabled Stripe Connect on Naranjogo yet. Pay the service balance directly via WhatsApp until in-app payouts are active.",
+          connectBlockShort:
+            "The provider must enable Stripe Connect in Profile before you can pay the balance in the app. Coordinate payment on WhatsApp for now.",
         };
 
   const startCheckout = async (kind: "balance" | "tip", tipCents?: number) => {
@@ -119,7 +128,7 @@ export default function HousekeepingBookingPayments({
       const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string; message?: string };
       if (!res.ok) {
         if (data.error === "provider_connect_required") {
-          throw new Error(data.message ?? t.connectBlock);
+          throw new Error((data as { message?: string }).message ?? t.connectBlockShort);
         }
         throw new Error(data.error ?? data.message ?? "Error");
       }
@@ -206,6 +215,13 @@ export default function HousekeepingBookingPayments({
         >
           {busy === "balance" ? "…" : `${t.payBalance} (${fmt(balanceDue, lang)})`}
         </button>
+      ) : null}
+
+      {balanceBlockedNoConnect ? (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-900 leading-relaxed">
+          <p className="font-semibold mb-1">{t.balanceDue}: {fmt(balanceDue, lang)}</p>
+          <p>{t.connectBlockShort}</p>
+        </div>
       ) : null}
 
       {canTip ? (

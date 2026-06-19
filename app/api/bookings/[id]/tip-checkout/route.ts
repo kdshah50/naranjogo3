@@ -102,7 +102,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         seller_id: String(booking.seller_id),
         tip_mxn_cents: String(tipMxnCents),
       },
-      success_url: `${APP_URL}/my-bookings?ticket=${encodeURIComponent(String(booking.ticket_code ?? bookingId))}&tip_paid=1`,
+      success_url: `${APP_URL}/my-bookings?session_id={CHECKOUT_SESSION_ID}&tip_paid=1&ticket=${encodeURIComponent(String(booking.ticket_code ?? bookingId))}`,
       cancel_url: `${APP_URL}/my-bookings?tip_cancelled=1`,
     });
 
@@ -114,7 +114,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         tip_stripe_checkout_session_id: session.id,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", bookingId);
+      .in("id", idVars);
 
     return NextResponse.json({ url: session.url });
   } catch (e) {

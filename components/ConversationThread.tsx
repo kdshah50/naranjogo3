@@ -20,6 +20,7 @@ import Link from "next/link";
 import { withLang } from "@/lib/i18n-lang";
 import {
   applyChatPollUpdate,
+  appendChatMessageDeduped,
   type ChatPollMessage,
 } from "@/lib/listing-chat-poll";
 
@@ -107,6 +108,7 @@ export default function ConversationThread({
   const [quoteMetadata, setQuoteMetadata] = useState<ServiceQuoteMetadata | null>(null);
   const messagesScrollRef = useRef<HTMLDivElement | null>(null);
   const initialMessagesLoadedRef = useRef(false);
+  const [myAccountPool, setMyAccountPool] = useState<string[]>([]);
 
   const syncMessages = useCallback(async () => {
     try {
@@ -193,6 +195,18 @@ export default function ConversationThread({
     initialMessagesLoadedRef.current = false;
     void load();
   }, [load]);
+
+  useEffect(() => {
+    void (async () => {
+      const me = await fetch("/api/auth/me", { credentials: "same-origin" });
+      if (!me.ok) return;
+      const j = await me.json();
+      const pool = (j as { accountPool?: string[] }).accountPool;
+      if (Array.isArray(pool) && pool.length > 0) {
+        setMyAccountPool(pool.map((id) => String(id).trim().toLowerCase()));
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     void loadQuoteState();
@@ -317,8 +331,8 @@ export default function ConversationThread({
       }
       const { message } = await res.json();
       const msg = message as Msg;
-      setMessages((m) => [...m, msg]);
-      void syncMessages();
+      setMessages((m) => appendChatMessageDeduped(m, msg));
+      window.setTimeout(() => void syncMessages(), 400);
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("tianguis:listing-contact"));
       }
@@ -364,8 +378,8 @@ export default function ConversationThread({
       throw new Error((d as { error?: string; message?: string }).message ?? (d as { error?: string }).error ?? u.sendErr);
     }
     const msg = (d as { message?: Msg }).message;
-    if (msg) setMessages((m) => [...m, msg]);
-    void syncMessages();
+    if (msg) setMessages((m) => appendChatMessageDeduped(m, msg));
+    window.setTimeout(() => void syncMessages(), 400);
     window.dispatchEvent(new CustomEvent("tianguis:quote-updated", { detail: { listingId } }));
     await loadQuoteState();
   };
@@ -536,7 +550,10 @@ export default function ConversationThread({
         className="max-h-[50vh] overflow-y-auto overflow-x-hidden px-4 py-3 space-y-2 min-h-[120px] overscroll-y-contain"
       >
         {messages.map((m, idx) => {
-          const mine = myUserId && m.sender_id.trim().toLowerCase() === myUserId.trim().toLowerCase();
+          const senderNorm = String(m.sender_id).trim().toLowerCase();
+          const mine =
+            (myUserId && senderNorm === myUserId.trim().toLowerCase()) ||
+            (myAccountPool.length > 0 && myAccountPool.includes(senderNorm));
           const isSystem = m.body.startsWith("[Naranjogo]");
           const dayKey = conversationDayKey(m.created_at);
           const prevDayKey = idx > 0 ? conversationDayKey(messages[idx - 1].created_at) : null;

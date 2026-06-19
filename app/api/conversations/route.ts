@@ -6,6 +6,7 @@ import {
   userIsListingSellerAccount,
 } from "@/lib/user-account-pool";
 import { latestTicketsForListingBuyers, MAX_INBOX_THREADS, latestTicketForListingBuyer } from "@/lib/conversation-ticket";
+import { listConversationMessages } from "@/lib/listing-messages-server";
 
 export const dynamic = "force-dynamic";
 
@@ -88,7 +89,7 @@ export async function GET(req: NextRequest) {
           const { data: last } = await supabase
             .from("listing_messages")
             .select("body,created_at")
-            .eq("conversation_id", c.id)
+            .in("conversation_id", idMatchVariantsForIn(c.id))
             .order("created_at", { ascending: false })
             .limit(1)
             .maybeSingle();
@@ -119,17 +120,13 @@ export async function GET(req: NextRequest) {
       if (focusConversationId) {
         const focusNorm = focusConversationId.trim().toLowerCase();
         const focusRow =
-          convs.find((c) => c.id.trim().toLowerCase() === focusNorm) ?? null;
+          (convsRaw ?? []).find((c) => c.id.trim().toLowerCase() === focusNorm) ?? null;
         if (focusRow) {
-          const { data: focusMessages } = await supabase
-            .from("listing_messages")
-            .select("id,sender_id,body,created_at")
-            .eq("conversation_id", focusRow.id)
-            .order("created_at", { ascending: true });
+          const focusMessages = await listConversationMessages(supabase, focusRow.id);
           focusConversation = {
             id: focusRow.id,
             buyer_id: focusRow.buyer_id,
-            messages: focusMessages ?? [],
+            messages: focusMessages,
           };
         }
       }
@@ -186,7 +183,7 @@ export async function GET(req: NextRequest) {
     const { data: messages, error: msgErr } = await supabase
       .from("listing_messages")
       .select("id,sender_id,body,created_at")
-      .eq("conversation_id", conv.id)
+      .in("conversation_id", idMatchVariantsForIn(conv.id))
       .order("created_at", { ascending: true });
 
     if (msgErr) {

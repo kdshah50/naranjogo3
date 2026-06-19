@@ -6,6 +6,7 @@ import {
 } from "@/lib/auth-server";
 import { expandUserAccountIdPool, poolsOverlap, userParticipatesInConversation } from "@/lib/user-account-pool";
 import { latestTicketForListingBuyer } from "@/lib/conversation-ticket";
+import { listConversationMessages } from "@/lib/listing-messages-server";
 
 export const dynamic = "force-dynamic";
 
@@ -59,16 +60,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     const isSeller =
       poolsOverlap(myPool, sellerPool) || poolsOverlap(myPool, listingSellerPool);
 
-    const { data: messages, error: msgErr } = await supabase
-      .from("listing_messages")
-      .select("id,sender_id,body,created_at")
-      .eq("conversation_id", convRowId)
-      .order("created_at", { ascending: true });
-
-    if (msgErr) {
-      console.error("[conversations/:id] messages", msgErr);
-      return NextResponse.json({ error: "No se pudo cargar mensajes" }, { status: 500 });
-    }
+    const messages = await listConversationMessages(supabase, convRowId);
 
     const otherId = isSeller ? conv.buyer_id : conv.seller_id;
     let otherName = "";

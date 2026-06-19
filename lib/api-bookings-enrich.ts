@@ -4,6 +4,8 @@ import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 import { chunkArray, POSTGREST_IN_VALUE_CHUNK } from "@/lib/postgrest-in-chunks";
 import { idMatchVariantsForIn } from "@/lib/user-id-variants";
 import { listingChatPath } from "@/lib/listing-chat-deep-link";
+import { loadSellerConnectId } from "@/lib/marketplace-cart-server";
+import { sellerConnectPayoutReady } from "@/lib/stripe-connect-ready";
 
 type BookingRow = Record<string, unknown>;
 
@@ -100,6 +102,43 @@ async function displayNameForAccountRoots(
   return nameByRoot;
 }
 
+/** Batch: seller account root → can receive housekeeping balance in-app (Stripe-verified). */
+async function loadSellerConnectReadyByRoot(
+  supabase: SupabaseClient,
+  bookingRows: BookingRow[],
+): Promise<Map<string, boolean>> {
+  const sellerRoots = new Set<string>();
+  for (const b of bookingRows) {
+    if (String(b.status ?? "") !== "completed") continue;
+    if (String(b.balance_payment_status ?? "") !== "pending") continue;
+    const root = canonicalBookingRowIdKey(String(b.seller_id ?? ""));
+    if (root) sellerRoots.add(root);
+  }
+  const readyByRoot = new Map<string, boolean>();
+  await Promise.all(
+    [...sellerRoots].map(async (root) => {
+      const status = await sellerConnectPayoutReady(supabase, root);
+      readyByRoot.set(root, status.payoutReady);
+    }),
+  );
+  return readyByRoot;
+}
+
+/** Legacy: linked acct_ id only (no Stripe verify). Used when balance not pending. */
+async function loadSellerConnectLinkedByRoot(
+  supabase: SupabaseClient,
+  sellerRootIds: string[],
+): Promise<Map<string, boolean>> {
+  const uniqueRoots = [...new Set(sellerRootIds.map((id) => canonicalBookingRowIdKey(id)))].filter(Boolean);
+  const linkedByRoot = new Map<string, boolean>();
+  await Promise.all(
+    uniqueRoots.map(async (root) => {
+      linkedByRoot.set(root, Boolean(await loadSellerConnectId(supabase, root)));
+    }),
+  );
+  return linkedByRoot;
+}
+
 /** Map `listingId|buyerRoot` → conversation id for seller booking list chat links. */
 async function loadConversationIdsForSellerRows(
   supabase: SupabaseClient,
@@ -188,6 +227,19 @@ export async function enrichBookingListRows(
 
   const convByPair = sellerMode ? await loadConversationIdsForSellerRows(supabase, bookingRows) : new Map<string, string>();
 
+  const sellerConnectByRoot =
+    !sellerMode && bookingRows.length > 0
+      ? await loadSellerConnectReadyByRoot(supabase, bookingRows)
+      : new Map<string, boolean>();
+
+  const sellerLinkedByRoot =
+    !sellerMode && bookingRows.length > 0
+      ? await loadSellerConnectLinkedByRoot(
+          supabase,
+          bookingRows.map((b) => String(b.seller_id ?? "")),
+        )
+      : new Map<string, boolean>();
+
   return bookingRows.map((b) => {
     const listingKey = canonicalBookingRowIdKey(String(b.listing_id));
     const listing_title = listingTitles.get(listingKey) ?? "Servicio";
@@ -204,6 +256,8 @@ export async function enrichBookingListRows(
     }
     const sr = canonicalBookingRowIdKey(String(b.seller_id ?? ""));
     const seller_name = sellerNameByRoot.get(sr) ?? "Proveedor";
-    return { ...b, has_review, listing_title, seller_name };
+    const seller_connect_ready =
+      sellerConnectByRoot.get(sr) ?? sellerLinkedByRoot.get(sr) ?? false;
+    return { ...b, has_review, listing_title, seller_name, seller_connect_ready };
   });
 }

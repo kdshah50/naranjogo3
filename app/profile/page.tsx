@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, Suspense } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import LoyaltyCard from "@/components/LoyaltyCard";
 import ReferralCard from "@/components/ReferralCard";
@@ -62,6 +62,8 @@ export default function ProfilePage() {
 
 function ProfilePageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const stripeReturn = searchParams.get("stripe_connect");
   const [user, setUser] = useState<User | null>(null);
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
@@ -403,6 +405,7 @@ function ProfilePageInner() {
         <SellerStripePayoutCard
           lang={lang}
           hasStripeConnect={Boolean(user.stripe_connect_account_id?.startsWith("acct_"))}
+          stripeReturn={stripeReturn}
         />
 
         {/* My services */}

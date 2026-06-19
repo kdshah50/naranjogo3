@@ -35,6 +35,7 @@ type Booking = {
   tip_payment_status?: string | null;
   listing_title: string;
   seller_name: string;
+  seller_connect_ready?: boolean;
 };
 
 type ReminderRow = {
@@ -270,6 +271,31 @@ function MyBookingsPageInner() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  /** After Stripe balance/tip checkout — sync DB if webhook lagged (same pattern as deposit verify-session). */
+  const stripeSessionId = searchParams.get("session_id")?.trim() ?? "";
+  useEffect(() => {
+    if (!stripeSessionId.startsWith("cs_")) return;
+    void (async () => {
+      try {
+        await fetch(
+          `/api/bookings/verify-balance-session?session_id=${encodeURIComponent(stripeSessionId)}`,
+          { credentials: "same-origin", cache: "no-store" },
+        );
+      } catch {
+        /* non-fatal */
+      }
+      loadData();
+      if (typeof window !== "undefined") {
+        const u = new URL(window.location.href);
+        u.searchParams.delete("session_id");
+        u.searchParams.delete("balance_paid");
+        u.searchParams.delete("tip_paid");
+        const qs = u.searchParams.toString();
+        window.history.replaceState({}, "", qs ? `${u.pathname}?${qs}` : u.pathname);
+      }
+    })();
+  }, [stripeSessionId, loadData]);
 
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "same-origin" })
@@ -861,6 +887,7 @@ function MyBookingsPageInner() {
                       appointmentAt={b.appointment_at}
                       status={b.status}
                       paymentStatus={b.payment_status}
+                      sellerConnectReady={Boolean(b.seller_connect_ready)}
                       onPaid={() => void loadData()}
                     />
                   ) : null}

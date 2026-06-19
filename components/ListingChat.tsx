@@ -18,6 +18,7 @@ import {
 } from "@/lib/service-quote";
 import {
   applyChatPollUpdate,
+  appendChatMessageDeduped,
   normalizeConversationId,
   threadActivitySig,
   type ChatPollMessage,
@@ -121,6 +122,10 @@ export default function ListingChat({
   const conversationLoadSeqRef = useRef(0);
   const selectedIdRef = useRef<string | null>(null);
   const initialConversationIdRef = useRef(initialConversationId?.trim() || null);
+  /** Seller manually picked a thread — don't let ?chat= deep-link polls override it. */
+  const userPickedThreadRef = useRef(false);
+  const emptyThreadBootstrapRef = useRef<string | null>(null);
+  const [myAccountPool, setMyAccountPool] = useState<string[]>([]);
 
   useEffect(() => {
     initialConversationIdRef.current = initialConversationId?.trim() || null;
@@ -210,8 +215,15 @@ export default function ListingChat({
           | null
           | undefined;
         if (focus?.id) {
-          setSelectedId(String(focus.id));
-          if (focus.buyer_id) setAgreedPriceBuyerId(String(focus.buyer_id));
+          const focusNorm = normalizeConversationId(String(focus.id));
+          const keepUserPick =
+            userPickedThreadRef.current &&
+            selectedIdRef.current &&
+            normalizeConversationId(selectedIdRef.current) !== focusNorm;
+          if (!keepUserPick) {
+            setSelectedId(String(focus.id));
+            if (focus.buyer_id) setAgreedPriceBuyerId(String(focus.buyer_id));
+          }
           const fresh = (focus.messages ?? []) as Msg[];
           if (fresh.length > 0) {
             setMessages((prev) => applyChatPollUpdate(prev, fresh));
@@ -283,7 +295,8 @@ export default function ListingChat({
         const bid = conv?.buyer_id;
         if (bid) setAgreedPriceBuyerId(String(bid));
         const apiListingId = conv?.listing_id?.trim().toLowerCase() ?? "";
-        if (apiListingId && apiListingId === listingId.trim().toLowerCase()) {
+        const pageListingId = listingId.trim().toLowerCase();
+        if (!apiListingId || apiListingId === pageListingId) {
           conversationListingIdRef.current = listingId;
         } else {
           conversationListingIdRef.current = null;
@@ -296,10 +309,14 @@ export default function ListingChat({
       } catch {
         if (seq !== conversationLoadSeqRef.current) return;
         setError(c.networkErr);
-        setSelectedId(null);
-        setAgreedPriceBuyerId(null);
-        conversationListingIdRef.current = null;
-        activeConversationIdRef.current = null;
+        const deepId = initialConversationIdRef.current;
+        const keepDeepLink = deepId && normalizeConversationId(deepId) === normId;
+        if (!keepDeepLink) {
+          setSelectedId(null);
+          setAgreedPriceBuyerId(null);
+          conversationListingIdRef.current = null;
+          activeConversationIdRef.current = null;
+        }
       }
     },
     [listingId, c.loadErr, c.networkErr],
@@ -337,6 +354,10 @@ export default function ListingChat({
       if (me.ok) {
         const j = await me.json();
         setMyUserId(j.user?.id ?? null);
+        const pool = (j as { accountPool?: string[] }).accountPool;
+        if (Array.isArray(pool) && pool.length > 0) {
+          setMyAccountPool(pool.map((id) => String(id).trim().toLowerCase()));
+        }
         const u = j.user as { display_name?: string | null; phone?: string | null } | undefined;
         if (u?.display_name || u?.phone) {
           const parts = String(u.display_name ?? "").trim().split(/\s+/).filter(Boolean);
@@ -384,6 +405,19 @@ export default function ListingChat({
     deepLinkConvLoadedRef.current = true;
     void loadConversation(initialConversationId.trim());
   }, [initialConversationId, loadConversation]);
+
+  /** Seller/buyer: selected thread but empty pane — bootstrap messages once (deep link / poll gap). */
+  useEffect(() => {
+    if (!scopeLoaded || !selectedId) return;
+    const norm = normalizeConversationId(selectedId);
+    if (messages.length > 0) {
+      emptyThreadBootstrapRef.current = norm;
+      return;
+    }
+    if (emptyThreadBootstrapRef.current === norm) return;
+    emptyThreadBootstrapRef.current = norm;
+    void loadConversation(selectedId, agreedPriceBuyerId ?? undefined);
+  }, [scopeLoaded, selectedId, messages.length, loadConversation, agreedPriceBuyerId]);
 
   useEffect(() => {
     if (role !== "seller" || !initialConversationId?.trim()) return;
@@ -858,10 +892,21 @@ export default function ListingChat({
       }
       const { message } = await res.json();
       const msg = message as Msg;
-      setMessages((m) => [...m, msg]);
+      setMessages((m) => appendChatMessageDeduped(m, msg));
       lastThreadActivityRef.current = threadActivitySig(msg.created_at, msg.body);
       if (role === "seller" && cid) {
-        void syncConversationMessages(cid);
+        setThreads((prev) =>
+          prev.map((t) =>
+            normalizeConversationId(t.conversationId) === normalizeConversationId(cid!)
+              ? { ...t, last_body: msg.body, last_at: msg.created_at }
+              : t,
+          ),
+        );
+        window.setTimeout(() => {
+          if (selectedIdRef.current && normalizeConversationId(selectedIdRef.current) === normalizeConversationId(cid!)) {
+            void syncConversationMessages(cid!);
+          }
+        }, 400);
       }
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("tianguis:listing-contact"));
@@ -1034,7 +1079,10 @@ export default function ListingChat({
                 <button
                   key={t.conversationId}
                   type="button"
-                  onClick={() => void loadConversation(t.conversationId, t.buyer_id)}
+                  onClick={() => {
+                    userPickedThreadRef.current = true;
+                    void loadConversation(t.conversationId, t.buyer_id);
+                  }}
                   className={`w-full text-left px-4 py-2.5 text-sm transition-colors flex items-center gap-3 ${
                     isActive ? "bg-[#ECFDF5] border-l-4 border-[#059669]" : "hover:bg-[#F4F0EB] border-l-4 border-transparent"
                   }`}
@@ -1267,8 +1315,10 @@ export default function ListingChat({
         className="max-h-64 overflow-y-auto overflow-x-hidden px-4 py-3 space-y-2 overscroll-y-contain"
       >
         {messages.map((m, idx) => {
+          const senderNorm = String(m.sender_id).trim().toLowerCase();
           const mine =
-            myUserId && String(m.sender_id).trim().toLowerCase() === myUserId.trim().toLowerCase();
+            (myUserId && senderNorm === myUserId.trim().toLowerCase()) ||
+            (myAccountPool.length > 0 && myAccountPool.includes(senderNorm));
           const isSystem = m.body.startsWith("[Naranjogo]");
           const displayBody = isSystem ? formatListingChatSystemBody(m.body, role, lang) : m.body;
           const dayKey = conversationDayKey(m.created_at);

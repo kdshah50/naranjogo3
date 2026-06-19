@@ -24,6 +24,23 @@ export function chatMessagesChanged(prev: ChatPollMessage[], fresh: ChatPollMess
   return chatMessageDigest(prev) !== chatMessageDigest(fresh);
 }
 
+export function appendChatMessageDeduped(
+  prev: ChatPollMessage[],
+  msg: ChatPollMessage,
+): ChatPollMessage[] {
+  const key = chatMessageKey(msg);
+  if (prev.some((m) => chatMessageKey(m) === key)) return prev;
+  const bodyDup = prev.some(
+    (m) =>
+      m.body === msg.body &&
+      Math.abs(new Date(m.created_at).getTime() - new Date(msg.created_at).getTime()) < 5000,
+  );
+  if (bodyDup) return prev;
+  return [...prev, msg].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+  );
+}
+
 /** Keep optimistic/local rows when a poll returns stale data right after send. */
 export function mergeChatMessagesOnPoll(
   prev: ChatPollMessage[],
