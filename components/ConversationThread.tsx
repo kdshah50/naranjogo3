@@ -164,9 +164,17 @@ export default function ConversationThread({
     const poll = setInterval(() => {
       if (document.visibilityState !== "visible") return;
       void syncMessages();
-    }, 4000);
+    }, 2000);
     return () => clearInterval(poll);
   }, [conversationId, syncMessages]);
+
+  useEffect(() => {
+    const onContact = () => {
+      if (document.visibilityState === "visible") void syncMessages();
+    };
+    window.addEventListener("tianguis:listing-contact", onContact);
+    return () => window.removeEventListener("tianguis:listing-contact", onContact);
+  }, [syncMessages]);
 
   useEffect(() => {
     const refreshOnVisible = () => {

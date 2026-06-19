@@ -68,12 +68,29 @@ export async function userParticipatesInConversation(
   supabase: SupabaseClient,
   userId: string,
   convBuyerId: string,
-  convSellerId: string
+  convSellerId: string,
+  listingId?: string | null,
 ): Promise<boolean> {
   const [my, b, s] = await Promise.all([
     expandUserAccountIdPool(supabase, userId),
     expandUserAccountIdPool(supabase, convBuyerId),
     expandUserAccountIdPool(supabase, convSellerId),
   ]);
-  return poolsOverlap(my, b) || poolsOverlap(my, s);
+  if (poolsOverlap(my, b) || poolsOverlap(my, s)) return true;
+
+  const lid = listingId?.trim();
+  if (lid) {
+    const { data: listing } = await supabase
+      .from("listings")
+      .select("seller_id")
+      .in("id", idMatchVariantsForIn(lid))
+      .maybeSingle();
+    const listingSellerId = listing?.seller_id;
+    if (listingSellerId) {
+      const listingSellerPool = await expandUserAccountIdPool(supabase, String(listingSellerId));
+      if (poolsOverlap(my, listingSellerPool)) return true;
+    }
+  }
+
+  return false;
 }

@@ -113,6 +113,14 @@ export default function ListingChat({
   const rebookPrepareRanRef = useRef(false);
   const activeConversationIdRef = useRef<string | null>(null);
   const conversationLoadSeqRef = useRef(0);
+  const selectedIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+    if (selectedId) {
+      activeConversationIdRef.current = normalizeConversationId(selectedId);
+    }
+  }, [selectedId]);
 
   useEffect(() => {
     rebookPrepareRanRef.current = false;
@@ -250,7 +258,10 @@ export default function ListingChat({
   /** Lightweight message sync — avoids clearing seller state on thread activity bumps. */
   const syncConversationMessages = useCallback(async (conversationId: string) => {
     const normId = normalizeConversationId(conversationId);
-    if (activeConversationIdRef.current !== normId) return;
+    const selectedNorm = selectedIdRef.current
+      ? normalizeConversationId(selectedIdRef.current)
+      : null;
+    if (selectedNorm !== normId) return;
     try {
       const res = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}`, {
         credentials: "same-origin",
@@ -258,7 +269,7 @@ export default function ListingChat({
       });
       if (!res.ok) return;
       const data = await res.json();
-      if (activeConversationIdRef.current !== normId) return;
+      if (selectedIdRef.current && normalizeConversationId(selectedIdRef.current) !== normId) return;
       const fresh = (data.messages ?? []) as Msg[];
       setMessages((prev) => applyChatPollUpdate(prev, fresh));
       const lastMsg = fresh[fresh.length - 1];
@@ -324,7 +335,6 @@ export default function ListingChat({
       const th = threads.find(
         (t) => normalizeConversationId(t.conversationId) === normalizeConversationId(initialConversationId),
       );
-      if (!th && threads.length === 0) return;
       deepLinkConvLoadedRef.current = true;
       void loadConversation(initialConversationId, th?.buyer_id);
       return;
@@ -350,9 +360,11 @@ export default function ListingChat({
   // Poll selected conversation for new messages (buyer + seller).
   useEffect(() => {
     if (!selectedId) return;
+    const intervalMs = role === "seller" ? 2000 : 4000;
     const poll = setInterval(async () => {
+      if (document.visibilityState !== "visible") return;
       try {
-        const res = await fetch(`/api/conversations/${selectedId}`, {
+        const res = await fetch(`/api/conversations/${encodeURIComponent(selectedId)}`, {
           credentials: "same-origin",
           cache: "no-store",
         });
@@ -360,12 +372,35 @@ export default function ListingChat({
         const data = await res.json();
         const fresh: Msg[] = data.messages ?? [];
         setMessages((prev) => applyChatPollUpdate(prev, fresh));
+        const lastMsg = fresh[fresh.length - 1];
+        if (lastMsg) {
+          lastThreadActivityRef.current = threadActivitySig(lastMsg.created_at, lastMsg.body);
+        }
       } catch {
         /* silent */
       }
+    }, intervalMs);
+    return () => clearInterval(poll);
+  }, [selectedId, role]);
+
+  // Sellers: refresh thread list + open conversation (mirrors buyer listing-scoped poll).
+  useEffect(() => {
+    if (role !== "seller" || !listingId) return;
+    const poll = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void loadListingScope();
+      if (selectedIdRef.current) void syncConversationMessages(selectedIdRef.current);
     }, 4000);
     return () => clearInterval(poll);
-  }, [selectedId]);
+  }, [role, listingId, loadListingScope, syncConversationMessages]);
+
+  useEffect(() => {
+    const onContact = () => {
+      if (selectedIdRef.current) void syncConversationMessages(selectedIdRef.current);
+    };
+    window.addEventListener("tianguis:listing-contact", onContact);
+    return () => window.removeEventListener("tianguis:listing-contact", onContact);
+  }, [syncConversationMessages]);
 
   // Buyers: re-fetch listing-scoped thread periodically so seller replies appear even if /conversations/[id] lags.
   useEffect(() => {
@@ -776,7 +811,7 @@ export default function ListingChat({
       if (role === "seller" && cid) {
         void syncConversationMessages(cid);
       }
-      if (typeof window !== "undefined" && role !== "seller") {
+      if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("tianguis:listing-contact"));
       }
     } finally {

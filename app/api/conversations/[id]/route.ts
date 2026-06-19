@@ -31,7 +31,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       return NextResponse.json({ error: "Conversación no encontrada" }, { status: 404 });
     }
 
-    const allowed = await userParticipatesInConversation(supabase, userId, conv.buyer_id, conv.seller_id);
+    const allowed = await userParticipatesInConversation(
+      supabase,
+      userId,
+      conv.buyer_id,
+      conv.seller_id,
+      conv.listing_id,
+    );
     if (!allowed) {
       return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
@@ -40,13 +46,18 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
     const myPool = await expandUserAccountIdPool(supabase, userId);
     const sellerPool = await expandUserAccountIdPool(supabase, conv.seller_id);
-    const isSeller = poolsOverlap(myPool, sellerPool);
 
     const { data: listing } = await supabase
       .from("listings")
       .select("id,title_es,seller_id,category_id,service_menu")
       .in("id", idMatchVariantsForIn(conv.listing_id))
       .maybeSingle();
+
+    const listingSellerPool = listing?.seller_id
+      ? await expandUserAccountIdPool(supabase, String(listing.seller_id))
+      : [];
+    const isSeller =
+      poolsOverlap(myPool, sellerPool) || poolsOverlap(myPool, listingSellerPool);
 
     const { data: messages, error: msgErr } = await supabase
       .from("listing_messages")

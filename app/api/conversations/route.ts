@@ -59,20 +59,14 @@ export async function GET(req: NextRequest) {
       }
 
       const buyerPoolCache = new Map<string, string[]>();
-      const sellerPoolCache = new Map<string, string[]>();
       const buyerPoolFor = async (bid: string) => {
         if (!buyerPoolCache.has(bid)) buyerPoolCache.set(bid, await expandUserAccountIdPool(supabase, bid));
         return buyerPoolCache.get(bid)!;
       };
-      const convSellerPoolFor = async (sid: string) => {
-        if (!sellerPoolCache.has(sid)) sellerPoolCache.set(sid, await expandUserAccountIdPool(supabase, sid));
-        return sellerPoolCache.get(sid)!;
-      };
 
+      /** Listing owner sees every buyer thread on this anuncio (even stale `seller_id` on the row). */
       const convs: NonNullable<typeof convsRaw> = [];
       for (const c of convsRaw ?? []) {
-        const convSellerPool = await convSellerPoolFor(c.seller_id);
-        if (!poolsOverlap(convSellerPool, listingSellerPool)) continue;
         if (poolsOverlap(await buyerPoolFor(c.buyer_id), listingSellerPool)) continue;
         convs.push(c);
       }

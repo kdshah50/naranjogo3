@@ -86,7 +86,7 @@ function MessagesInboxInner() {
       }
     };
     void load();
-    const t = window.setInterval(() => void load(), 8000);
+    const t = window.setInterval(() => void load(), 4000);
     const onVis = () => {
       if (document.visibilityState === "visible") void load();
     };
