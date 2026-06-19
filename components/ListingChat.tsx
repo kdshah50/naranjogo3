@@ -11,7 +11,7 @@ import { buyerContactPrefillFromMetadata } from "@/lib/buyer-quote-contact";
 import ServiceQuoteBuyerPanel from "@/components/ServiceQuoteBuyerPanel";
 import ServiceQuoteSellerRequestPanel from "@/components/ServiceQuoteSellerRequestPanel";
 import type { ServiceQuoteLineItem, ServiceQuoteMetadata, ServiceQuoteStatus } from "@/lib/service-quote";
-import { chatMessagesChanged, type ChatPollMessage } from "@/lib/listing-chat-poll";
+import { applyChatPollUpdate, type ChatPollMessage } from "@/lib/listing-chat-poll";
 import { listingChatCopy, formatListingChatSystemBody } from "@/lib/listing-chat-copy";
 import { withLang } from "@/lib/i18n-lang";
 import {
@@ -106,6 +106,7 @@ export default function ListingChat({
   /** Seller: detect thread activity changes to reload open conversation. */
   const lastThreadActivityRef = useRef<string | null>(null);
   const rebookPrepareRanRef = useRef(false);
+  const activeConversationIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     rebookPrepareRanRef.current = false;
@@ -169,7 +170,7 @@ export default function ListingChat({
       if (data.conversation?.id) {
         setSelectedId(data.conversation.id);
         const fresh: Msg[] = data.messages ?? [];
-        setMessages((prev) => (chatMessagesChanged(prev, fresh) ? fresh : prev));
+        setMessages((prev) => applyChatPollUpdate(prev, fresh));
         conversationListingIdRef.current = listingId;
       }
     }
@@ -182,8 +183,11 @@ export default function ListingChat({
 
   const loadConversation = useCallback(
     async (conversationId: string, buyerIdHint?: string | null) => {
+      const switching = activeConversationIdRef.current !== conversationId;
+      activeConversationIdRef.current = conversationId;
       setSelectedId(conversationId);
       setError("");
+      if (switching) setMessages([]);
       if (buyerIdHint != null && String(buyerIdHint).trim() !== "") {
         setAgreedPriceBuyerId(String(buyerIdHint));
       } else {
@@ -203,7 +207,8 @@ export default function ListingChat({
           return;
         }
         const data = await res.json();
-        setMessages(data.messages ?? []);
+        const fresh = (data.messages ?? []) as Msg[];
+        setMessages((prev) => (switching ? fresh : applyChatPollUpdate(prev, fresh)));
         const conv = data.conversation as { listing_id?: string; buyer_id?: string } | undefined;
         const bid = conv?.buyer_id;
         if (bid) setAgreedPriceBuyerId(String(bid));
@@ -315,7 +320,7 @@ export default function ListingChat({
         if (!res.ok) return;
         const data = await res.json();
         const fresh: Msg[] = data.messages ?? [];
-        setMessages((prev) => (chatMessagesChanged(prev, fresh) ? fresh : prev));
+        setMessages((prev) => applyChatPollUpdate(prev, fresh));
       } catch {
         /* silent */
       }
@@ -721,7 +726,9 @@ export default function ListingChat({
         throw new Error((d as { error?: string }).error ?? c.sendMsgErr);
       }
       const { message } = await res.json();
-      setMessages((m) => [...m, message as Msg]);
+      const msg = message as Msg;
+      setMessages((m) => [...m, msg]);
+      lastThreadActivityRef.current = `${msg.created_at}:${msg.body}`;
       if (typeof window !== "undefined" && role !== "seller") {
         window.dispatchEvent(new CustomEvent("tianguis:listing-contact"));
       }

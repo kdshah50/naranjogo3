@@ -8,7 +8,7 @@ import {
   type ServiceMenu,
 } from "@/lib/listing-service-menu";
 import ServiceMenuQuoteBuilder from "@/components/ServiceMenuQuoteBuilder";
-import { chatMessagesChanged, type ChatPollMessage } from "@/lib/listing-chat-poll";
+import { applyChatPollUpdate, type ChatPollMessage } from "@/lib/listing-chat-poll";
 
 type Msg = ChatPollMessage;
 type ConvRole = "buyer" | "seller" | null;
@@ -146,7 +146,7 @@ export default function ConversationThread({
         if (!res.ok) return;
         const data = await res.json();
         const fresh: Msg[] = data.messages ?? [];
-        setMessages((prev) => (chatMessagesChanged(prev, fresh) ? fresh : prev));
+        setMessages((prev) => applyChatPollUpdate(prev, fresh));
       } catch {
         /* silent */
       }

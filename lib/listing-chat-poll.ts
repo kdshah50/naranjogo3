@@ -15,3 +15,24 @@ export function chatMessagesChanged(prev: ChatPollMessage[], fresh: ChatPollMess
   if (prev.length !== fresh.length) return true;
   return chatMessageDigest(prev) !== chatMessageDigest(fresh);
 }
+
+/** Keep optimistic/local rows when a poll returns stale data right after send. */
+export function mergeChatMessagesOnPoll(
+  prev: ChatPollMessage[],
+  fresh: ChatPollMessage[],
+): ChatPollMessage[] {
+  if (fresh.length === 0) return prev.length > 0 ? prev : fresh;
+  const byId = new Map<string, ChatPollMessage>();
+  for (const m of fresh) byId.set(m.id, m);
+  for (const m of prev) {
+    if (!byId.has(m.id)) byId.set(m.id, m);
+  }
+  return Array.from(byId.values()).sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+  );
+}
+
+export function applyChatPollUpdate(prev: ChatPollMessage[], fresh: ChatPollMessage[]): ChatPollMessage[] {
+  if (!chatMessagesChanged(prev, fresh)) return prev;
+  return mergeChatMessagesOnPoll(prev, fresh);
+}
