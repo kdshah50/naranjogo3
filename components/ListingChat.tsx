@@ -11,7 +11,12 @@ import { buyerContactPrefillFromMetadata } from "@/lib/buyer-quote-contact";
 import ServiceQuoteBuyerPanel from "@/components/ServiceQuoteBuyerPanel";
 import ServiceQuoteSellerRequestPanel from "@/components/ServiceQuoteSellerRequestPanel";
 import type { ServiceQuoteLineItem, ServiceQuoteMetadata, ServiceQuoteStatus } from "@/lib/service-quote";
-import { applyChatPollUpdate, type ChatPollMessage } from "@/lib/listing-chat-poll";
+import {
+  applyChatPollUpdate,
+  normalizeConversationId,
+  threadActivitySig,
+  type ChatPollMessage,
+} from "@/lib/listing-chat-poll";
 import { listingChatCopy, formatListingChatSystemBody } from "@/lib/listing-chat-copy";
 import { withLang } from "@/lib/i18n-lang";
 import {
@@ -107,6 +112,7 @@ export default function ListingChat({
   const lastThreadActivityRef = useRef<string | null>(null);
   const rebookPrepareRanRef = useRef(false);
   const activeConversationIdRef = useRef<string | null>(null);
+  const conversationLoadSeqRef = useRef(0);
 
   useEffect(() => {
     rebookPrepareRanRef.current = false;
@@ -183,30 +189,36 @@ export default function ListingChat({
 
   const loadConversation = useCallback(
     async (conversationId: string, buyerIdHint?: string | null) => {
-      const switching = activeConversationIdRef.current !== conversationId;
-      activeConversationIdRef.current = conversationId;
+      const normId = normalizeConversationId(conversationId);
+      const switching =
+        activeConversationIdRef.current != null && activeConversationIdRef.current !== normId;
+      const seq = ++conversationLoadSeqRef.current;
+      activeConversationIdRef.current = normId;
       setSelectedId(conversationId);
       setError("");
       if (switching) setMessages([]);
+
       if (buyerIdHint != null && String(buyerIdHint).trim() !== "") {
         setAgreedPriceBuyerId(String(buyerIdHint));
-      } else {
-        setAgreedPriceBuyerId(null);
       }
+
       try {
-        const res = await fetch(`/api/conversations/${conversationId}`, {
+        const res = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}`, {
           credentials: "same-origin",
           cache: "no-store",
         });
         if (!res.ok) {
+          if (seq !== conversationLoadSeqRef.current) return;
           const d = await res.json().catch(() => ({}));
           setError((d as { error?: string }).error ?? c.loadErr);
           setSelectedId(null);
           setAgreedPriceBuyerId(null);
           conversationListingIdRef.current = null;
+          activeConversationIdRef.current = null;
           return;
         }
         const data = await res.json();
+        if (seq !== conversationLoadSeqRef.current) return;
         const fresh = (data.messages ?? []) as Msg[];
         setMessages((prev) => (switching ? fresh : applyChatPollUpdate(prev, fresh)));
         const conv = data.conversation as { listing_id?: string; buyer_id?: string } | undefined;
@@ -221,17 +233,42 @@ export default function ListingChat({
         const loadedMsgs = (data.messages ?? []) as Msg[];
         const lastMsg = loadedMsgs[loadedMsgs.length - 1];
         if (lastMsg) {
-          lastThreadActivityRef.current = `${lastMsg.created_at}:${lastMsg.body}`;
+          lastThreadActivityRef.current = threadActivitySig(lastMsg.created_at, lastMsg.body);
         }
       } catch {
+        if (seq !== conversationLoadSeqRef.current) return;
         setError(c.networkErr);
         setSelectedId(null);
         setAgreedPriceBuyerId(null);
         conversationListingIdRef.current = null;
+        activeConversationIdRef.current = null;
       }
     },
-    [listingId]
+    [listingId, c.loadErr, c.networkErr],
   );
+
+  /** Lightweight message sync — avoids clearing seller state on thread activity bumps. */
+  const syncConversationMessages = useCallback(async (conversationId: string) => {
+    const normId = normalizeConversationId(conversationId);
+    if (activeConversationIdRef.current !== normId) return;
+    try {
+      const res = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}`, {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (activeConversationIdRef.current !== normId) return;
+      const fresh = (data.messages ?? []) as Msg[];
+      setMessages((prev) => applyChatPollUpdate(prev, fresh));
+      const lastMsg = fresh[fresh.length - 1];
+      if (lastMsg) {
+        lastThreadActivityRef.current = threadActivitySig(lastMsg.created_at, lastMsg.body);
+      }
+    } catch {
+      /* silent */
+    }
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -284,7 +321,9 @@ export default function ListingChat({
   useEffect(() => {
     if (loading || !initialConversationId || deepLinkConvLoadedRef.current) return;
     if (role === "seller") {
-      const th = threads.find((t) => t.conversationId === initialConversationId);
+      const th = threads.find(
+        (t) => normalizeConversationId(t.conversationId) === normalizeConversationId(initialConversationId),
+      );
       if (!th && threads.length === 0) return;
       deepLinkConvLoadedRef.current = true;
       void loadConversation(initialConversationId, th?.buyer_id);
@@ -615,11 +654,14 @@ export default function ListingChat({
       setAgreedErr(connectWarning);
     }
     const msg = (d as { message?: Msg }).message;
-    if (msg) setMessages((m) => [...m, msg]);
+    if (msg) {
+      setMessages((m) => [...m, msg]);
+      lastThreadActivityRef.current = threadActivitySig(msg.created_at, msg.body);
+    }
     window.dispatchEvent(new CustomEvent("tianguis:quote-updated", { detail: { listingId } }));
     window.dispatchEvent(new CustomEvent("tianguis:agreed-price-updated", { detail: { listingId } }));
     await loadQuoteState();
-    if (selectedId) await loadConversation(selectedId, agreedPriceBuyerId ?? undefined);
+    if (selectedId) await syncConversationMessages(selectedId);
   };
 
   const submitCleaningRequest = async (payload: QuoteBuilderPayload) => {
@@ -666,11 +708,13 @@ export default function ListingChat({
         if (data.role !== "seller" || !Array.isArray(data.threads)) return;
         const newThreads = data.threads as Thread[];
         if (selectedId) {
-          const active = newThreads.find((t) => t.conversationId === selectedId);
-          const sig = active ? `${active.last_at}:${active.last_body}` : null;
+          const active = newThreads.find(
+            (t) => normalizeConversationId(t.conversationId) === normalizeConversationId(selectedId),
+          );
+          const sig = active ? threadActivitySig(active.last_at, active.last_body) : null;
           if (sig && sig !== lastThreadActivityRef.current) {
             lastThreadActivityRef.current = sig;
-            void loadConversation(selectedId, agreedPriceBuyerId ?? undefined);
+            void syncConversationMessages(selectedId);
           }
         }
         setThreads(newThreads);
@@ -679,7 +723,7 @@ export default function ListingChat({
       }
     }, 4000);
     return () => clearInterval(poll);
-  }, [role, listingId, selectedId, agreedPriceBuyerId, loadConversation]);
+  }, [role, listingId, selectedId, syncConversationMessages]);
 
   /** Always resolves the thread for this `listingId` (idempotent). Do not short-circuit on selectedId — it may belong to another anuncio. */
   const ensureConversation = async (): Promise<string | null> => {
@@ -728,7 +772,10 @@ export default function ListingChat({
       const { message } = await res.json();
       const msg = message as Msg;
       setMessages((m) => [...m, msg]);
-      lastThreadActivityRef.current = `${msg.created_at}:${msg.body}`;
+      lastThreadActivityRef.current = threadActivitySig(msg.created_at, msg.body);
+      if (role === "seller" && cid) {
+        void syncConversationMessages(cid);
+      }
       if (typeof window !== "undefined" && role !== "seller") {
         window.dispatchEvent(new CustomEvent("tianguis:listing-contact"));
       }
@@ -807,10 +854,16 @@ export default function ListingChat({
     rebookPrefillLines?.map((x) => ({ sku: x.sku, qty: x.qty })) ?? undefined;
   const buyerFormKey = `${listingId}-${highlightRebook ? "rebook" : "new"}-${rebookPrefillLines?.length ?? 0}`;
 
-  const refreshBuyerChat = async () => {
+  const refreshChat = async () => {
     await loadListingScope();
-    await loadQuoteState();
-    if (selectedId) await loadConversation(selectedId);
+    if (requiresQuoteAccept) await loadQuoteState();
+    if (selectedId) {
+      if (role === "seller") {
+        await loadConversation(selectedId, agreedPriceBuyerId ?? undefined);
+      } else {
+        await syncConversationMessages(selectedId);
+      }
+    }
   };
 
   if (loading) {
@@ -856,10 +909,10 @@ export default function ListingChat({
             {c.viewListing}
           </Link>
         ) : null}
-        {role === "buyer" ? (
+        {role === "buyer" || role === "seller" ? (
           <button
             type="button"
-            onClick={() => void refreshBuyerChat()}
+            onClick={() => void refreshChat()}
             className="text-xs font-semibold text-[#1B4332] hover:underline shrink-0"
           >
             {c.refresh}
@@ -886,7 +939,9 @@ export default function ListingChat({
           </p>
           <div className="max-h-36 overflow-y-auto divide-y divide-[#E5E0D8]">
             {threads.map((t) => {
-              const isActive = selectedId === t.conversationId;
+              const isActive =
+                selectedId != null &&
+                normalizeConversationId(selectedId) === normalizeConversationId(t.conversationId);
               const label = t.ticket_code ? `${t.ticket_code} · ${t.buyer_name}` : t.buyer_name;
               return (
                 <button
@@ -934,7 +989,9 @@ export default function ListingChat({
 
       {/* Active chat header — shows who you're talking to */}
       {role === "seller" && selectedId && (() => {
-        const active = threads.find((t) => t.conversationId === selectedId);
+        const active = threads.find(
+          (t) => normalizeConversationId(t.conversationId) === normalizeConversationId(selectedId),
+        );
         return active ? (
           <div className="px-4 py-2 bg-[#ECFDF5] border-b border-[#A7F3D0] flex items-center gap-2">
             <div className="w-7 h-7 rounded-full bg-[#1B4332] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">

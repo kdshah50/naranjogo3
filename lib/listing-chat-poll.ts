@@ -7,8 +7,16 @@ export type ChatPollMessage = {
   created_at: string;
 };
 
+export function normalizeConversationId(id: string): string {
+  return id.trim().toLowerCase();
+}
+
+export function chatMessageKey(m: ChatPollMessage): string {
+  return m.id.trim().toLowerCase();
+}
+
 export function chatMessageDigest(msgs: ChatPollMessage[]): string {
-  return msgs.map((m) => `${m.id}\0${m.created_at}\0${m.body.length}`).join("\n");
+  return msgs.map((m) => `${chatMessageKey(m)}\0${m.created_at}\0${m.body.length}`).join("\n");
 }
 
 export function chatMessagesChanged(prev: ChatPollMessage[], fresh: ChatPollMessage[]): boolean {
@@ -23,9 +31,10 @@ export function mergeChatMessagesOnPoll(
 ): ChatPollMessage[] {
   if (fresh.length === 0) return prev.length > 0 ? prev : fresh;
   const byId = new Map<string, ChatPollMessage>();
-  for (const m of fresh) byId.set(m.id, m);
+  for (const m of fresh) byId.set(chatMessageKey(m), m);
   for (const m of prev) {
-    if (!byId.has(m.id)) byId.set(m.id, m);
+    const key = chatMessageKey(m);
+    if (!byId.has(key)) byId.set(key, m);
   }
   return Array.from(byId.values()).sort(
     (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
@@ -35,4 +44,8 @@ export function mergeChatMessagesOnPoll(
 export function applyChatPollUpdate(prev: ChatPollMessage[], fresh: ChatPollMessage[]): ChatPollMessage[] {
   if (!chatMessagesChanged(prev, fresh)) return prev;
   return mergeChatMessagesOnPoll(prev, fresh);
+}
+
+export function threadActivitySig(lastAt: string, lastBody: string): string {
+  return `${lastAt}:${lastBody}`;
 }

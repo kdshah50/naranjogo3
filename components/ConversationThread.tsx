@@ -8,7 +8,10 @@ import {
   type ServiceMenu,
 } from "@/lib/listing-service-menu";
 import ServiceMenuQuoteBuilder from "@/components/ServiceMenuQuoteBuilder";
-import { applyChatPollUpdate, type ChatPollMessage } from "@/lib/listing-chat-poll";
+import {
+  applyChatPollUpdate,
+  type ChatPollMessage,
+} from "@/lib/listing-chat-poll";
 
 type Msg = ChatPollMessage;
 type ConvRole = "buyer" | "seller" | null;
@@ -84,6 +87,22 @@ export default function ConversationThread({
   const [agreedSaving, setAgreedSaving] = useState(false);
   const [agreedErr, setAgreedErr] = useState("");
   const messagesScrollRef = useRef<HTMLDivElement | null>(null);
+  const initialMessagesLoadedRef = useRef(false);
+
+  const syncMessages = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/conversations/${conversationId}`, {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const fresh: Msg[] = data.messages ?? [];
+      setMessages((prev) => applyChatPollUpdate(prev, fresh));
+    } catch {
+      /* silent */
+    }
+  }, [conversationId]);
 
   const load = useCallback(async () => {
     const strings = UI[lang];
@@ -99,7 +118,11 @@ export default function ConversationThread({
       return;
     }
     const data = await res.json();
-    setMessages(data.messages ?? []);
+    const fresh: Msg[] = data.messages ?? [];
+    setMessages((prev) =>
+      initialMessagesLoadedRef.current ? applyChatPollUpdate(prev, fresh) : fresh,
+    );
+    initialMessagesLoadedRef.current = true;
     setTitle(data.listing?.title_es ?? strings.conversation);
     setRole(data.role ?? null);
     setOtherName(data.other_name ?? "");
@@ -117,6 +140,7 @@ export default function ConversationThread({
   }, [conversationId, lang]);
 
   useEffect(() => {
+    initialMessagesLoadedRef.current = false;
     void load();
   }, [load]);
 
@@ -137,30 +161,20 @@ export default function ConversationThread({
   // Poll for new messages (provider may miss buyer-side browser events).
   useEffect(() => {
     if (!conversationId) return;
-    const poll = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/conversations/${conversationId}`, {
-          credentials: "same-origin",
-          cache: "no-store",
-        });
-        if (!res.ok) return;
-        const data = await res.json();
-        const fresh: Msg[] = data.messages ?? [];
-        setMessages((prev) => applyChatPollUpdate(prev, fresh));
-      } catch {
-        /* silent */
-      }
+    const poll = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void syncMessages();
     }, 4000);
     return () => clearInterval(poll);
-  }, [conversationId]);
+  }, [conversationId, syncMessages]);
 
   useEffect(() => {
     const refreshOnVisible = () => {
-      if (document.visibilityState === "visible") void load();
+      if (document.visibilityState === "visible") void syncMessages();
     };
     document.addEventListener("visibilitychange", refreshOnVisible);
     return () => document.removeEventListener("visibilitychange", refreshOnVisible);
-  }, [load]);
+  }, [syncMessages]);
 
   // Seller: load existing agreed price for this listing+buyer pair.
   useEffect(() => {
@@ -220,7 +234,9 @@ export default function ConversationThread({
         throw new Error((d as { error?: string }).error ?? u.sendErr);
       }
       const { message } = await res.json();
-      setMessages((m) => [...m, message as Msg]);
+      const msg = message as Msg;
+      setMessages((m) => [...m, msg]);
+      void syncMessages();
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("tianguis:listing-contact"));
       }
