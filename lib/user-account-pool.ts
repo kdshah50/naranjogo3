@@ -7,7 +7,12 @@ export function phoneLookupVariants(phone: string | null | undefined): string[] 
   if (phone == null || !String(phone).trim()) return [];
   const raw = String(phone).trim();
   const digits = canonicalizeAuthPhone(normalizeAuthPhone(raw));
-  return [...new Set([raw, digits, `+${digits}`].filter(Boolean))];
+  const out = new Set([raw, digits, `+${digits}`].filter(Boolean));
+  // Legacy rows sometimes store Mexico as 521 + 10 digits instead of 52 + 10.
+  if (/^52\d{10}$/.test(digits)) {
+    out.add(`521${digits.slice(2)}`);
+  }
+  return [...out];
 }
 
 const MAX_ACCOUNT_POOL_PHONE_ITERS = 6;
@@ -17,8 +22,21 @@ const MAX_ACCOUNT_POOL_PHONE_ITERS = 6;
  * (including transitive: A–B share a phone, B–C share another → A,B,C merge).
  * Fixes provider logged in as one row while listings/bookings use another `seller_id`.
  */
-export async function expandUserAccountIdPool(supabase: SupabaseClient, userId: string): Promise<string[]> {
+export async function expandUserAccountIdPool(
+  supabase: SupabaseClient,
+  userId: string,
+  options?: { authPhone?: string | null },
+): Promise<string[]> {
   const pool = new Set<string>(idMatchVariantsForIn(userId));
+
+  // JWT may carry canonical phone even when the `sub` row has null/wrong phone.
+  const authVariants = options?.authPhone ? phoneLookupVariants(options.authPhone) : [];
+  if (authVariants.length > 0) {
+    const { data: samePhone } = await supabase.from("users").select("id").in("phone", authVariants);
+    for (const row of samePhone ?? []) {
+      for (const v of idMatchVariantsForIn(row.id)) pool.add(v);
+    }
+  }
 
   for (let iter = 0; iter < MAX_ACCOUNT_POOL_PHONE_ITERS; iter++) {
     const beforeSize = pool.size;

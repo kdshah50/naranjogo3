@@ -1,4 +1,7 @@
+import "server-only";
+
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { isSameUserId } from "@/lib/auth-server";
 import { phoneIdentityKey, storageAuthPhone } from "@/lib/phone";
 import { phoneLookupVariants } from "@/lib/user-account-pool";
 import { idMatchVariantsForIn } from "@/lib/user-id-variants";
@@ -69,7 +72,15 @@ async function paidBookingTouchCount(supabase: SupabaseClient, userId: string): 
   return (asBuyer ?? 0) + (asSeller ?? 0);
 }
 
-/** Pick the row that should own this phone after a merge (most activity + verified). */
+function pickUserByLinkedId(users: LoginUserRow[], targetId: string): LoginUserRow | null {
+  const match = users.find((u) => isSameUserId(String(u.id), targetId));
+  return match ? (match as LoginUserRow) : null;
+}
+
+/**
+ * When several `users` rows share one phone, prefer driver/wallet-linked rows,
+ * then fall back to the most active verified account.
+ */
 export async function pickLoginUserForPhone(
   supabase: SupabaseClient,
   phone: string,
@@ -90,10 +101,48 @@ export async function pickLoginUserForPhone(
   if (!users?.length) return null;
   if (users.length === 1) return users[0] as LoginUserRow;
 
-  let best = users[0] as LoginUserRow;
+  const typedUsers = users as LoginUserRow[];
+  const idPool = typedUsers.flatMap((u) => idMatchVariantsForIn(String(u.id)));
+
+  const { data: activeProfiles, error: pErr } = await supabase
+    .from("driver_profiles")
+    .select("user_id")
+    .in("user_id", idPool)
+    .eq("is_active_driver", true)
+    .order("updated_at", { ascending: false });
+
+  if (!pErr && activeProfiles?.length) {
+    const match = pickUserByLinkedId(typedUsers, String(activeProfiles[0].user_id));
+    if (match) return match;
+  }
+
+  const { data: anyProfiles, error: anyErr } = await supabase
+    .from("driver_profiles")
+    .select("user_id")
+    .in("user_id", idPool)
+    .order("created_at", { ascending: false });
+
+  if (!anyErr && anyProfiles?.length) {
+    const match = pickUserByLinkedId(typedUsers, String(anyProfiles[0].user_id));
+    if (match) return match;
+  }
+
+  const { data: walletRows } = await supabase
+    .from("wallets")
+    .select("user_id")
+    .in("user_id", idPool)
+    .order("updated_at", { ascending: false })
+    .limit(5);
+
+  if (walletRows?.length) {
+    const match = pickUserByLinkedId(typedUsers, String(walletRows[0].user_id));
+    if (match) return match;
+  }
+
+  let best = typedUsers[0];
   let bestScore = -1;
 
-  for (const row of users as LoginUserRow[]) {
+  for (const row of typedUsers) {
     let score = 0;
     if (row.phone_verified) score += 100;
     if (String(row.display_name ?? "").trim()) score += 20;
@@ -157,4 +206,19 @@ export function samePhoneIdentity(a: string | null | undefined, b: string | null
   const ka = phoneIdentityKey(a);
   const kb = phoneIdentityKey(b);
   return Boolean(ka && kb && ka === kb);
+}
+
+/**
+ * Legacy rides helper — prefer ensureAuthUserForPhone for new OTP flows.
+ */
+export async function findOrInsertLoginUserForPhone(
+  supabase: SupabaseClient,
+  phone: string,
+  options?: { referredBy?: string | null },
+): Promise<LoginUserRow | null> {
+  const { ensureAuthUserForPhone } = await import("@/lib/ensure-auth-user");
+  const result = await ensureAuthUserForPhone(supabase, phone, {
+    referredBy: options?.referredBy ?? null,
+  });
+  return result.ok ? result.user : null;
 }

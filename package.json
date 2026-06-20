@@ -14,7 +14,16 @@
     "test:user-phone-uniqueness": "tsx scripts/test-user-phone-uniqueness.ts",
     "merge:duplicate-users": "tsx scripts/merge-duplicate-users-by-phone.ts",
     "backfill:listing-embeddings": "tsx scripts/backfill-listing-embeddings.ts",
-    "test:search-smoke": "tsx scripts/test-search-smoke.ts"
+    "test:search-smoke": "tsx scripts/test-search-smoke.ts",
+    "test:driver-onboarding": "tsx scripts/test-driver-onboarding.ts",
+    "test:ride-pricing": "tsx scripts/test-ride-pricing.ts",
+    "test:ride-lifecycle": "tsx scripts/test-ride-lifecycle.ts",
+    "test:ride-status-rules": "tsx scripts/test-ride-status-rules.ts",
+    "test:rides-staging": "tsx scripts/test-rides-staging-health.ts",
+    "release:rider-holds": "tsx scripts/release-rider-wallet-holds.ts",
+    "test:rides-full": "tsx scripts/test-rides-full-e2e.ts",
+    "test:rides-merge-gate": "tsx scripts/test-rides-staging-health.ts --fix && tsx scripts/test-rides-full-e2e.ts",
+    "test:rides-pre-mexico": "tsx scripts/test-rides-pre-mexico.ts"
   },
   "dependencies": {
     "@sentry/nextjs": "^8.55.1",

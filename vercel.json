@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/send-booking-reminders",
       "schedule": "15 14 * * *"
+    },
+    {
+      "path": "/api/cron/rides-stale-cleanup",
+      "schedule": "0 5 * * *"
     }
   ]
 }

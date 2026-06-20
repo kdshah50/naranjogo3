@@ -7,6 +7,8 @@ import { notifyBuyerBookingCommissionPaid } from "@/lib/buyer-booking-notify";
 import { notifySellerBookingCommissionPaid } from "@/lib/seller-booking-notify";
 import { appendBookingEvent, ensureTicketCodeForPaidBooking, statusAfterPaymentSucceeded } from "@/lib/booking-lifecycle";
 import { appendListingChatPaymentNotice, appendListingChatPaymentNoticeForBookingId } from "@/lib/payment-confirmed-chat";
+import { isRidesEnabled } from "@/lib/rides/flags";
+import { handleWalletTopupSessionCompleted } from "@/lib/rides/wallet-webhook";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +33,41 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error("[stripe-webhook] Signature verification failed", err);
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
+  }
+
+  // Rides wallet top-up branch (additive, runs only when RIDES_ENABLED=true).
+  // Handles both card (sync) and OXXO (async) success events. Returns 200 on
+  // every code path so Stripe doesn't retry unnecessarily.
+  if (
+    isRidesEnabled() &&
+    (event.type === "checkout.session.completed" ||
+      event.type === "checkout.session.async_payment_succeeded")
+  ) {
+    const session = event.data.object as {
+      metadata?: Record<string, string | undefined> | null;
+      payment_intent?: string | { id: string } | null;
+      payment_status?: string | null;
+      amount_total?: number | null;
+      currency?: string | null;
+      id?: string | null;
+    };
+    if (session?.metadata?.purpose === "wallet_topup") {
+      try {
+        const supabase = createAdminSupabase();
+        const result = await handleWalletTopupSessionCompleted(supabase, {
+          eventType: event.type,
+          session,
+        });
+        if (!result.ok) {
+          console.error("[stripe-webhook] wallet_topup", result.error, {
+            sessionId: session.id,
+          });
+        }
+      } catch (e) {
+        console.error("[stripe-webhook] wallet_topup unexpected", e);
+      }
+      return NextResponse.json({ received: true });
+    }
   }
 
   if (event.type === "checkout.session.completed") {

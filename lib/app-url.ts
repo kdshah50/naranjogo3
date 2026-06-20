@@ -1,3 +1,5 @@
+import { vercelDeploymentOrigin } from "@/lib/vercel-origin";
+
 const DEFAULT = "https://naranjogo.com.mx";
 
 function normalizeOrigin(raw: string): string {
@@ -9,14 +11,6 @@ function normalizeOrigin(raw: string): string {
   } catch {
     return DEFAULT;
   }
-}
-
-function vercelDeploymentOrigin(): string | null {
-  const branchUrl = process.env.VERCEL_BRANCH_URL?.trim();
-  const deploymentUrl = process.env.VERCEL_URL?.trim();
-  const host = branchUrl || deploymentUrl;
-  if (!host) return null;
-  return normalizeOrigin(host);
 }
 
 /**

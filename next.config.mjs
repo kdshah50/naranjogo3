@@ -7,7 +7,18 @@ const isProd = process.env.NODE_ENV === "production";
 /** enforce | report | off — default enforce (production). Use report temporarily if diagnosing breakage. */
 const cspMode = (process.env.CSP_MODE ?? "enforce").trim().toLowerCase();
 
+function stablePreviewOrigin() {
+  const raw = process.env.VERCEL_BRANCH_URL?.trim() || process.env.VERCEL_URL?.trim();
+  if (!raw) return "";
+  const host = raw.replace(/^https?:\/\//i, "").replace(/\/$/, "");
+  return host ? `https://${host}` : "";
+}
+
 const nextConfig = {
+  env: {
+    NEXT_PUBLIC_VERCEL_ENV: process.env.VERCEL_ENV ?? "development",
+    NEXT_PUBLIC_STABLE_ORIGIN: stablePreviewOrigin(),
+  },
   eslint: { ignoreDuringBuilds: false },
   typescript: { ignoreBuildErrors: false },
   images: {
