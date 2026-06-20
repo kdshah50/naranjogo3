@@ -3,13 +3,14 @@ import { createAdminSupabase, getUserIdFromRequest, idMatchVariantsForIn } from 
 import { getStripe } from "@/lib/stripe";
 import { getPublicAppUrl } from "@/lib/app-url";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
-import { balancePayable, listingIsHousekeeping } from "@/lib/housekeeping-payments";
+import { balancePayable, listingProviderSlug, listingSupportsSupplementPayments } from "@/lib/housekeeping-payments";
 import { connectNotReadyMessage, sellerConnectPayoutReady } from "@/lib/stripe-connect-ready";
+import { supplementCheckoutServiceLabel } from "@/lib/service-quote-vertical";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-/** POST — buyer pays job balance after provider marks completed (housekeeping). */
+/** POST — buyer pays job balance after provider marks completed (housekeeping + veterinary). */
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const userId = await getUserIdFromRequest(req);
@@ -38,9 +39,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
 
-    if (!(await listingIsHousekeeping(supabase, String(booking.listing_id)))) {
-      return NextResponse.json({ error: "Este pago de saldo aplica solo a limpieza del hogar" }, { status: 400 });
+    if (!(await listingSupportsSupplementPayments(supabase, String(booking.listing_id)))) {
+      return NextResponse.json(
+        { error: "Este pago de saldo aplica solo a limpieza del hogar y servicios veterinarios" },
+        { status: 400 },
+      );
     }
+
+    const providerSlug = await listingProviderSlug(supabase, String(booking.listing_id));
 
     if (!balancePayable(booking as Parameters<typeof balancePayable>[0])) {
       return NextResponse.json({ error: "No hay saldo pendiente para pagar en este momento" }, { status: 400 });
@@ -79,6 +85,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       .eq("id", booking.listing_id)
       .maybeSingle();
 
+    const serviceLabel = supplementCheckoutServiceLabel(providerSlug, "es");
     const stripe = getStripe();
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
@@ -89,7 +96,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
             currency: "mxn",
             unit_amount: amountCents,
             product_data: {
-              name: `Saldo del servicio — ${listing?.title_es ?? "Limpieza"}`,
+              name: `Saldo del servicio — ${listing?.title_es ?? serviceLabel}`,
               description: `Ticket ${booking.ticket_code ?? bookingId.slice(0, 8)} — saldo después del depósito`,
             },
           },

@@ -1,6 +1,6 @@
 # Veterinary Services MVP — Progress Log
 
-> **Merge reminder:** Vet preview (`veterinary-service`) is behind `housekeeping-service`. After PM signs off on cleaning E2E, merge `housekeeping-service` into this branch before vet quote-flow testing. See `docs/HOUSEKEEPING_PROGRESS.md` → "Before testing Pet Care or Veterinary".
+> **Note:** V1–V3 shipped on `main` via housekeeping merge (menu, `/veterinaria`, quote gate). V4 balance/tip work lives on `veterinary-service`.
 
 A running log of what's built, what's deployed, and how to verify each step.
 Mirror format of `docs/TAILORING_PROGRESS.md`. Keep updating after every step.
@@ -11,11 +11,10 @@ Mirror format of `docs/TAILORING_PROGRESS.md`. Keep updating after every step.
 
 | Item | Value |
 |---|---|
-| Branch | `veterinary-service` (forked from `main`) |
-| Strategy | Additive: reuse existing `service_menu` jsonb on `listings`, enable menu editor for slug `veterinaria` in `/unete`, add a veterinary starter template + disclaimer. **Zero changes to sell/buy `SellModal`, booking, cart, payment, or webhook code.** |
-| Master kill-switch | Menu editor only renders for slugs in `PROVIDER_SERVICES_WITH_MENU`. Until `veterinaria` is added to that set, vet signup behaves exactly like any other service on `main`. |
-| Latest step completed | **Phase V3 — Quote-accept gate + buyer contact form (same as housekeeping H4/H5 deposit flow)** |
-| Next step | Deploy preview + smoke test (landing → signup → contact form → quote → accept → deposit) |
+| Branch | `veterinary-service` (synced from `main` Jun 2026) |
+| Strategy | Same as housekeeping: menu + quote gate + deposit + **balance/tip after complete** |
+| Latest step completed | **Phase V4 — balance checkout, tips, appointment (parity with housekeeping H5)** |
+| Next step | Preview smoke test: landing → signup → quote → accept → deposit → complete → balance |
 
 ---
 
