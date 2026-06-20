@@ -21,10 +21,8 @@ function asWhatsappAddress(value: string) {
 const WHATSAPP_RETRY_AFTER_MS = 2200;
 
 /**
- * Send using E.164 digits only (no +). For MX mobile (+52), posts **both** +52 and +521 in parallel
- * (same as `send-otp`): WhatsApp may register the user under either; one request often returns 63015
- * while the other delivers. Sequential-first could get HTTP success on the “wrong” routing and skip
- * the format the buyer actually receives.
+ * Send using E.164 digits only (no +). For MX mobile (+52), sends to +521 only — the +52 route
+ * often accepts then fails with 63015; dual-send could mark notify “delivered” without delivery.
  */
 export async function sendWhatsAppToE164Digits(toDigitsRaw: string, message: string): Promise<boolean> {
   const digits = canonicalizeAuthPhone(normalizeAuthPhone(String(toDigitsRaw ?? "")));
@@ -34,9 +32,14 @@ export async function sendWhatsAppToE164Digits(toDigitsRaw: string, message: str
   }
 
   const tryMxParallel = async (): Promise<boolean> => {
-    const dests = /^52\d{10}$/.test(digits) ? [digits, `521${digits.slice(2)}`] : [digits];
-    const results = await Promise.all(dests.map((d) => sendWhatsApp(d, message)));
-    return results.some(Boolean);
+    // MX mobile WhatsApp registers on +521…; +52… often returns 63015 and never delivers.
+    if (/^52\d{10}$/.test(digits)) {
+      return sendWhatsApp(`521${digits.slice(2)}`, message);
+    }
+    if (/^521\d{10}$/.test(digits)) {
+      return sendWhatsApp(digits, message);
+    }
+    return sendWhatsApp(digits, message);
   };
 
   if (await tryMxParallel()) return true;

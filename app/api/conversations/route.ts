@@ -5,6 +5,8 @@ import {
   poolsOverlap,
   userIsListingSellerAccount,
 } from "@/lib/user-account-pool";
+import { latestTicketsForListingBuyers, MAX_INBOX_THREADS, latestTicketForListingBuyer } from "@/lib/conversation-ticket";
+import { listConversationMessages } from "@/lib/listing-messages-server";
 
 export const dynamic = "force-dynamic";
 
@@ -58,20 +60,14 @@ export async function GET(req: NextRequest) {
       }
 
       const buyerPoolCache = new Map<string, string[]>();
-      const sellerPoolCache = new Map<string, string[]>();
       const buyerPoolFor = async (bid: string) => {
         if (!buyerPoolCache.has(bid)) buyerPoolCache.set(bid, await expandUserAccountIdPool(supabase, bid));
         return buyerPoolCache.get(bid)!;
       };
-      const convSellerPoolFor = async (sid: string) => {
-        if (!sellerPoolCache.has(sid)) sellerPoolCache.set(sid, await expandUserAccountIdPool(supabase, sid));
-        return sellerPoolCache.get(sid)!;
-      };
 
+      /** Listing owner sees every buyer thread on this anuncio (even stale `seller_id` on the row). */
       const convs: NonNullable<typeof convsRaw> = [];
       for (const c of convsRaw ?? []) {
-        const convSellerPool = await convSellerPoolFor(c.seller_id);
-        if (!poolsOverlap(convSellerPool, listingSellerPool)) continue;
         if (poolsOverlap(await buyerPoolFor(c.buyer_id), listingSellerPool)) continue;
         convs.push(c);
       }
@@ -86,12 +82,14 @@ export async function GET(req: NextRequest) {
         }
       }
 
+      const ticketMap = await latestTicketsForListingBuyers(supabase, listing.id, buyerIds);
+
       const threads = await Promise.all(
         convs.map(async (c) => {
           const { data: last } = await supabase
             .from("listing_messages")
             .select("body,created_at")
-            .eq("conversation_id", c.id)
+            .in("conversation_id", idMatchVariantsForIn(c.id))
             .order("created_at", { ascending: false })
             .limit(1)
             .maybeSingle();
@@ -104,14 +102,58 @@ export async function GET(req: NextRequest) {
             buyer_name: buyerLabel,
             last_body: last?.body ?? "",
             last_at: last?.created_at ?? c.updated_at,
+            ticket_code: ticketMap.get(c.buyer_id.trim().toLowerCase()) ?? null,
           };
         })
       );
 
+      threads.sort((a, b) => new Date(b.last_at).getTime() - new Date(a.last_at).getTime());
+      const threadsTotal = threads.length;
+
+      const focusConversationId = req.nextUrl.searchParams.get("conversationId")?.trim();
+      let focusConversation: {
+        id: string;
+        buyer_id: string;
+        messages: { id: string; sender_id: string; body: string; created_at: string }[];
+      } | null = null;
+
+      if (focusConversationId) {
+        const focusNorm = focusConversationId.trim().toLowerCase();
+        const focusRow =
+          (convsRaw ?? []).find((c) => c.id.trim().toLowerCase() === focusNorm) ?? null;
+        if (focusRow) {
+          const focusMessages = await listConversationMessages(supabase, focusRow.id);
+          focusConversation = {
+            id: focusRow.id,
+            buyer_id: focusRow.buyer_id,
+            messages: focusMessages,
+          };
+        }
+      }
+
+      const visibleThreads = threads.slice(0, MAX_INBOX_THREADS);
+      if (focusConversation) {
+        const inVisible = visibleThreads.some(
+          (t) => t.conversationId.trim().toLowerCase() === focusConversation!.id.trim().toLowerCase(),
+        );
+        if (!inVisible) {
+          const focusThread = threads.find(
+            (t) => t.conversationId.trim().toLowerCase() === focusConversation!.id.trim().toLowerCase(),
+          );
+          if (focusThread) {
+            visibleThreads.unshift(focusThread);
+            if (visibleThreads.length > MAX_INBOX_THREADS) visibleThreads.pop();
+          }
+        }
+      }
+
       return NextResponse.json({
         role: "seller",
         listing: { id: listing.id, title_es: listing.title_es },
-        threads,
+        threads: visibleThreads,
+        threadsTotal,
+        hasMoreThreads: threadsTotal > MAX_INBOX_THREADS,
+        focusConversation,
       });
     }
 
@@ -134,13 +176,14 @@ export async function GET(req: NextRequest) {
         listing: { id: listing.id, title_es: listing.title_es },
         conversation: null,
         messages: [],
+        ticket_code: null,
       });
     }
 
     const { data: messages, error: msgErr } = await supabase
       .from("listing_messages")
       .select("id,sender_id,body,created_at")
-      .eq("conversation_id", conv.id)
+      .in("conversation_id", idMatchVariantsForIn(conv.id))
       .order("created_at", { ascending: true });
 
     if (msgErr) {
@@ -148,11 +191,14 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "No se pudo cargar mensajes" }, { status: 500 });
     }
 
+    const ticketCode = await latestTicketForListingBuyer(supabase, listing.id, userId);
+
     return NextResponse.json({
       role: "buyer",
       listing: { id: listing.id, title_es: listing.title_es },
       conversation: { id: conv.id },
       messages: messages ?? [],
+      ticket_code: ticketCode,
     });
   } catch (e) {
     console.error("[conversations] GET", e);

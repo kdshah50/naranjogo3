@@ -20,8 +20,12 @@ type SellerBooking = {
   paid_at: string | null;
   ticket_code: string | null;
   package_session_count?: number | null;
+  appointment_at?: string | null;
+  balance_due_mxn_cents?: number | null;
+  balance_payment_status?: string | null;
   listing_title: string;
   buyer_name: string;
+  listing_chat_path?: string;
   has_review?: boolean;
 };
 
@@ -48,6 +52,8 @@ function waReasonDetail(reason: string | undefined, es: boolean): string {
   switch (reason) {
     case "no_buyer_phone":
       return es ? "sin teléfono en la cuenta del comprador" : "no phone on buyer account";
+    case "no_seller_phone":
+      return es ? "sin teléfono en tu perfil de proveedor" : "no phone on your provider profile";
     case "twilio_unconfigured":
       return es ? "WhatsApp no configurado (TWILIO_* en servidor)" : "WhatsApp not configured (TWILIO_* on server)";
     case "send_failed":
@@ -78,6 +84,7 @@ function SellerBookingsInner() {
       : "If they just paid, the ticket may take a few seconds. Use ‘Refresh list’ above.",
     refreshList: es ? "Actualizar lista" : "Refresh list",
     viewListing: es ? "Abrir anuncio" : "Open listing",
+    messageClient: es ? "Mensajes con el cliente" : "Message client",
     planVisits: (n: number) => (es ? `Plan: ${n} visitas` : `${n}-visit plan`),
     strikeIntro: es ? "Ranking / garantía:" : "Ranking / guarantee:",
     strikeOne: es
@@ -113,11 +120,13 @@ function SellerBookingsInner() {
     confirmCancel: es ? "Confirmar cancelación" : "Confirm cancellation",
     reviewed: es ? "★ Cliente ya envió reseña" : "★ Buyer submitted a review",
     notifyScheduled:
-      es ? "✓ Estado agendado guardado y WhatsApp enviado al cliente." : "✓ Scheduled saved and WhatsApp sent to the buyer.",
+      es
+        ? "✓ Agendado guardado. WhatsApp enviado a ti y al cliente (con enlaces a la reserva y al chat)."
+        : "✓ Scheduled saved. WhatsApp sent to you and the buyer (with booking and chat links).",
     notifyProgress:
       es
-        ? "✓ Servicio en curso guardado y WhatsApp enviado al comprador."
-        : "✓ In progress saved and WhatsApp sent to the buyer.",
+        ? "✓ En curso guardado. WhatsApp enviado a ti y al cliente."
+        : "✓ In progress saved. WhatsApp sent to you and the buyer.",
     notifyDeduped:
       es
         ? "✓ Estado guardado. WhatsApp para este paso ya se había enviado antes (sin duplicar)."
@@ -132,13 +141,13 @@ function SellerBookingsInner() {
         : `✓ In progress saved in the app — the buyer sees updates in Messages and My bookings. (Automatic WhatsApp not sent: ${detail} — you can message them on the listing thread.)`,
     notifyCompleteOk:
       es
-        ? "✓ Completado guardado y WhatsApp de reseña enviado al comprador."
-        : "✓ Completed saved and review WhatsApp sent to the buyer.",
+        ? "✓ Completado guardado. WhatsApp enviado a ti y al cliente (enlaces a la reserva y reseña)."
+        : "✓ Completed saved. WhatsApp sent to you and the buyer (booking and review links).",
     /** Success-first copy when complete; only the optional review WhatsApp nudge failed. */
     notifyCompleteSavedWhatsAppFailed: (detail: string) =>
       es
-        ? `✓ Completado en la app: el cliente lo ve en «Mensajes» y «Mis reservas». (WhatsApp de reseña no enviado: ${detail} — puede avisarle por el chat del anuncio si hace falta.)`
-        : `✓ Marked complete in the app — the buyer sees this in Messages and My bookings. (Review WhatsApp was not sent: ${detail} — you can message them on the listing thread if needed.)`,
+        ? `✓ Completado en la app. (WhatsApp no enviado: ${detail} — revisa tu teléfono en el perfil.)`
+        : `✓ Marked complete in the app. (WhatsApp not sent: ${detail} — check your phone on profile.)`,
     updated: es ? "✓ Actualizado" : "✓ Updated",
     cancelOk:
       es
@@ -151,6 +160,13 @@ function SellerBookingsInner() {
     statsListNote: es
       ? "Los totales siguen la misma lógica que la lista (tu seller_id o anuncios que te pertenecen). El cliente ve el estado en «Mis reservas» y en el chat. Si acabas de cobrar, el ticket puede tardar unos segundos. La lista prioriza lo pendiente y se acota si hay muchas filas."
       : "Totals match the list rules (your seller_id or listings you own). Buyers see status in My bookings and Messages. Tickets can take a few seconds right after payment. Pending work sorts to the top; the list caps by recency if you have many rows.",
+    apptLabel: es ? "Fecha y hora de la visita" : "Visit date & time",
+    apptHint: es
+      ? "Opcional pero recomendado — el cliente la verá en Mis reservas."
+      : "Optional but recommended — the buyer sees it in My bookings.",
+    apptSaved: es ? "Cita:" : "Visit:",
+    balancePending: es ? "Saldo pendiente del cliente" : "Buyer balance pending",
+    balancePaid: es ? "Saldo pagado en app" : "Balance paid in app",
   };
 
   const router = useRouter();
@@ -162,6 +178,7 @@ function SellerBookingsInner() {
   const [msg, setMsg] = useState<Record<string, string>>({});
   const [sellerStrikeCount, setSellerStrikeCount] = useState<number | null>(null);
   const [sellerCancelCode, setSellerCancelCode] = useState<Record<string, string>>({});
+  const [appointmentLocal, setAppointmentLocal] = useState<Record<string, string>>({});
 
   const [refreshing, setRefreshing] = useState(false);
   const [lastSyncLabel, setLastSyncLabel] = useState("");
@@ -337,16 +354,24 @@ function SellerBookingsInner() {
     setBusyId(rowKey);
     setMsg((m) => ({ ...m, [rowKey]: "" }));
     try {
+      const payload: Record<string, string> = { status };
+      if (status === "scheduled") {
+        const local = appointmentLocal[rowKey] ?? appointmentLocal[id];
+        if (local?.trim()) {
+          payload.appointmentAt = new Date(local.trim()).toISOString();
+        }
+      }
       const res = await fetch(`/api/bookings/${encodeURIComponent(id)}`, {
         method: "PATCH",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify(payload),
       });
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
         status?: string;
         buyerPhaseWhatsApp?: { delivered: boolean; reason?: string };
+        sellerPhaseWhatsApp?: { delivered: boolean; reason?: string };
       };
       if (!res.ok) {
         const err = data.error ?? "Error";
@@ -355,7 +380,7 @@ function SellerBookingsInner() {
 
       let feedback: string;
       if (status === "completed") {
-        const w = data.buyerPhaseWhatsApp;
+        const w = data.sellerPhaseWhatsApp ?? data.buyerPhaseWhatsApp;
         if (w?.delivered === true) {
           feedback = t.notifyCompleteOk;
         } else if (w && w.delivered === false) {
@@ -368,7 +393,7 @@ function SellerBookingsInner() {
           feedback = t.updated;
         }
       } else if (status === "scheduled" || status === "in_progress") {
-        const w = data.buyerPhaseWhatsApp;
+        const w = data.sellerPhaseWhatsApp ?? data.buyerPhaseWhatsApp;
         if (w?.delivered === true) {
           feedback = status === "scheduled" ? t.notifyScheduled : t.notifyProgress;
         } else if (w && w.delivered === false) {
@@ -556,12 +581,22 @@ function SellerBookingsInner() {
                           </>
                         )}
                       </div>
-                      <Link
-                        href={`/listing/${b.listing_id}`}
-                        className="inline-block mt-2 text-xs font-semibold text-[#1B4332] hover:underline"
-                      >
-                        {t.viewListing} →
-                      </Link>
+                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                        <Link
+                          href={
+                            b.listing_chat_path ?? `/listing/${b.listing_id}#listing-inapp-chat`
+                          }
+                          className="text-xs font-semibold text-[#1B4332] hover:underline"
+                        >
+                          {t.messageClient} →
+                        </Link>
+                        <Link
+                          href={`/listing/${b.listing_id}`}
+                          className="text-xs font-semibold text-[#6B7280] hover:underline"
+                        >
+                          {t.viewListing} →
+                        </Link>
+                      </div>
                     </div>
                     <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-full shrink-0 ${ph.cls}`}>
                       {ph.label}
@@ -570,9 +605,40 @@ function SellerBookingsInner() {
                   <p className="text-xs text-[#6B7280] mb-3">
                     {t.fee}: {formatCurrencyMXN(b.commission_amount_cents, lang)}
                   </p>
+                  {b.appointment_at ? (
+                    <p className="text-[11px] text-indigo-900 mb-2">
+                      📅 {t.apptSaved}{" "}
+                      {new Date(b.appointment_at).toLocaleString(es ? "es-MX" : "en-MX", {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      })}
+                    </p>
+                  ) : null}
+                  {b.status === "completed" && String(b.balance_payment_status ?? "") === "pending" ? (
+                    <p className="text-[11px] text-amber-900 mb-2">
+                      💳 {t.balancePending}: {formatCurrencyMXN(b.balance_due_mxn_cents ?? 0, lang)}
+                    </p>
+                  ) : null}
+                  {b.status === "completed" && String(b.balance_payment_status ?? "") === "paid" ? (
+                    <p className="text-[11px] text-emerald-800 mb-2">✓ {t.balancePaid}</p>
+                  ) : null}
 
                   {b.status !== "completed" && b.status !== "cancelled" && (
                     <div className="flex flex-col gap-2">
+                      {(b.status === "confirmed" || b.status === "pending") && (
+                        <>
+                          <label className="text-[10px] font-semibold text-[#57534E]">{t.apptLabel}</label>
+                          <input
+                            type="datetime-local"
+                            value={appointmentLocal[rowKey] ?? ""}
+                            onChange={(e) =>
+                              setAppointmentLocal((prev) => ({ ...prev, [rowKey]: e.target.value }))
+                            }
+                            className="w-full border border-[#E5E0D8] rounded-xl px-3 py-2 text-xs text-[#1C1917] bg-white"
+                          />
+                          <p className="text-[10px] text-[#6B7280] leading-snug -mt-1">{t.apptHint}</p>
+                        </>
+                      )}
                       {(b.status === "confirmed" || b.status === "pending") && (
                         <button
                           type="button"

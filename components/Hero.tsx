@@ -1,5 +1,6 @@
 "use client";
 import { useState, Suspense, useEffect } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { COLONIAS, COLONIA_KEYS, detectColoniaInQuery, coloniaLabel } from "@/lib/colonias";
 
@@ -29,6 +30,10 @@ const T = {
     priceMin: "Mín.",
     priceMax: "Máx.",
     noMax: "Sin límite",
+    cleaningChip: "Limpieza del hogar",
+    cleaningSearch: "limpieza del hogar",
+    vetChip: "Veterinaria",
+    petChip: "Cuidado de mascotas",
   },
   en: {
     badge: "ZIP 37745 • SERVICES",
@@ -43,6 +48,10 @@ const T = {
     priceMin: "Min.",
     priceMax: "Max.",
     noMax: "No max",
+    cleaningChip: "Home cleaning",
+    cleaningSearch: "house cleaning",
+    vetChip: "Veterinary",
+    petChip: "Pet care",
   },
 };
 
@@ -69,7 +78,7 @@ function HeroInner({ initialQuery }: { initialQuery: string }) {
     }
     setPriceMin(min);
     setPriceMax(max);
-  }, [priceKey]);
+  }, [priceKey, params]);
 
   const applyPriceToParams = (p: URLSearchParams) => {
     if (priceMin > 0) p.set("pmin", String(priceMin));
@@ -209,6 +218,35 @@ function HeroInner({ initialQuery }: { initialQuery: string }) {
               />
             </div>
           </div>
+        </div>
+
+        {/* Service shortcuts */}
+        <div className="flex flex-wrap justify-center gap-2 mb-4">
+          <Link
+            href={`/limpieza-del-hogar${lang === "en" ? "?lang=en" : ""}`}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold bg-[#D4A017] text-[#1B4332] hover:bg-[#F0C040] transition-colors shadow-md"
+          >
+            🧹 {t.cleaningChip}
+          </Link>
+          <Link
+            href={`/veterinaria${lang === "en" ? "?lang=en" : ""}`}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold bg-white/10 text-white/90 hover:bg-white/20 border border-white/25 transition-colors"
+          >
+            🐾 {t.vetChip}
+          </Link>
+          <Link
+            href={`/cuidado-mascotas${lang === "en" ? "?lang=en" : ""}`}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold bg-white/10 text-white/90 hover:bg-white/20 border border-white/25 transition-colors"
+          >
+            🐕 {t.petChip}
+          </Link>
+          <button
+            type="button"
+            onClick={() => go(t.cleaningSearch, { category: "services" })}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold bg-white/10 text-white/90 hover:bg-white/20 border border-white/25 transition-colors"
+          >
+            🔍 {lang === "es" ? "Buscar limpieza" : "Search cleaning"}
+          </button>
         </div>
 
         {/* Near me */}

@@ -19,6 +19,9 @@ type BookingData = {
   commissionAmountCents: number;
   paidAt: string | null;
   isBuyer: boolean;
+  isSeller?: boolean;
+  listingChatPath?: string;
+  sellerBookingsPath?: string;
   listing: { title: string; photo: string | null; priceMxn: number } | null;
   seller: { displayName: string; avatarUrl: string | null } | null;
   contact: { whatsappUrl: string | null } | null;
@@ -42,8 +45,8 @@ const BS: Record<
     seller: string;
     feePaid: string;
     providerContact: string;
-    waBtn: string;
-    waNote: string;
+    inAppBtn: string;
+    inAppNote: string;
     backListing: string;
     myBookings: string;
     messages: string;
@@ -61,6 +64,12 @@ const BS: Record<
     bookingPhaseCompleted: string;
     bookingPhaseCancelled: string;
     bookingPhaseOther: string;
+    sellerPaidTitle: string;
+    sellerPaidSub: string;
+    sellerInAppBtn: string;
+    sellerInAppNote: string;
+    sellerManageBookings: string;
+    sellerLifecycleHint: string;
   }
 > = {
   es: {
@@ -79,9 +88,9 @@ const BS: Record<
     retryBtn: "Reintentar confirmación",
     seller: "Proveedor:",
     feePaid: "Tarifa pagada:",
-    providerContact: "Contacto del proveedor",
-    waBtn: "Contactar por WhatsApp",
-    waNote: "Abrimos WhatsApp por ti; no mostramos el número en pantalla.",
+    providerContact: "Siguiente paso",
+    inAppBtn: "Abrir mensajes en la app",
+    inAppNote: "Canal principal para coordinar. WhatsApp solo envía alertas con enlace de regreso.",
     backListing: "← Volver al anuncio",
     myBookings: "Mis reservas",
     messages: "Mensajes",
@@ -90,7 +99,7 @@ const BS: Record<
     problems: "¿Problemas con el servicio?",
     refund: "Solicita un reembolso",
     contactFooter:
-      "Este contacto también está disponible en la página del servicio mientras tu reserva esté activa.",
+      "Los mensajes del servicio están en la app y en la página del anuncio mientras tu reserva esté activa.",
     guaranteeCta: "Centro de garantía y ayuda",
     bookingLifecycleHeading: "Estado del servicio",
     bookingLifecycleHint:
@@ -102,6 +111,12 @@ const BS: Record<
     bookingPhaseCompleted: "El proveedor marcó el servicio como completado",
     bookingPhaseCancelled: "Reserva cancelada",
     bookingPhaseOther: "Estado",
+    sellerPaidTitle: "Cliente pagó el depósito",
+    sellerPaidSub: "La reserva está confirmada. Abre el chat para coordinar la visita con el cliente.",
+    sellerInAppBtn: "Abrir chat con el cliente",
+    sellerInAppNote: "Aquí coordinas horario y detalles — no es otra pantalla de pago.",
+    sellerManageBookings: "Gestionar reserva",
+    sellerLifecycleHint: "Marca agendado → en curso → completado en Reservas de clientes.",
   },
   en: {
     loadFallback: "Loading…",
@@ -119,9 +134,9 @@ const BS: Record<
     retryBtn: "Retry confirmation",
     seller: "Provider:",
     feePaid: "Platform fee paid:",
-    providerContact: "Provider contact",
-    waBtn: "Contact via WhatsApp",
-    waNote: "We open WhatsApp for you; we don't show the phone number on screen.",
+    providerContact: "Next step",
+    inAppBtn: "Open in-app messages",
+    inAppNote: "Primary channel to coordinate. WhatsApp only sends alerts with a link back here.",
     backListing: "← Back to listing",
     myBookings: "My bookings",
     messages: "Messages",
@@ -129,7 +144,7 @@ const BS: Record<
       "When the provider marks the service complete, we'll notify you on WhatsApp so you can leave your review in",
     problems: "Issues with the service?",
     refund: "Request a refund",
-    contactFooter: "This contact is also on the service page while your booking is active.",
+    contactFooter: "Service messages live in the app and on the listing page while your booking is active.",
     guaranteeCta: "Guarantee & support hub",
     bookingLifecycleHeading: "Booking status",
     bookingLifecycleHint:
@@ -141,6 +156,12 @@ const BS: Record<
     bookingPhaseCompleted: "Provider marked this service as completed",
     bookingPhaseCancelled: "Booking cancelled",
     bookingPhaseOther: "Status",
+    sellerPaidTitle: "Client deposit received",
+    sellerPaidSub: "The booking is confirmed. Open chat to schedule the visit with your client.",
+    sellerInAppBtn: "Open chat with client",
+    sellerInAppNote: "Coordinate timing and details here — this is not another payment screen.",
+    sellerManageBookings: "Manage booking",
+    sellerLifecycleHint: "Mark scheduled → in progress → completed under Client bookings.",
   },
 };
 
@@ -314,10 +335,22 @@ function BookingSuccessContent() {
   }
 
   const isPaid = data.paymentStatus === "paid";
+  const isSellerView = Boolean(data.isSeller) && !data.isBuyer;
   const myBookingsHref =
     isPaid && data.ticketCode
       ? withLang(`/my-bookings?ticket=${encodeURIComponent(String(data.ticketCode))}`, lang)
       : withLang("/my-bookings", lang);
+  const sellerBookingsHref = withLang(
+    data.sellerBookingsPath ??
+      (data.ticketCode
+        ? `/seller-bookings?ticket=${encodeURIComponent(String(data.ticketCode))}`
+        : "/seller-bookings"),
+    lang,
+  );
+  const listingChatHref = withLang(
+    data.listingChatPath ?? `/listing/${data.listingId}#listing-inapp-chat`,
+    lang,
+  );
   const showRetryPaid =
     Boolean(stripeSessionId) &&
     !isPaid &&
@@ -331,10 +364,18 @@ function BookingSuccessContent() {
           <div className={`px-6 py-5 text-center ${isPaid ? "bg-emerald-50" : "bg-amber-50"}`}>
             <div className="text-4xl mb-2">{isPaid ? "✓" : "⏳"}</div>
             <h1 className="text-xl font-bold text-[#1C1917]">
-              {isPaid ? t.paidTitle : t.pendingTitle}
+              {isPaid
+                ? isSellerView
+                  ? t.sellerPaidTitle
+                  : t.paidTitle
+                : t.pendingTitle}
             </h1>
             <p className="text-sm text-[#6B7280] mt-1">
-              {isPaid ? t.paidSub : t.pendingSub}
+              {isPaid
+                ? isSellerView
+                  ? t.sellerPaidSub
+                  : t.paidSub
+                : t.pendingSub}
             </p>
             {showRetryPaid && (
               <div className="mt-4 space-y-2">
@@ -392,25 +433,35 @@ function BookingSuccessContent() {
                 </p>
               ) : null}
               {data.status !== "completed" && data.status !== "cancelled" ? (
-                <p className="text-[11px] text-[#6B7280] mt-2 leading-snug">{t.bookingLifecycleHint}</p>
+                <p className="text-[11px] text-[#6B7280] mt-2 leading-snug">
+                  {isSellerView ? t.sellerLifecycleHint : t.bookingLifecycleHint}
+                </p>
               ) : null}
             </div>
           )}
 
-          {/* WhatsApp only — phone number not shown */}
-          {isPaid && data.contact?.whatsappUrl && (
+          {isPaid && data.listingId && (
             <div className="px-6 py-5 space-y-3">
-              <p className="text-xs text-[#6B7280] font-medium uppercase tracking-wide">{t.providerContact}</p>
-              <a
-                href={data.contact.whatsappUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full py-4 rounded-xl font-semibold text-base flex items-center justify-center gap-2 transition-colors"
-                style={{ background: "#25D366", color: "white" }}
+              <p className="text-xs text-[#6B7280] font-medium uppercase tracking-wide">
+                {isSellerView ? (lang === "es" ? "Siguiente paso" : "Next step") : t.providerContact}
+              </p>
+              <Link
+                href={listingChatHref}
+                className="w-full py-4 rounded-xl font-semibold text-base flex items-center justify-center gap-2 bg-[#1B4332] text-white transition-colors hover:brightness-110"
               >
-                {t.waBtn}
-              </a>
-              <p className="text-[11px] text-[#6B7280] text-center leading-snug">{t.waNote}</p>
+                {isSellerView ? t.sellerInAppBtn : t.inAppBtn}
+              </Link>
+              <p className="text-[11px] text-[#6B7280] text-center leading-snug">
+                {isSellerView ? t.sellerInAppNote : t.inAppNote}
+              </p>
+              {isSellerView ? (
+                <Link
+                  href={sellerBookingsHref}
+                  className="w-full py-3 rounded-xl font-semibold text-sm flex items-center justify-center border border-[#1B4332] text-[#1B4332] hover:bg-[#F4F0EB]"
+                >
+                  {t.sellerManageBookings}
+                </Link>
+              ) : null}
             </div>
           )}
 
@@ -422,12 +473,20 @@ function BookingSuccessContent() {
             >
               {t.backListing}
             </Link>
-            <Link href={myBookingsHref} className="text-sm text-[#1B4332] font-semibold hover:underline">
-              {t.myBookings}
-            </Link>
-            <Link href={withLang("/messages", lang)} className="text-sm text-[#1B4332] font-semibold hover:underline">
-              {t.messages}
-            </Link>
+            {isSellerView ? (
+              <Link href={sellerBookingsHref} className="text-sm text-[#1B4332] font-semibold hover:underline">
+                {t.sellerManageBookings}
+              </Link>
+            ) : (
+              <>
+                <Link href={myBookingsHref} className="text-sm text-[#1B4332] font-semibold hover:underline">
+                  {t.myBookings}
+                </Link>
+                <Link href={withLang("/messages", lang)} className="text-sm text-[#1B4332] font-semibold hover:underline">
+                  {t.messages}
+                </Link>
+              </>
+            )}
           </div>
         </div>
 
@@ -437,7 +496,7 @@ function BookingSuccessContent() {
           </div>
         )}
 
-        {isPaid && (
+        {isPaid && data.isBuyer && (
           <div className="mt-6 px-6">
             <p className="text-center text-sm text-[#374151] mb-2">
               {t.reviewBlurb}{" "}
@@ -449,7 +508,7 @@ function BookingSuccessContent() {
           </div>
         )}
 
-        {isPaid && (
+        {isPaid && data.isBuyer && (
           <div className="mt-6">
             <GuaranteeBadge lang={lang} />
             <p className="text-center text-xs text-[#6B7280] mt-3">
@@ -465,7 +524,7 @@ function BookingSuccessContent() {
           </div>
         )}
 
-        {isPaid && <p className="text-center text-xs text-[#6B7280] mt-4">{t.contactFooter}</p>}
+        {isPaid && data.isBuyer && <p className="text-center text-xs text-[#6B7280] mt-4">{t.contactFooter}</p>}
       </div>
     </main>
   );

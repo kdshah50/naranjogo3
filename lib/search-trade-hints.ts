@@ -25,8 +25,15 @@ const TRADE_HINTS: { re: RegExp; terms: string[] }[] = [
     terms: ["chef", "cocinero", "cocinera", "cocina", "comida", "servicio de cocina"],
   },
   {
-    re: /\b(clean(ing)?|housekeep|maid|limpieza|limpiar|aseo)\b/i,
-    terms: ["limpieza", "aseo", "servicio doméstico"],
+    re: /\b(clean(ing)?|housekeep(ing|er)?|maid|limpieza|limpiar|aseo|deep\s+clean|limpieza\s+profunda|mudanza|move-?out|lavado\s+de\s+ropa|lavander[ií]a|planchado|ironing|sanitize|desinfecc|house\s+clean)\b/i,
+    terms: [
+      "limpieza",
+      "limpieza del hogar",
+      "aseo",
+      "servicio doméstico",
+      "limpieza profunda",
+      "empleada doméstica",
+    ],
   },
   {
     re: /\b(babysit|nanny|childcare|niñer|guardería|niños|niñas|cuidado infantil)\b/i,
@@ -49,8 +56,30 @@ const TRADE_HINTS: { re: RegExp; terms: string[] }[] = [
     terms: ["carpintero", "carpintería", "madera"],
   },
   {
-    re: /\b(dog|dogs|puppy|puppies|cat|cats|pet\b|pets?|animal|walk(er|ers|ing)?\s+dog|dog\s+walk(er|ers|ing)?|petsit|pet-?sit|paseador|paseadores|paseo\s+(de\s+)?perros?|cuidado\s+de\s+mascotas)\b/i,
-    terms: ["paseador", "perros", "mascotas", "cuidado de mascotas", "paseo de mascotas"],
+    re: /\b(veterinar(y|ia|io|ios|ias)|\bvet\b|vets|pet\s+hospital|cl[ií]nica\s+veterin|servicios?\s+veterin|vacun(a|cion|aci[oó]n)|desparasit|antirr[aá]bica|rabies\s+vaccine|spay|neuter|esteriliz|castrac|rayos?\s*x|radiograf[ií]|ultrasonido|ultrasound|limpieza\s+dental|extracci[oó]n\s+dental|eutanasia|cremaci[oó]n|hospitalizaci[oó]n|chequeo\s+anual|wellness\s+exam|ex[oó]tico?s?\s+(animal|pet)|microchip\s+pet|consulta\s+veterin)\b/i,
+    terms: [
+      "veterinaria",
+      "veterinario",
+      "clínica veterinaria",
+      "servicios veterinarios",
+      "consulta veterinaria",
+      "vacunas",
+      "vacunación",
+      "desparasitación",
+      "antirrábica",
+    ],
+  },
+  {
+    re: /\b(dog|dogs|puppy|puppies|cat|cats|pet\b|pets?|animal|walk(er|ers|ing)?\s+dog|dog\s+walk(er|ers|ing)?|petsit|pet-?sit|pet\s+sitting|groom(er|ing)?|grooming|est[eé]tica\s+canina|paseador|paseadores|paseo\s+(de\s+)?perros?|cuidado\s+de\s+mascotas|hospedaje\s+mascotas?|boarding\s+pet)\b/i,
+    terms: [
+      "paseador",
+      "pet sitting",
+      "estética canina",
+      "perros",
+      "mascotas",
+      "cuidado de mascotas",
+      "paseo de mascotas",
+    ],
   },
 ];
 

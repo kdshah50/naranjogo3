@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { Lang } from "@/lib/i18n-lang";
+import { withLang } from "@/lib/i18n-lang";
 
 type LoyaltyReward = {
   everyN: number;
@@ -15,11 +16,8 @@ type LoyaltyReward = {
   milestoneDiscount: boolean;
 };
 
-/** Append `lang=en` for English UI on internal links. */
-export function withLang(path: string, lang: Lang): string {
-  if (lang !== "en") return path;
-  return path.includes("?") ? `${path}&lang=en` : `${path}?lang=en`;
-}
+/** @deprecated import from `@/lib/i18n-lang` */
+export { withLang } from "@/lib/i18n-lang";
 
 type Props = {
   lang: Lang;

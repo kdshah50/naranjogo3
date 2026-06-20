@@ -25,7 +25,13 @@ export default function TrustBar() {
           ✓ Registra tu servicio gratis → Join us
         </a>
       </div>
-      <div className="max-w-5xl mx-auto mt-4 text-center sm:text-right">
+      <div className="max-w-5xl mx-auto mt-4 flex flex-col sm:flex-row items-center justify-end gap-3 text-center sm:text-right">
+        <a
+          href="/limpieza-del-hogar"
+          className="text-xs text-white/70 hover:text-white underline underline-offset-2"
+        >
+          ¿Limpieza del hogar? Conoce el programa → House cleaning program
+        </a>
         <a
           href="/arreglos-de-ropa"
           className="text-xs text-white/70 hover:text-white underline underline-offset-2"

@@ -5,6 +5,8 @@ import {
   idMatchVariantsForIn,
 } from "@/lib/auth-server";
 import { userIsListingSellerAccount } from "@/lib/user-account-pool";
+import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
+import { providerServiceRequiresQuoteAccept } from "@/lib/provider-services";
 import { MAX_SERVICE_PRICING_BASE_MXN_CENTS } from "@/lib/service-booking-pricing";
 
 export const dynamic = "force-dynamic";
@@ -83,7 +85,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const supabase = createAdminSupabase();
     const { data: listing, error: le } = await supabase
       .from("listings")
-      .select("id,seller_id,status")
+      .select("id,seller_id,status,title_es")
       .eq("id", listingId)
       .maybeSingle();
 
@@ -93,6 +95,18 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     if (!(await userIsListingSellerAccount(supabase, sellerUserId, listing.seller_id as string))) {
       return NextResponse.json({ error: "Solo el dueño del anuncio puede fijar el precio acordado" }, { status: 403 });
+    }
+
+    const slug = inferProviderSlugFromListingTitle(String(listing.title_es ?? ""));
+    if (providerServiceRequiresQuoteAccept(slug)) {
+      return NextResponse.json(
+        {
+          error:
+            "Usa «Enviar cotización al cliente» en el chat para cotizaciones oficiales (Aceptar/Rechazar + WhatsApp).",
+          code: "use_official_quote_send",
+        },
+        { status: 400 },
+      );
     }
 
     const listingRowId = listing.id as string;
@@ -125,6 +139,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         .update({
           agreed_subtotal_mxn_cents: null,
           seller_set_agreed_price_at: null,
+          quote_status: "none",
+          quote_line_items: null,
+          quote_metadata: null,
+          quote_sent_at: null,
+          quote_responded_at: null,
           updated_at: now,
         })
         .in("listing_id", listVars)

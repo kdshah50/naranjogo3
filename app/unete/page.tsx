@@ -26,10 +26,9 @@ import {
   coachingDeliveryLabels,
 } from "@/lib/provider-services";
 import {
-  MAX_SERVICE_MENU_ITEMS,
-  tailoringStarterMenu,
-  type ServiceMenuItem,
+  serviceMenuPayloadFromFormRows,
 } from "@/lib/listing-service-menu";
+import ServiceMenuEditor from "@/components/ServiceMenuEditor";
 import { useAppLang, useAppLangActions } from "@/hooks/use-app-lang";
 
 const COLONIAS_LIST = ALL_COLONIA_KEYS.map(key => ({
@@ -113,10 +112,18 @@ const T = {
     coachingStep2Error:     "Para Coaching y capacitación: elige al menos un área y una modalidad.",
     menuTitle:              "Menú de servicios (precios fijos)",
     menuHint:               "Lista los arreglos comunes con su precio. Los compradores los verán publicados y podrás armar un presupuesto desde el chat.",
+    menuHintVet:            "Lista consultas, vacunas y servicios comunes con precio fijo. Los clientes los verán publicados y podrás armar un presupuesto desde el chat.",
+    menuHintHousekeeping:   "Lista limpieza estándar/profunda por cuarto, lavado de ropa y extras con precio por visita. En el chat multiplicas por frecuencia (diario, semanal, 2×/semana, mensual).",
     menuTemplateBtn:        "Cargar plantilla sugerida (20 servicios)",
+    menuTemplateBtnVet:      "Cargar plantilla sugerida (35 servicios)",
+    menuTemplateBtnHousekeeping: "Cargar plantilla sugerida (32 servicios)",
     menuAddRow:             "+ Agregar servicio",
     menuRowNamePh:          "Nombre (ej. Dobladillo de pantalón)",
+    menuRowNamePhVet:       "Nombre (ej. Consulta general perro/gato)",
+    menuRowNamePhHousekeeping: "Nombre (ej. Baño profundo)",
     menuDisclaimer:         "El precio puede ajustarse al revisar la prenda físicamente.",
+    menuDisclaimerVet:      "El precio puede ajustarse después del examen físico y según el peso, edad o condición del paciente.",
+    menuDisclaimerHousekeeping: "El precio puede variar según el estado del hogar, el tamaño real y el acceso. Se confirma en visita o por mensaje.",
     menuEmpty:              "Sin servicios — toca «Cargar plantilla» o «+ Agregar servicio» para empezar.",
   },
   en: {
@@ -190,10 +197,18 @@ const T = {
     coachingStep2Error:     "For Coaching & training: pick at least one specialty and one delivery mode.",
     menuTitle:              "Service menu (fixed prices)",
     menuHint:               "List common alterations with their price. Buyers will see the published menu and you can build a quote from chat.",
+    menuHintVet:            "List exams, vaccines, and common services at fixed prices. Clients will see the published menu and you can build a quote from chat.",
+    menuHintHousekeeping:   "List standard/deep cleaning by room, laundry, and add-ons at per-visit prices. In chat, multiply by frequency (daily, weekly, twice/week, monthly).",
     menuTemplateBtn:        "Load suggested template (20 services)",
+    menuTemplateBtnVet:      "Load suggested template (35 services)",
+    menuTemplateBtnHousekeeping: "Load suggested template (32 services)",
     menuAddRow:             "+ Add service",
     menuRowNamePh:          "Name (e.g. Pants hem)",
+    menuRowNamePhVet:       "Name (e.g. General exam dog/cat)",
+    menuRowNamePhHousekeeping: "Name (e.g. Deep bathroom clean)",
     menuDisclaimer:         "Price may change after physical inspection of the garment.",
+    menuDisclaimerVet:      "Price may change after physical exam and depending on the patient's weight, age, or condition.",
+    menuDisclaimerHousekeeping: "Price may vary based on home condition, actual size, and access. Confirmed on visit or by message.",
     menuEmpty:              "No services yet — tap 'Load template' or '+ Add service' to begin.",
   },
 };
@@ -291,16 +306,9 @@ function UnetePageInner() {
 
       // Build service_menu payload only when the chosen service supports a menu and rows exist.
       const menuEligible = providerServiceSupportsMenu(form.service);
-      const cleanedMenu = menuEligible
-        ? rawMenuRows
-            .map((r) => ({
-              name_es: r.name.trim(),
-              pesos: Number(String(r.pesos).trim().replace(/,/g, ".")),
-            }))
-            .filter((r) => r.name_es.length > 0 && Number.isFinite(r.pesos) && r.pesos > 0)
-            .map((r) => ({ name_es: r.name_es, price_mxn: r.pesos }))
-        : [];
-      const service_menu = cleanedMenu.length > 0 ? { items: cleanedMenu } : null;
+      const service_menu = menuEligible
+        ? serviceMenuPayloadFromFormRows(rawMenuRows, form.service)
+        : null;
 
       const res = await fetch("/api/provider-signup", {
         method: "POST",
@@ -517,98 +525,13 @@ function UnetePageInner() {
               </div>
 
               {providerServiceSupportsMenu(form.service) && (
-                <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 space-y-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <label className="block text-sm font-semibold text-[#78350F]">
-                      {t.menuTitle}
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const tpl = tailoringStarterMenu();
-                        set(
-                          "service_menu_rows",
-                          tpl.items.map((it: ServiceMenuItem) => ({
-                            name: lang === "en" && it.name_en ? it.name_en : it.name_es,
-                            pesos: String(it.price_mxn_cents / 100),
-                          })),
-                        );
-                      }}
-                      className="text-[11px] font-semibold text-[#1B4332] underline"
-                    >
-                      {t.menuTemplateBtn}
-                    </button>
-                  </div>
-                  <p className="text-xs text-[#92400E]">{t.menuHint}</p>
-
-                  {form.service_menu_rows.length === 0 ? (
-                    <p className="text-xs italic text-[#A16207]">{t.menuEmpty}</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {form.service_menu_rows.map((row, i) => (
-                        <div key={i} className="flex items-center gap-2">
-                          <input
-                            type="text"
-                            value={row.name}
-                            onChange={(e) => {
-                              const next = [...form.service_menu_rows];
-                              next[i] = { ...next[i], name: e.target.value };
-                              set("service_menu_rows", next);
-                            }}
-                            placeholder={t.menuRowNamePh}
-                            maxLength={80}
-                            className="flex-1 min-w-0 rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-[#B45309]"
-                          />
-                          <div className="relative w-24 shrink-0">
-                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[#92400E] text-xs">
-                              $
-                            </span>
-                            <input
-                              type="number"
-                              inputMode="decimal"
-                              value={row.pesos}
-                              onChange={(e) => {
-                                const next = [...form.service_menu_rows];
-                                next[i] = { ...next[i], pesos: e.target.value };
-                                set("service_menu_rows", next);
-                              }}
-                              placeholder="0"
-                              className="w-full rounded-lg border border-amber-200 bg-white pl-5 pr-2 py-1.5 text-xs outline-none focus:border-[#B45309]"
-                            />
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const next = form.service_menu_rows.filter((_, idx) => idx !== i);
-                              set("service_menu_rows", next);
-                            }}
-                            className="px-2 py-1 text-[#9F1239] text-xs font-bold"
-                            aria-label="✕"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (form.service_menu_rows.length >= MAX_SERVICE_MENU_ITEMS) return;
-                      set("service_menu_rows", [
-                        ...form.service_menu_rows,
-                        { name: "", pesos: "" },
-                      ]);
-                    }}
-                    disabled={form.service_menu_rows.length >= MAX_SERVICE_MENU_ITEMS}
-                    className="w-full rounded-lg border border-dashed border-[#D4A017] py-1.5 text-xs font-semibold text-[#78350F] disabled:opacity-40"
-                  >
-                    {t.menuAddRow} ({form.service_menu_rows.length}/{MAX_SERVICE_MENU_ITEMS})
-                  </button>
-
-                  <p className="mt-1 text-[10px] italic text-[#92400E]">{t.menuDisclaimer}</p>
-                </div>
+                <ServiceMenuEditor
+                  providerSlug={form.service}
+                  lang={lang}
+                  rows={form.service_menu_rows}
+                  onRowsChange={(rows) => set("service_menu_rows", rows)}
+                  disabled={loading}
+                />
               )}
 
               {form.service === COACHING_TRAINING_SERVICE && (

@@ -3,6 +3,8 @@ import { useState, Suspense, useEffect } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { withLang } from "@/lib/i18n-lang";
+import type { Lang } from "@/lib/i18n-lang";
 import HeaderWeather from "./HeaderWeather";
 import TianguisWordmark from "./TianguisWordmark";
 
@@ -13,7 +15,7 @@ function LangToggle() {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
-  const lang = params.get("lang") || "es";
+  const lang = (params.get("lang") === "en" ? "en" : "es") as Lang;
   const toggle = (l: string) => {
     try {
       localStorage.setItem("naranjo_lang", l);
@@ -42,7 +44,7 @@ function HeaderInner() {
   const [user, setUser] = useState<{ phone: string; badge: string } | null>(null);
   const [showMenu, setShowMenu] = useState(false);
   const params = useSearchParams();
-  const lang = params.get("lang") || "es";
+  const lang = (params.get("lang") === "en" ? "en" : "es") as Lang;
   const router = useRouter();
   const pathname = usePathname();
 
@@ -96,7 +98,7 @@ function HeaderInner() {
                   </div>
                 </button>
                 <Link
-                  href="/my-bookings"
+                  href={withLang("/my-bookings", lang)}
                   className="flex items-center justify-center min-w-[2.25rem] px-2 py-1.5 rounded-xl bg-[#F4F0EB] hover:bg-[#E5E0D8] transition-colors border border-transparent hover:border-[#E5E0D8]"
                   title={lang === "en" ? "My bookings — reservations & reviews" : "Mis reservas y reseñas"}
                   aria-label={lang === "en" ? "My bookings" : "Mis reservas"}
@@ -108,28 +110,28 @@ function HeaderInner() {
                 </Link>
                 {showMenu && (
                   <div className="absolute right-0 top-full mt-2 w-44 bg-white border border-[#E5E0D8] rounded-xl shadow-lg overflow-hidden z-50">
-                    <Link
-                      href="/messages"
-                      className="flex items-center gap-2 px-4 py-3 text-sm hover:bg-[#F4F0EB] transition-colors"
-                      onClick={() => setShowMenu(false)}
-                    >
-                      {lang === "en" ? "Messages" : "Mensajes"}
-                    </Link>
-                    <Link
-                      href="/my-bookings"
-                      className="flex items-center gap-2 px-4 py-3 text-sm hover:bg-[#F4F0EB] transition-colors"
-                      onClick={() => setShowMenu(false)}
-                    >
-                      📋 {lang === "en" ? "My bookings" : "Mis reservas"}
-                    </Link>
-                    <Link
-                      href="/profile#loyalty-section"
-                      className="flex items-center gap-2 px-4 py-3 text-sm hover:bg-[#F4F0EB] transition-colors"
-                      onClick={() => setShowMenu(false)}
-                    >
-                      ⭐ {lang === "en" ? "Loyalty & points" : "Lealtad y puntos"}
-                    </Link>
-                    <Link href="/profile"
+                <Link
+                  href={withLang("/messages", lang)}
+                  className="flex items-center gap-2 px-4 py-3 text-sm hover:bg-[#F4F0EB] transition-colors"
+                  onClick={() => setShowMenu(false)}
+                >
+                  {lang === "en" ? "Messages" : "Mensajes"}
+                </Link>
+                <Link
+                  href={withLang("/my-bookings", lang)}
+                  className="flex items-center gap-2 px-4 py-3 text-sm hover:bg-[#F4F0EB] transition-colors"
+                  onClick={() => setShowMenu(false)}
+                >
+                  📋 {lang === "en" ? "My bookings" : "Mis reservas"}
+                </Link>
+                <Link
+                  href={withLang("/profile#loyalty-section", lang)}
+                  className="flex items-center gap-2 px-4 py-3 text-sm hover:bg-[#F4F0EB] transition-colors"
+                  onClick={() => setShowMenu(false)}
+                >
+                  ⭐ {lang === "en" ? "Loyalty & points" : "Lealtad y puntos"}
+                </Link>
+                <Link href={withLang("/profile", lang)}
                       className="flex items-center gap-2 px-4 py-3 text-sm hover:bg-[#F4F0EB] transition-colors"
                       onClick={() => setShowMenu(false)}>
                       👤 {lang === "en" ? "My profile" : "Mi perfil"}
@@ -143,12 +145,12 @@ function HeaderInner() {
               </div>
             ) : (
               /* Not logged in — show Login link */
-              <Link href="/auth/login"
+              <Link href={withLang("/auth/login", lang)}
                 className="text-sm font-semibold text-[#1B4332] hover:underline px-2">
                 {lang === "en" ? "Log in" : "Entrar"}
               </Link>
             )}
-            <Link href="/unete"
+            <Link href={withLang("/unete", lang)}
               className="text-sm font-semibold px-4 py-2 rounded-xl border border-[#1B4332] text-[#1B4332] hover:bg-[#1B4332] hover:text-white transition-colors hidden sm:inline-flex">
               {lang === "en" ? "List your service" : "Únete"}
             </Link>

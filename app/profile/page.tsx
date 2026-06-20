@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, Suspense } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import LoyaltyCard from "@/components/LoyaltyCard";
 import ReferralCard from "@/components/ReferralCard";
@@ -8,6 +8,7 @@ import RoutineHabitsCard from "@/components/RoutineHabitsCard";
 import SellerStripePayoutCard from "@/components/SellerStripePayoutCard";
 import { useAppLang, useAppLangActions } from "@/hooks/use-app-lang";
 import { formatCurrencyMXN } from "@/lib/locale-format";
+import { listingTitleSupportsServiceMenu } from "@/lib/infer-listing-provider-slug";
 
 type User = {
   id: string;
@@ -61,6 +62,8 @@ export default function ProfilePage() {
 
 function ProfilePageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const stripeReturn = searchParams.get("stripe_connect");
   const [user, setUser] = useState<User | null>(null);
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
@@ -121,6 +124,7 @@ function ProfilePageInner() {
       namePlaceholder:"Tu nombre completo",
       verifyBadge:    "Insignia de confianza",
       contactSupport: "¿Preguntas? Escríbenos",
+      editMenu:       "Editar menú",
       phase3:         "Historial de reservas, reseñas, puntos e invitaciones: todo en un solo lugar.",
     },
     en: {
@@ -142,6 +146,7 @@ function ProfilePageInner() {
       namePlaceholder:"Your full name",
       verifyBadge:    "Trust badge",
       contactSupport: "Questions? Contact us",
+      editMenu:       "Edit menu",
       phase3:         "Bookings, reviews, points, and referrals—everything in one place.",
     },
   }[lang];
@@ -400,6 +405,7 @@ function ProfilePageInner() {
         <SellerStripePayoutCard
           lang={lang}
           hasStripeConnect={Boolean(user.stripe_connect_account_id?.startsWith("acct_"))}
+          stripeReturn={stripeReturn}
         />
 
         {/* My services */}
@@ -424,33 +430,45 @@ function ProfilePageInner() {
           ) : (
             <div className="flex flex-col gap-3">
               {listings.map(l => (
-                <Link
+                <div
                   key={l.id}
-                  href={`/listing/${l.id}`}
-                  className="flex items-center gap-3 p-3 rounded-xl bg-[#F4F0EB] hover:bg-[#EDE9E4] transition-colors"
+                  className="flex items-center gap-2 p-3 rounded-xl bg-[#F4F0EB]"
                 >
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-[#1C1917] truncate">{l.title_es}</p>
-                    <p className="text-xs text-[#6B7280] mt-0.5">{formatCurrencyMXN(l.price_mxn, lang)} · {l.location_city}</p>
-                  </div>
-                  <span className={`text-[10px] font-bold px-2 py-1 rounded-full flex-shrink-0 ${
-                    l.is_verified && l.status === "active"
-                      ? "bg-[#ECFDF5] text-[#065F46]"
-                      : l.status === "sold"
-                      ? "bg-[#EFF6FF] text-[#1D4ED8]"
-                      : l.status === "archived"
-                      ? "bg-[#F4F0EB] text-[#9CA3AF]"
-                      : "bg-[#FFFBEB] text-[#92400E]"
-                  }`}>
-                    {l.is_verified && l.status === "active"
-                      ? `✓ ${t.live}`
-                      : l.status === "sold"
-                      ? t.sold
-                      : l.status === "archived"
-                      ? t.archived
-                      : `⏳ ${t.pending}`}
-                  </span>
-                </Link>
+                  <Link
+                    href={`/listing/${l.id}`}
+                    className="flex flex-1 min-w-0 items-center gap-3 hover:opacity-90 transition-opacity"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-[#1C1917] truncate">{l.title_es}</p>
+                      <p className="text-xs text-[#6B7280] mt-0.5">{formatCurrencyMXN(l.price_mxn, lang)} · {l.location_city}</p>
+                    </div>
+                    <span className={`text-[10px] font-bold px-2 py-1 rounded-full flex-shrink-0 ${
+                      l.is_verified && l.status === "active"
+                        ? "bg-[#ECFDF5] text-[#065F46]"
+                        : l.status === "sold"
+                        ? "bg-[#EFF6FF] text-[#1D4ED8]"
+                        : l.status === "archived"
+                        ? "bg-[#F4F0EB] text-[#9CA3AF]"
+                        : "bg-[#FFFBEB] text-[#92400E]"
+                    }`}>
+                      {l.is_verified && l.status === "active"
+                        ? `✓ ${t.live}`
+                        : l.status === "sold"
+                        ? t.sold
+                        : l.status === "archived"
+                        ? t.archived
+                        : `⏳ ${t.pending}`}
+                    </span>
+                  </Link>
+                  {listingTitleSupportsServiceMenu(l.title_es) && (
+                    <Link
+                      href={`/profile/listing/${l.id}/menu`}
+                      className="shrink-0 text-[10px] font-semibold px-2.5 py-1.5 rounded-lg border border-amber-300 text-[#78350F] hover:bg-amber-50 transition-colors"
+                    >
+                      {t.editMenu}
+                    </Link>
+                  )}
+                </div>
               ))}
             </div>
           )}

@@ -86,6 +86,11 @@ export async function GET(req: NextRequest) {
     const sellerIdsFromJwt = await expandUserAccountIdPool(supabase, userId);
     const sellerIdsFromRow = await expandUserAccountIdPool(supabase, String(user.id));
     const sellerIds = [...new Set([...sellerIdsFromJwt, ...sellerIdsFromRow])].filter(Boolean);
+    const accountPool = [
+      ...new Set(
+        (await expandUserAccountIdPool(supabase, userId)).map((id) => String(id).trim().toLowerCase()),
+      ),
+    ];
 
     const { data: listings, error: listingsError } = await supabase
       .from("listings")
@@ -95,10 +100,10 @@ export async function GET(req: NextRequest) {
 
     if (listingsError) {
       console.error("[auth/me] listings", listingsError);
-      return NextResponse.json({ user, listings: [] });
+      return NextResponse.json({ user, listings: [], accountPool });
     }
 
-    return NextResponse.json({ user, listings: listings ?? [] });
+    return NextResponse.json({ user, listings: listings ?? [], accountPool });
   } catch (e: any) {
     console.error("[auth/me] GET", e);
     return NextResponse.json({ error: "No autenticado" }, { status: 401 });

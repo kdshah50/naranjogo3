@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminSupabase, getUserIdFromRequest, idMatchVariantsForIn, isSameUserId } from "@/lib/auth-server";
 import { expandUserAccountIdPool, poolsOverlap } from "@/lib/user-account-pool";
+import { latestTicketForListingBuyer, MAX_INBOX_THREADS } from "@/lib/conversation-ticket";
 
 export const dynamic = "force-dynamic";
 
@@ -147,6 +148,7 @@ export async function GET(req: NextRequest) {
         return {
           conversationId: r.id,
           listing_id: r.listing_id,
+          buyer_id: r.buyer_id,
           listing_title: listingMap[r.listing_id]?.title_es ?? "Anuncio",
           role: isBuyer ? ("buyer" as const) : ("seller" as const),
           other_user_id: otherId,
@@ -159,7 +161,20 @@ export async function GET(req: NextRequest) {
 
     enriched.sort((a, b) => new Date(b.last_at).getTime() - new Date(a.last_at).getTime());
 
-    return NextResponse.json({ threads: enriched });
+    const totalCount = enriched.length;
+    const visible = enriched.slice(0, MAX_INBOX_THREADS);
+    const withTickets = await Promise.all(
+      visible.map(async (row) => {
+        const ticketCode = await latestTicketForListingBuyer(supabase, row.listing_id, row.buyer_id);
+        return { ...row, ticket_code: ticketCode };
+      }),
+    );
+
+    return NextResponse.json({
+      threads: withTickets,
+      totalCount,
+      hasMore: totalCount > MAX_INBOX_THREADS,
+    });
   } catch (e) {
     console.error("[conversations/inbox] GET", e);
     return NextResponse.json({ error: "Error del servidor" }, { status: 500 });

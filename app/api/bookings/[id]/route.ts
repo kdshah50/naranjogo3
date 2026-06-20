@@ -10,10 +10,17 @@ import {
 } from "@/lib/booking-cancellation";
 import { notifyBuyerCompletedReviewPrompt } from "@/lib/buyer-completed-review-notify";
 import { notifyBuyerLifecyclePhase, type BuyerPhaseWhatsAppResult } from "@/lib/buyer-phase-notify";
+import { notifySellerLifecyclePhase, notifySellerBookingCompleted, type SellerPhaseWhatsAppResult } from "@/lib/seller-phase-notify";
 import { appendBookingEvent, BookingLifecycleStatus, canTransitionLifecycle } from "@/lib/booking-lifecycle";
 import { appendListingChatBookingLifecycleNotice, type BookingChatLifecyclePhase } from "@/lib/listing-chat-booking-notices";
 import { getPublicAppUrl } from "@/lib/app-url";
 import { sellerCanManagePaidBookingRow } from "@/lib/seller-booking-access";
+import { computeBalanceDueCents, listingIsHousekeeping } from "@/lib/housekeeping-payments";
+import { notifyBuyerHousekeepingBalanceDue } from "@/lib/housekeeping-balance-notify";
+import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
+import { providerServiceRequiresQuoteAccept } from "@/lib/provider-services";
+import { prepareQuoteGateForRebook } from "@/lib/service-quote-server";
+import { resolveListingChatPath } from "@/lib/listing-chat-deep-link";
 
 export const dynamic = "force-dynamic";
 
@@ -73,6 +80,14 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         : null;
 
     const appUrl = getPublicAppUrl();
+    const listingChatPath = await resolveListingChatPath(
+      supabase,
+      String(booking.listing_id),
+      String(booking.buyer_id),
+    );
+    const sellerBookingsPath = booking.ticket_code
+      ? `/seller-bookings?ticket=${encodeURIComponent(String(booking.ticket_code))}`
+      : "/seller-bookings";
 
     return NextResponse.json({
       id: booking.id,
@@ -86,13 +101,24 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       cancelNote: booking.cancel_note ?? null,
       commissionAmountCents: booking.commission_amount_cents,
       commissionPct: booking.commission_pct,
+      pricingBaseMxnCents: booking.pricing_base_mxn_cents ?? null,
+      balanceDueMxnCents: booking.balance_due_mxn_cents ?? null,
+      balancePaymentStatus: booking.balance_payment_status ?? "none",
+      balancePaidAt: booking.balance_paid_at ?? null,
+      tipMxnCents: booking.tip_mxn_cents ?? null,
+      tipPaymentStatus: booking.tip_payment_status ?? "none",
+      appointmentAt: booking.appointment_at ?? null,
       paidAt: booking.paid_at,
       createdAt: booking.created_at,
       isBuyer,
+      isSeller,
+      listingChatPath,
+      sellerBookingsPath,
       tracking: {
         buyerBookingsUrl: `${appUrl}/my-bookings`,
-        sellerBookingsUrl: `${appUrl}/seller-bookings`,
+        sellerBookingsUrl: `${appUrl}${sellerBookingsPath}`,
         listingUrl: `${appUrl}/listing/${booking.listing_id}`,
+        listingChatUrl: `${appUrl}${listingChatPath}`,
         claimsUrl: `${appUrl}/claims?booking=${encodeURIComponent(booking.id)}`,
       },
       listing: listing
@@ -281,7 +307,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     const { data: booking, error: fetchErr } = await supabase
       .from("service_bookings")
-      .select("id,buyer_id,seller_id,listing_id,payment_status,status,ticket_code")
+      .select(
+        "id,buyer_id,seller_id,listing_id,payment_status,status,ticket_code,pricing_base_mxn_cents,commission_amount_cents",
+      )
       .in("id", lifeIdVars)
       .maybeSingle();
 
@@ -307,19 +335,88 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       return NextResponse.json({ error: "La reserva no está pagada" }, { status: 400 });
     }
 
+    // Rare rows: paid but still `pending` — treat as confirmed so seller can advance lifecycle.
+    if (booking.status === "pending") {
+      const { data: repaired } = await supabase
+        .from("service_bookings")
+        .update({ status: "confirmed", updated_at: new Date().toISOString() })
+        .eq("id", rowId)
+        .eq("payment_status", "paid")
+        .eq("status", "pending")
+        .select("status")
+        .maybeSingle();
+      if (repaired?.status) booking.status = repaired.status;
+    }
+
     if (booking.status === "completed" && nextStatus === "completed") {
       let buyerPhaseWhatsApp: BuyerPhaseWhatsAppResult | undefined;
+      let sellerPhaseWhatsApp: SellerPhaseWhatsAppResult | undefined;
       try {
         buyerPhaseWhatsApp = await notifyBuyerCompletedReviewPrompt(supabase, rowId);
       } catch (e) {
         console.error("[bookings/:id] PATCH re-notify review prompt failed (non-fatal)", e);
         buyerPhaseWhatsApp = { delivered: false, reason: "send_failed" };
       }
-      return NextResponse.json({ ok: true, alreadyCompleted: true, status: "completed", buyerPhaseWhatsApp });
+      try {
+        sellerPhaseWhatsApp = await notifySellerBookingCompleted(supabase, rowId);
+      } catch (e) {
+        console.error("[bookings/:id] PATCH re-notify seller completed failed (non-fatal)", e);
+        sellerPhaseWhatsApp = { delivered: false, reason: "send_failed" };
+      }
+      return NextResponse.json({
+        ok: true,
+        alreadyCompleted: true,
+        status: "completed",
+        buyerPhaseWhatsApp,
+        sellerPhaseWhatsApp,
+      });
     }
 
     if (booking.status === nextStatus) {
-      return NextResponse.json({ ok: true, unchanged: true, status: String(booking.status) });
+      let buyerPhaseWhatsApp: BuyerPhaseWhatsAppResult | undefined;
+      let sellerPhaseWhatsApp: SellerPhaseWhatsAppResult | undefined;
+      const lifecyclePhase =
+        nextStatus === "scheduled" || nextStatus === "in_progress" ? nextStatus : null;
+
+      try {
+        const { data: freshRow } = await supabase
+          .from("service_bookings")
+          .select("ticket_code,appointment_at")
+          .eq("id", rowId)
+          .maybeSingle();
+
+        await appendListingChatBookingLifecycleNotice(
+          supabase,
+          {
+            id: String(booking.id),
+            listing_id: String(booking.listing_id),
+            buyer_id: String(booking.buyer_id),
+            ticket_code: freshRow?.ticket_code ?? booking.ticket_code ?? null,
+            appointment_at: freshRow?.appointment_at ?? null,
+          },
+          nextStatus as BookingChatLifecyclePhase,
+        );
+
+        if (lifecyclePhase) {
+          buyerPhaseWhatsApp = await notifyBuyerLifecyclePhase(supabase, rowId, lifecyclePhase);
+          sellerPhaseWhatsApp = await notifySellerLifecyclePhase(supabase, rowId, lifecyclePhase);
+        } else if (nextStatus === "completed") {
+          buyerPhaseWhatsApp = await notifyBuyerCompletedReviewPrompt(supabase, rowId);
+          sellerPhaseWhatsApp = await notifySellerBookingCompleted(supabase, rowId);
+        }
+      } catch (e) {
+        console.error("[bookings/:id] PATCH unchanged side-effects (non-fatal)", e);
+        buyerPhaseWhatsApp = { delivered: false, reason: "send_failed" };
+        sellerPhaseWhatsApp = { delivered: false, reason: "send_failed" };
+      }
+
+      return NextResponse.json({
+        ok: true,
+        unchanged: true,
+        status: String(booking.status),
+        buyerPhaseWhatsApp,
+        sellerPhaseWhatsApp,
+      });
     }
 
     if (!canTransitionLifecycle(booking.status, nextStatus)) {
@@ -331,13 +428,36 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     const fromStatus = String(booking.status);
     const now = new Date().toISOString();
+
+    const appointmentRaw = body?.appointmentAt ?? body?.appointment_at;
+    const updatePayload: Record<string, unknown> = { status: nextStatus, updated_at: now };
+
+    if (nextStatus === "scheduled" && typeof appointmentRaw === "string" && appointmentRaw.trim()) {
+      const appt = new Date(appointmentRaw.trim());
+      if (!Number.isNaN(appt.getTime())) {
+        updatePayload.appointment_at = appt.toISOString();
+      }
+    }
+
+    if (nextStatus === "completed") {
+      const isHk = await listingIsHousekeeping(supabase, String(booking.listing_id));
+      if (isHk) {
+        const balanceDue = computeBalanceDueCents({
+          pricing_base_mxn_cents: booking.pricing_base_mxn_cents,
+          commission_amount_cents: booking.commission_amount_cents,
+        });
+        updatePayload.balance_due_mxn_cents = balanceDue;
+        updatePayload.balance_payment_status = balanceDue >= 100 ? "pending" : "waived";
+      }
+    }
+
     const { data: updated, error: upErr } = await supabase
       .from("service_bookings")
-      .update({ status: nextStatus, updated_at: now })
+      .update(updatePayload)
       .eq("id", rowId)
       .eq("payment_status", "paid")
       .eq("status", fromStatus)
-      .select("id,status")
+      .select("id,status,balance_due_mxn_cents,balance_payment_status")
       .maybeSingle();
 
     if (upErr || !updated) {
@@ -364,21 +484,32 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           listing_id: String(booking.listing_id),
           buyer_id: String(booking.buyer_id),
           ticket_code: booking.ticket_code ?? null,
+          appointment_at:
+            nextStatus === "scheduled" && updatePayload.appointment_at
+              ? String(updatePayload.appointment_at)
+              : null,
         },
-        nextStatus as BookingChatLifecyclePhase
+        nextStatus as BookingChatLifecyclePhase,
       );
     } catch (chatErr) {
       console.error("[bookings/:id] lifecycle in-app chat notice (non-fatal)", chatErr);
     }
 
     let buyerPhaseWhatsApp: BuyerPhaseWhatsAppResult | undefined;
+    let sellerPhaseWhatsApp: SellerPhaseWhatsAppResult | undefined;
 
     if (nextStatus === "scheduled" || nextStatus === "in_progress") {
       try {
         buyerPhaseWhatsApp = await notifyBuyerLifecyclePhase(supabase, rowId, nextStatus);
       } catch (e) {
-        console.error("[bookings/:id] PATCH phase WhatsApp failed (non-fatal)", e);
+        console.error("[bookings/:id] PATCH buyer phase WhatsApp failed (non-fatal)", e);
         buyerPhaseWhatsApp = { delivered: false, reason: "send_failed" };
+      }
+      try {
+        sellerPhaseWhatsApp = await notifySellerLifecyclePhase(supabase, rowId, nextStatus);
+      } catch (e) {
+        console.error("[bookings/:id] PATCH seller phase WhatsApp failed (non-fatal)", e);
+        sellerPhaseWhatsApp = { delivered: false, reason: "send_failed" };
       }
     }
 
@@ -389,9 +520,36 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         console.error("[bookings/:id] PATCH review WhatsApp failed (non-fatal)", e);
         buyerPhaseWhatsApp = { delivered: false, reason: "send_failed" };
       }
+      try {
+        sellerPhaseWhatsApp = await notifySellerBookingCompleted(supabase, rowId);
+      } catch (e) {
+        console.error("[bookings/:id] PATCH seller completed WhatsApp failed (non-fatal)", e);
+        sellerPhaseWhatsApp = { delivered: false, reason: "send_failed" };
+      }
+      try {
+        const { data: listingRow } = await supabase
+          .from("listings")
+          .select("title_es")
+          .eq("id", String(booking.listing_id))
+          .maybeSingle();
+        const slug = inferProviderSlugFromListingTitle(listingRow?.title_es as string);
+        if (providerServiceRequiresQuoteAccept(slug)) {
+          await prepareQuoteGateForRebook(supabase, String(booking.listing_id), String(booking.buyer_id));
+        }
+      } catch (rebookPrepErr) {
+        console.error("[bookings/:id] prepare rebook gate after complete (non-fatal)", rebookPrepErr);
+      }
+      const balDue = Math.round(Number(updated?.balance_due_mxn_cents ?? 0));
+      if (String(updated?.balance_payment_status ?? "") === "pending" && balDue >= 100) {
+        try {
+          await notifyBuyerHousekeepingBalanceDue(supabase, rowId, balDue, "es");
+        } catch (e) {
+          console.error("[bookings/:id] balance due WhatsApp (non-fatal)", e);
+        }
+      }
     }
 
-    return NextResponse.json({ ok: true, status: nextStatus, buyerPhaseWhatsApp });
+    return NextResponse.json({ ok: true, status: nextStatus, buyerPhaseWhatsApp, sellerPhaseWhatsApp });
   } catch (e) {
     console.error("[bookings/:id] PATCH", e);
     return NextResponse.json({ error: "Error del servidor" }, { status: 500 });

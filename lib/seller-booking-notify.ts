@@ -1,8 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { idMatchVariantsForIn } from "@/lib/user-id-variants";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
-import { sendWhatsApp } from "@/lib/twilio";
+import { sendWhatsAppToE164Digits } from "@/lib/twilio";
 import { getPublicAppUrl } from "@/lib/app-url";
+import { phoneDigitsForAccountPool } from "@/lib/user-phone-notify";
+import { e164DigitsForWhatsAppRecipient } from "@/lib/phone";
+import { appendListingChatPaymentNotice } from "@/lib/payment-confirmed-chat";
+import { listingChatAbsoluteUrl, findListingConversationIdForBuyer } from "@/lib/listing-chat-deep-link";
 
 /** If the process dies mid-notify, another worker can reclaim after this many ms. */
 const STALE_NOTIFY_CLAIM_MS = 3 * 60 * 1000;
@@ -81,18 +85,31 @@ export async function notifySellerBookingCommissionPaid(supabase: SupabaseClient
       buyerRows?.[0]?.display_name?.trim() ||
       (buyerRows?.[0]?.phone ? `Cliente …${buyerRows[0].phone.replace(/\D/g, "").slice(-4)}` : "Un cliente");
 
-    let sellerPhone = row.seller_phone_snapshot?.trim() || null;
-    if (!sellerPhone) {
-      const sellerPool = await expandUserAccountIdPool(supabase, String(row.seller_id));
-      const { data: sellerRows } = await supabase
-        .from("users")
-        .select("phone,display_name")
-        .in("id", sellerPool)
-        .limit(1);
-      sellerPhone = sellerRows?.[0]?.phone?.trim() || null;
+    const { data: ticketRow } = await supabase
+      .from("service_bookings")
+      .select("ticket_code")
+      .eq("id", row.id)
+      .maybeSingle();
+    const ticketCode = ticketRow?.ticket_code ?? row.ticket_code;
+
+    // In-app first: MX WhatsApp often fails on +52 while +521 delivers; provider still needs the update.
+    try {
+      await appendListingChatPaymentNotice(supabase, {
+        id: String(row.id),
+        listing_id: String(row.listing_id),
+        buyer_id: String(row.buyer_id),
+        ticket_code: ticketCode ? String(ticketCode) : null,
+      });
+    } catch (chatErr) {
+      console.error("[seller-booking-notify] payment in-app chat (non-fatal)", chatErr);
     }
 
-    if (!sellerPhone) {
+    let sellerDigits = e164DigitsForWhatsAppRecipient(row.seller_phone_snapshot?.trim() ?? "");
+    if (!sellerDigits) {
+      sellerDigits = await phoneDigitsForAccountPool(supabase, String(row.seller_id));
+    }
+
+    if (!sellerDigits) {
       console.warn("[seller-booking-notify] no seller phone", {
         bookingId: row.id,
         hint: "Set phone on provider profile or ensure seller_phone_snapshot after payment",
@@ -103,8 +120,15 @@ export async function notifySellerBookingCommissionPaid(supabase: SupabaseClient
 
     const mxn = Math.round((row.commission_amount_cents ?? 0) / 100);
     const appUrl = getPublicAppUrl();
-    const listingUrl = `${appUrl}/listing/${row.listing_id}`;
-    const sellerBookingsUrl = `${appUrl}/seller-bookings`;
+    const convId = await findListingConversationIdForBuyer(
+      supabase,
+      String(row.listing_id),
+      String(row.buyer_id),
+    );
+    const listingUrl = listingChatAbsoluteUrl(String(row.listing_id), convId);
+    const sellerBookingsUrl = ticketCode
+      ? `${appUrl}/seller-bookings?ticket=${encodeURIComponent(String(ticketCode))}`
+      : `${appUrl}/seller-bookings`;
 
     const msg = [
       `🎉 *Pago recibido en Naranjogo*`,
@@ -114,20 +138,20 @@ export async function notifySellerBookingCommissionPaid(supabase: SupabaseClient
       ``,
       `Cliente: ${buyerName}`,
       `Tarifa plataforma: ~$${mxn.toLocaleString("es-MX")} MXN`,
-      row.ticket_code ? `Ticket cliente: *${row.ticket_code}*` : `ID interno: ${row.id}`,
+      ticketCode ? `Ticket cliente: *${ticketCode}*` : `ID interno: ${row.id}`,
       ``,
-      `Abre el anuncio para ver mensajes en la app:`,
-      listingUrl,
-      ``,
-      `Cuando termines el trabajo, avanza el estado en la app (agendado → en curso → completado). Cliente recibe WhatsApp en cada paso y al final el enlace para reseña:`,
+      `Gestiona la reserva (agendado → en curso → completado):`,
       sellerBookingsUrl,
+      ``,
+      `Mensajes con el cliente:`,
+      listingUrl,
     ].join("\n");
 
-    const ok = await sendWhatsApp(sellerPhone, msg);
+    const ok = await sendWhatsAppToE164Digits(sellerDigits, msg);
     if (!ok) {
       console.error("[seller-booking-notify] WhatsApp send failed", {
         bookingId: row.id,
-        sellerPhonePrefix: sellerPhone.slice(0, 6),
+        sellerDigitsTail: sellerDigits.slice(-4),
       });
       await releaseClaim();
       return;

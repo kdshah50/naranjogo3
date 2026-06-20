@@ -5,6 +5,8 @@ import {
   idMatchVariantsForIn,
 } from "@/lib/auth-server";
 import { expandUserAccountIdPool, poolsOverlap, userParticipatesInConversation } from "@/lib/user-account-pool";
+import { latestTicketForListingBuyer } from "@/lib/conversation-ticket";
+import { listConversationMessages } from "@/lib/listing-messages-server";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +32,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       return NextResponse.json({ error: "Conversación no encontrada" }, { status: 404 });
     }
 
-    const allowed = await userParticipatesInConversation(supabase, userId, conv.buyer_id, conv.seller_id);
+    const allowed = await userParticipatesInConversation(
+      supabase,
+      userId,
+      conv.buyer_id,
+      conv.seller_id,
+      conv.listing_id,
+    );
     if (!allowed) {
       return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
@@ -39,7 +47,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
     const myPool = await expandUserAccountIdPool(supabase, userId);
     const sellerPool = await expandUserAccountIdPool(supabase, conv.seller_id);
-    const isSeller = poolsOverlap(myPool, sellerPool);
 
     const { data: listing } = await supabase
       .from("listings")
@@ -47,16 +54,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       .in("id", idMatchVariantsForIn(conv.listing_id))
       .maybeSingle();
 
-    const { data: messages, error: msgErr } = await supabase
-      .from("listing_messages")
-      .select("id,sender_id,body,created_at")
-      .eq("conversation_id", convRowId)
-      .order("created_at", { ascending: true });
+    const listingSellerPool = listing?.seller_id
+      ? await expandUserAccountIdPool(supabase, String(listing.seller_id))
+      : [];
+    const isSeller =
+      poolsOverlap(myPool, sellerPool) || poolsOverlap(myPool, listingSellerPool);
 
-    if (msgErr) {
-      console.error("[conversations/:id] messages", msgErr);
-      return NextResponse.json({ error: "No se pudo cargar mensajes" }, { status: 500 });
-    }
+    const messages = await listConversationMessages(supabase, convRowId);
 
     const otherId = isSeller ? conv.buyer_id : conv.seller_id;
     let otherName = "";
@@ -70,12 +74,15 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         || (otherUser?.phone ? `…${otherUser.phone.replace(/\D/g, "").slice(-4)}` : "");
     }
 
+    const ticketCode = await latestTicketForListingBuyer(supabase, conv.listing_id, conv.buyer_id);
+
     return NextResponse.json({
       conversation: conv,
       listing: listing ?? { id: conv.listing_id, title_es: "", seller_id: conv.seller_id },
       messages: messages ?? [],
       role: isSeller ? "seller" : "buyer",
       other_name: otherName,
+      ticket_code: ticketCode,
     });
   } catch (e) {
     console.error("[conversations/:id] GET", e);

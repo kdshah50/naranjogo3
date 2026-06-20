@@ -50,7 +50,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       return NextResponse.json({ error: "Conversación no encontrada" }, { status: 404 });
     }
 
-    const allowed = await userParticipatesInConversation(supabase, userId, conv.buyer_id, conv.seller_id);
+    const allowed = await userParticipatesInConversation(
+      supabase,
+      userId,
+      conv.buyer_id,
+      conv.seller_id,
+      conv.listing_id,
+    );
     if (!allowed) {
       return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }

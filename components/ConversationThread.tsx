@@ -2,14 +2,29 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Lang } from "@/lib/i18n-lang";
-import { formatDateTimeShort } from "@/lib/locale-format";
+import { formatDateTimeShort, conversationDayKey, formatConversationDayLabel } from "@/lib/locale-format";
 import {
   hasServiceMenu,
   type ServiceMenu,
 } from "@/lib/listing-service-menu";
-import ServiceMenuQuoteBuilder from "@/components/ServiceMenuQuoteBuilder";
+import ServiceMenuQuoteBuilder, { type QuoteBuilderPayload } from "@/components/ServiceMenuQuoteBuilder";
+import ServiceQuoteBuyerPanel from "@/components/ServiceQuoteBuyerPanel";
+import {
+  buyerFacingQuoteStatus,
+  type ServiceQuoteLineItem,
+  type ServiceQuoteMetadata,
+  type ServiceQuoteStatus,
+} from "@/lib/service-quote";
+import type { ServiceQuoteLayout } from "@/lib/service-quote-vertical";
+import Link from "next/link";
+import { withLang } from "@/lib/i18n-lang";
+import {
+  applyChatPollUpdate,
+  appendChatMessageDeduped,
+  type ChatPollMessage,
+} from "@/lib/listing-chat-poll";
 
-type Msg = { id: string; sender_id: string; body: string; created_at: string };
+type Msg = ChatPollMessage;
 type ConvRole = "buyer" | "seller" | null;
 
 const UI = {
@@ -31,6 +46,7 @@ const UI = {
     agreedSaved: "Guardado",
     agreedLoading: "Cargando precio acordado…",
     invalidAmount: "Monto inválido (mín. $1 MXN).",
+    payOnListing: "Ir al anuncio para pagar depósito",
   },
   en: {
     loadErr: "Could not load",
@@ -50,6 +66,7 @@ const UI = {
     agreedSaved: "Saved",
     agreedLoading: "Loading agreed total…",
     invalidAmount: "Enter a valid amount (at least $1 MXN).",
+    payOnListing: "Go to listing to pay deposit",
   },
 } as const;
 
@@ -68,6 +85,7 @@ export default function ConversationThread({
   const [error, setError] = useState("");
   const [title, setTitle] = useState("");
   const [otherName, setOtherName] = useState("");
+  const [ticketCode, setTicketCode] = useState<string | null>(null);
   const [role, setRole] = useState<ConvRole>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [draft, setDraft] = useState("");
@@ -81,12 +99,70 @@ export default function ConversationThread({
   const [agreedLoading, setAgreedLoading] = useState(false);
   const [agreedSaving, setAgreedSaving] = useState(false);
   const [agreedErr, setAgreedErr] = useState("");
+  const [requiresQuoteAccept, setRequiresQuoteAccept] = useState(false);
+  const [quoteLayout, setQuoteLayout] = useState<ServiceQuoteLayout>("default");
+  const [quoteStatus, setQuoteStatus] = useState<ServiceQuoteStatus>("none");
+  const [quoteAgreedCents, setQuoteAgreedCents] = useState<number | null>(null);
+  const [quoteSentAt, setQuoteSentAt] = useState<string | null>(null);
+  const [quoteLineItems, setQuoteLineItems] = useState<ServiceQuoteLineItem[] | null>(null);
+  const [quoteMetadata, setQuoteMetadata] = useState<ServiceQuoteMetadata | null>(null);
   const messagesScrollRef = useRef<HTMLDivElement | null>(null);
+  const initialMessagesLoadedRef = useRef(false);
+  const [myAccountPool, setMyAccountPool] = useState<string[]>([]);
+
+  const syncMessages = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/conversations/${conversationId}`, {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const fresh: Msg[] = data.messages ?? [];
+      setMessages((prev) => applyChatPollUpdate(prev, fresh));
+    } catch {
+      /* silent */
+    }
+  }, [conversationId]);
+
+  const loadQuoteState = useCallback(async () => {
+    if (!listingId) return;
+    const buyerQuery =
+      role === "seller" && buyerId ? `?buyerId=${encodeURIComponent(buyerId)}` : "";
+    try {
+      const r = await fetch(
+        `/api/listings/${encodeURIComponent(listingId)}/service-booking/quote${buyerQuery}`,
+        { credentials: "same-origin", cache: "no-store" },
+      );
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) return;
+      setRequiresQuoteAccept(Boolean((d as { requiresQuoteAccept?: boolean }).requiresQuoteAccept));
+      const layout = (d as { quoteLayout?: ServiceQuoteLayout }).quoteLayout;
+      if (layout === "housekeeping" || layout === "default") setQuoteLayout(layout);
+      setQuoteStatus(
+        buyerFacingQuoteStatus(
+          (d as { quoteStatus?: ServiceQuoteStatus }).quoteStatus ?? "none",
+          (d as { quoteSentAt?: string | null }).quoteSentAt ?? null,
+        ),
+      );
+      const cents = (d as { agreedSubtotalMxnCents?: number | null }).agreedSubtotalMxnCents;
+      setQuoteAgreedCents(cents != null ? Number(cents) : null);
+      setQuoteSentAt((d as { quoteSentAt?: string | null }).quoteSentAt ?? null);
+      const items = (d as { quoteLineItems?: ServiceQuoteLineItem[] | null }).quoteLineItems;
+      setQuoteLineItems(Array.isArray(items) && items.length > 0 ? items : null);
+      setQuoteMetadata((d as { quoteMetadata?: ServiceQuoteMetadata | null }).quoteMetadata ?? null);
+    } catch {
+      /* silent */
+    }
+  }, [listingId, role, buyerId]);
 
   const load = useCallback(async () => {
     const strings = UI[lang];
     setError("");
-    const res = await fetch(`/api/conversations/${conversationId}`, { credentials: "same-origin" });
+    const res = await fetch(`/api/conversations/${conversationId}`, {
+      credentials: "same-origin",
+      cache: "no-store",
+    });
     if (!res.ok) {
       const d = await res.json().catch(() => ({}));
       setError((d as { error?: string }).error ?? strings.loadErr);
@@ -94,10 +170,15 @@ export default function ConversationThread({
       return;
     }
     const data = await res.json();
-    setMessages(data.messages ?? []);
+    const fresh: Msg[] = data.messages ?? [];
+    setMessages((prev) =>
+      initialMessagesLoadedRef.current ? applyChatPollUpdate(prev, fresh) : fresh,
+    );
+    initialMessagesLoadedRef.current = true;
     setTitle(data.listing?.title_es ?? strings.conversation);
     setRole(data.role ?? null);
     setOtherName(data.other_name ?? "");
+    setTicketCode((data.ticket_code as string | null | undefined) ?? null);
     const listingFromApi = data.listing as
       | { id?: string; service_menu?: ServiceMenu | null; category_id?: string | null }
       | undefined;
@@ -111,8 +192,45 @@ export default function ConversationThread({
   }, [conversationId, lang]);
 
   useEffect(() => {
+    initialMessagesLoadedRef.current = false;
     void load();
   }, [load]);
+
+  useEffect(() => {
+    void (async () => {
+      const me = await fetch("/api/auth/me", { credentials: "same-origin" });
+      if (!me.ok) return;
+      const j = await me.json();
+      const pool = (j as { accountPool?: string[] }).accountPool;
+      if (Array.isArray(pool) && pool.length > 0) {
+        setMyAccountPool(pool.map((id) => String(id).trim().toLowerCase()));
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    void loadQuoteState();
+  }, [loadQuoteState]);
+
+  useEffect(() => {
+    if (!listingId) return;
+    const t = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void loadQuoteState();
+    }, 2000);
+    return () => clearInterval(t);
+  }, [listingId, loadQuoteState]);
+
+  useEffect(() => {
+    const onQuote = (ev: Event) => {
+      const d = (ev as CustomEvent<{ listingId?: string }>).detail;
+      if (d?.listingId && listingId && d.listingId !== listingId) return;
+      void loadQuoteState();
+      void syncMessages();
+    };
+    window.addEventListener("tianguis:quote-updated", onQuote);
+    return () => window.removeEventListener("tianguis:quote-updated", onQuote);
+  }, [listingId, loadQuoteState, syncMessages]);
 
   const scrollMessagesToBottom = () => {
     const el = messagesScrollRef.current;
@@ -128,26 +246,31 @@ export default function ConversationThread({
     scrollMessagesToBottom();
   }, [messages]);
 
-  // Poll for new messages
+  // Poll for new messages (provider may miss buyer-side browser events).
   useEffect(() => {
     if (!conversationId) return;
-    const poll = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/conversations/${conversationId}`, { credentials: "same-origin" });
-        if (!res.ok) return;
-        const data = await res.json();
-        const fresh: typeof messages = data.messages ?? [];
-        if (fresh.length === 0) return;
-        setMessages((prev) => {
-          const lastFresh = fresh[fresh.length - 1]?.id;
-          const lastPrev = prev[prev.length - 1]?.id;
-          if (lastFresh !== lastPrev || fresh.length !== prev.length) return fresh;
-          return prev;
-        });
-      } catch { /* silent */ }
-    }, 5000);
+    const poll = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void syncMessages();
+    }, 2000);
     return () => clearInterval(poll);
-  }, [conversationId]);
+  }, [conversationId, syncMessages]);
+
+  useEffect(() => {
+    const onContact = () => {
+      if (document.visibilityState === "visible") void syncMessages();
+    };
+    window.addEventListener("tianguis:listing-contact", onContact);
+    return () => window.removeEventListener("tianguis:listing-contact", onContact);
+  }, [syncMessages]);
+
+  useEffect(() => {
+    const refreshOnVisible = () => {
+      if (document.visibilityState === "visible") void syncMessages();
+    };
+    document.addEventListener("visibilitychange", refreshOnVisible);
+    return () => document.removeEventListener("visibilitychange", refreshOnVisible);
+  }, [syncMessages]);
 
   // Seller: load existing agreed price for this listing+buyer pair.
   useEffect(() => {
@@ -207,7 +330,9 @@ export default function ConversationThread({
         throw new Error((d as { error?: string }).error ?? u.sendErr);
       }
       const { message } = await res.json();
-      setMessages((m) => [...m, message as Msg]);
+      const msg = message as Msg;
+      setMessages((m) => appendChatMessageDeduped(m, msg));
+      window.setTimeout(() => void syncMessages(), 400);
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("tianguis:listing-contact"));
       }
@@ -225,6 +350,38 @@ export default function ConversationThread({
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Error");
     }
+  };
+
+  const sendOfficialQuote = async (payload: QuoteBuilderPayload) => {
+    if (role !== "seller" || !listingId || !buyerId) return;
+    setAgreedErr("");
+    const r = await fetch(`/api/listings/${encodeURIComponent(listingId)}/service-booking/quote/send`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        buyerId,
+        agreedSubtotalMxnCents: payload.totalCents,
+        quoteLineItems: payload.lineItems,
+        quoteMetadata: {
+          visitFrequency: payload.visitFrequency,
+          quoteBasis: payload.quoteBasis,
+          lang: lang === "en" ? "en" : "es",
+          kind: "provider_quote",
+        },
+        messageBody: payload.messageBody,
+        lang: lang === "en" ? "en" : "es",
+      }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      throw new Error((d as { error?: string; message?: string }).message ?? (d as { error?: string }).error ?? u.sendErr);
+    }
+    const msg = (d as { message?: Msg }).message;
+    if (msg) setMessages((m) => appendChatMessageDeduped(m, msg));
+    window.setTimeout(() => void syncMessages(), 400);
+    window.dispatchEvent(new CustomEvent("tianguis:quote-updated", { detail: { listingId } }));
+    await loadQuoteState();
   };
 
   const saveAgreedPrice = async (clear: boolean) => {
@@ -272,11 +429,22 @@ export default function ConversationThread({
 
   const showQuoteSection = role === "seller" && listingId && buyerId;
   const showQuoteBuilder = showQuoteSection && hasServiceMenu(serviceMenu);
+  const buyerQuoteStatus = buyerFacingQuoteStatus(quoteStatus, quoteSentAt);
+  const showBuyerQuotePanel =
+    role === "buyer" &&
+    requiresQuoteAccept &&
+    (buyerQuoteStatus === "pending" || buyerQuoteStatus === "accepted");
+  const listingHref = listingId
+    ? withLang(`/listing/${listingId}${quoteStatus === "pending" ? "?quote=1" : ""}`, lang)
+    : null;
 
   return (
     <div className="rounded-xl border border-[#E5E0D8] bg-white overflow-hidden">
       <div className="px-4 py-3 border-b border-[#E5E0D8] bg-[#F4F0EB]">
-        <h1 className="text-sm font-bold text-[#1C1917] truncate">{title}</h1>
+        <h1 className="text-sm font-bold text-[#1C1917] truncate">
+          {ticketCode ? `${ticketCode} · ` : ""}
+          {title}
+        </h1>
         {otherName && (
           <p className="text-xs text-[#065F46] font-semibold mt-0.5">
             {role === "seller" ? u.buyer : u.seller}: {otherName}
@@ -284,7 +452,46 @@ export default function ConversationThread({
         )}
       </div>
 
-      {showQuoteSection && (
+      {showBuyerQuotePanel && listingId ? (
+        <div className="px-4 py-3 border-b border-[#E5E0D8]">
+          <ServiceQuoteBuyerPanel
+            listingId={listingId}
+            quoteStatus={buyerQuoteStatus}
+            agreedSubtotalMxnCents={quoteAgreedCents}
+            quoteSentAt={quoteSentAt}
+            lang={lang === "en" ? "en" : "es"}
+            onResponded={() => void loadQuoteState()}
+          />
+          {buyerQuoteStatus === "accepted" && listingHref ? (
+            <Link
+              href={listingHref}
+              className="mt-2 block text-center text-xs font-semibold text-[#1B4332] hover:underline"
+            >
+              {u.payOnListing}
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
+
+      {showQuoteSection && requiresQuoteAccept && showQuoteBuilder ? (
+        <div className="px-4 py-3 border-b border-[#E5E0D8] bg-[#FFFBEB] text-xs space-y-2">
+          {agreedErr ? <p className="text-red-600">{agreedErr}</p> : null}
+          <ServiceMenuQuoteBuilder
+            menu={serviceMenu}
+            lang={lang === "en" ? "en" : "es"}
+            quoteLayout={quoteLayout}
+            requiresBuyerContact
+            variant="seller"
+            disabled={agreedSaving || agreedLoading}
+            initialCartLines={quoteLineItems?.map((x) => ({ sku: x.sku, qty: x.qty }))}
+            initialVisitFrequency={quoteMetadata?.visitFrequency}
+            initialQuoteBasis={quoteMetadata?.quoteBasis}
+            onSendOfficialQuote={sendOfficialQuote}
+          />
+        </div>
+      ) : null}
+
+      {showQuoteSection && !requiresQuoteAccept ? (
         <div className="px-4 py-3 border-b border-[#E5E0D8] bg-[#FFFBEB] text-xs space-y-2">
           <p className="font-semibold text-[#78350F]">{u.agreedTitle}</p>
           <p className="text-[#92400E] leading-snug">{u.agreedHelp}</p>
@@ -318,11 +525,9 @@ export default function ConversationThread({
               {u.agreedClear}
             </button>
           </div>
-          {agreedLoading && (
-            <p className="text-[#A16207]">{u.agreedLoading}</p>
-          )}
-          {agreedErr && <p className="text-red-600">{agreedErr}</p>}
-          {showQuoteBuilder && (
+          {agreedLoading ? <p className="text-[#A16207]">{u.agreedLoading}</p> : null}
+          {agreedErr ? <p className="text-red-600">{agreedErr}</p> : null}
+          {showQuoteBuilder ? (
             <ServiceMenuQuoteBuilder
               menu={serviceMenu}
               lang={lang === "en" ? "en" : "es"}
@@ -336,29 +541,49 @@ export default function ConversationThread({
                 }
               }}
             />
-          )}
+          ) : null}
         </div>
-      )}
+      ) : null}
 
       <div
         ref={messagesScrollRef}
         className="max-h-[50vh] overflow-y-auto overflow-x-hidden px-4 py-3 space-y-2 min-h-[120px] overscroll-y-contain"
       >
-        {messages.map((m) => {
-          const mine = myUserId && m.sender_id === myUserId;
+        {messages.map((m, idx) => {
+          const senderNorm = String(m.sender_id).trim().toLowerCase();
+          const mine =
+            (myUserId && senderNorm === myUserId.trim().toLowerCase()) ||
+            (myAccountPool.length > 0 && myAccountPool.includes(senderNorm));
+          const isSystem = m.body.startsWith("[Naranjogo]");
+          const dayKey = conversationDayKey(m.created_at);
+          const prevDayKey = idx > 0 ? conversationDayKey(messages[idx - 1].created_at) : null;
+          const showDay = dayKey !== prevDayKey;
           return (
-            <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
-              <div className={`flex flex-col gap-0.5 max-w-[85%] ${mine ? "items-end" : "items-start"}`}>
-                <div
-                  className={`rounded-xl px-3 py-2 text-sm ${
-                    mine ? "bg-[#1B4332] text-white" : "bg-[#F4F0EB] text-[#1C1917]"
-                  }`}
-                >
-                  {m.body}
+            <div key={m.id} className="space-y-2">
+              {showDay ? (
+                <p className="text-center text-[10px] font-semibold text-[#9CA3AF] uppercase tracking-wide py-1">
+                  {formatConversationDayLabel(m.created_at, lang)}
+                </p>
+              ) : null}
+              <div className={`flex ${isSystem ? "justify-center" : mine ? "justify-end" : "justify-start"}`}>
+                <div className={`flex flex-col gap-0.5 max-w-[85%] ${mine ? "items-end" : "items-start"}`}>
+                  <div
+                    className={`rounded-xl px-3 py-2 text-sm ${
+                      isSystem
+                        ? "bg-amber-50 border border-amber-200 text-amber-950 text-xs leading-relaxed"
+                        : mine
+                          ? "bg-[#1B4332] text-white"
+                          : "bg-[#F4F0EB] text-[#1C1917]"
+                    }`}
+                  >
+                    {m.body}
+                  </div>
+                  {!isSystem ? (
+                    <span className="text-[10px] tabular-nums text-[#9CA3AF]">
+                      {formatDateTimeShort(m.created_at, lang)}
+                    </span>
+                  ) : null}
                 </div>
-                <span className={`text-[10px] tabular-nums ${mine ? "text-[#A7F3D0]" : "text-[#9CA3AF]"}`}>
-                  {formatDateTimeShort(m.created_at, lang)}
-                </span>
               </div>
             </div>
           );

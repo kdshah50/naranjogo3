@@ -16,6 +16,10 @@ import {
   getMarketplaceVatPercent,
 } from "@/lib/marketplace-cart-pricing";
 import { resolveServicePricingBaseMxnCents } from "@/lib/service-booking-pricing";
+import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
+import { providerServiceRequiresQuoteAccept } from "@/lib/provider-services";
+import { checkoutFullConnectBlockedMessage } from "@/lib/service-quote-vertical";
+import { loadServiceQuoteGateForBuyerPool, agreedGateFromQuoteRow } from "@/lib/service-quote-server";
 
 export const dynamic = "force-dynamic";
 /** Allow Stripe + retries to finish on Vercel (requires Hobby 10s default or Pro for 60s). */
@@ -103,12 +107,42 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { data: gatePricing } = await supabase
-      .from("listing_service_contact_gate")
-      .select("agreed_subtotal_mxn_cents,seller_set_agreed_price_at")
-      .eq("listing_id", listingId)
-      .in("buyer_id", myPool)
-      .maybeSingle();
+    const slug = inferProviderSlugFromListingTitle(String(listing.title_es ?? ""));
+    const requiresQuoteAccept = providerServiceRequiresQuoteAccept(slug);
+    const quoteGate = requiresQuoteAccept
+      ? await loadServiceQuoteGateForBuyerPool(supabase, listingId, myPool)
+      : null;
+    if (requiresQuoteAccept) {
+      if (!quoteGate || quoteGate.quoteStatus === "pending") {
+        return NextResponse.json(
+          {
+            error:
+              "Acepta la cotización del proveedor en el chat antes de pagar el depósito (tarifa de plataforma).",
+          },
+          { status: 400 },
+        );
+      }
+      if (quoteGate.quoteStatus !== "accepted") {
+        return NextResponse.json(
+          {
+            error:
+              "Acepta la cotización del proveedor en el chat antes de pagar el depósito (tarifa de plataforma).",
+          },
+          { status: 400 },
+        );
+      }
+    }
+
+    if (requiresQuoteAccept && checkoutMode === "full_connect") {
+      return NextResponse.json(
+        {
+          error: checkoutFullConnectBlockedMessage(slug, "es"),
+        },
+        { status: 400 },
+      );
+    }
+
+    const gateForPricing = agreedGateFromQuoteRow(quoteGate);
 
     const hasPackageListing = listingHasActivePackage(
       listing as { package_session_count?: number | null; package_total_price_mxn?: number | null }
@@ -139,16 +173,10 @@ export async function POST(req: NextRequest) {
       package_session_count: listing.package_session_count as number | null,
       package_total_price_mxn: listing.package_total_price_mxn as number | null,
     };
-    const gateForPricing = gatePricing
-      ? {
-          agreed_subtotal_mxn_cents: gatePricing.agreed_subtotal_mxn_cents as number | null,
-          seller_set_agreed_price_at: gatePricing.seller_set_agreed_price_at as string | null,
-        }
-      : null;
-
+    const gateForPricingResolved = gateForPricing;
     const pricingBase = resolveServicePricingBaseMxnCents({
       listing: listingPricingRow,
-      gate: gateForPricing,
+      gate: gateForPricingResolved,
     });
 
     if (checkoutMode === "full_connect" && pricingBase <= 0) {
