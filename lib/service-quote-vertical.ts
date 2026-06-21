@@ -165,6 +165,21 @@ export function checkoutFullConnectBlockedMessage(slug: string | null | undefine
       ? "For veterinary care, pay the deposit (platform fee) first. The visit balance is settled after the appointment is complete."
       : "Para servicios veterinarios, paga primero el depósito (tarifa de plataforma). El saldo de la consulta se liquida al completar la cita.";
   }
+  if (slug === PET_WALKING_SERVICE) {
+    return lang === "en"
+      ? "For dog walking, pay the deposit (platform fee) first. The walk balance is settled after the service is complete."
+      : "Para paseo de perros, paga primero el depósito (tarifa de plataforma). El saldo del paseo se liquida al completar el servicio.";
+  }
+  if (slug === PET_SITTING_SERVICE) {
+    return lang === "en"
+      ? "For pet sitting, pay the deposit (platform fee) first. The balance is settled after the stay is complete."
+      : "Para pet sitting, paga primero el depósito (tarifa de plataforma). El saldo se liquida al terminar el cuidado.";
+  }
+  if (slug === DOG_GROOMING_SERVICE) {
+    return lang === "en"
+      ? "For grooming, pay the deposit (platform fee) first. The service balance is settled after grooming is complete."
+      : "Para estética canina, paga primero el depósito (tarifa de plataforma). El saldo se liquida al completar el servicio.";
+  }
   return lang === "en"
     ? "Pay the deposit (platform fee) first. Full service payment in-app may be available after the job is complete."
     : "Paga primero el depósito (tarifa de plataforma). El pago completo del servicio en la app puede estar disponible al terminar.";
@@ -176,6 +191,15 @@ export function supplementSummaryTitle(slug: string | null | undefined, lang: "e
   }
   if (slug === HOUSEKEEPING_SERVICE) {
     return lang === "en" ? "Cleaning summary" : "Resumen de limpieza";
+  }
+  if (slug === PET_WALKING_SERVICE) {
+    return lang === "en" ? "Walk summary" : "Resumen del paseo";
+  }
+  if (slug === PET_SITTING_SERVICE) {
+    return lang === "en" ? "Pet sitting summary" : "Resumen del cuidado";
+  }
+  if (slug === DOG_GROOMING_SERVICE) {
+    return lang === "en" ? "Grooming summary" : "Resumen de estética";
   }
   return lang === "en" ? "Service summary" : "Resumen del servicio";
 }
@@ -197,6 +221,15 @@ export function supplementTipDescription(slug: string | null | undefined, lang: 
   if (slug === HOUSEKEEPING_SERVICE) {
     return lang === "en" ? "100% for your cleaner" : "100% para tu proveedor de limpieza";
   }
+  if (slug === PET_WALKING_SERVICE) {
+    return lang === "en" ? "100% for your dog walker" : "100% para tu paseador";
+  }
+  if (slug === PET_SITTING_SERVICE) {
+    return lang === "en" ? "100% for your pet sitter" : "100% para tu cuidador de mascotas";
+  }
+  if (slug === DOG_GROOMING_SERVICE) {
+    return lang === "en" ? "100% for your groomer" : "100% para tu estilista canino";
+  }
   return lang === "en" ? "100% for your provider" : "100% para tu proveedor";
 }
 
@@ -207,6 +240,15 @@ export function notifyBuyerSupplementBalanceDueTitle(slug: string | null | undef
   if (slug === HOUSEKEEPING_SERVICE) {
     return lang === "en" ? "✅ *Cleaning completed — Naranjogo*" : "✅ *Limpieza completada — Naranjogo*";
   }
+  if (slug === PET_WALKING_SERVICE) {
+    return lang === "en" ? "✅ *Walk completed — Naranjogo*" : "✅ *Paseo completado — Naranjogo*";
+  }
+  if (slug === PET_SITTING_SERVICE) {
+    return lang === "en" ? "✅ *Pet sitting completed — Naranjogo*" : "✅ *Cuidado completado — Naranjogo*";
+  }
+  if (slug === DOG_GROOMING_SERVICE) {
+    return lang === "en" ? "✅ *Grooming completed — Naranjogo*" : "✅ *Estética completada — Naranjogo*";
+  }
   return lang === "en" ? "✅ *Service completed — Naranjogo*" : "✅ *Servicio completado — Naranjogo*";
 }
 
@@ -216,6 +258,15 @@ export function supplementCheckoutServiceLabel(slug: string | null | undefined, 
   }
   if (slug === HOUSEKEEPING_SERVICE) {
     return lang === "en" ? "Cleaning service" : "Limpieza del hogar";
+  }
+  if (slug === PET_WALKING_SERVICE) {
+    return lang === "en" ? "Dog walking" : "Paseo de perros";
+  }
+  if (slug === PET_SITTING_SERVICE) {
+    return lang === "en" ? "Pet sitting" : "Pet sitting / cuidado";
+  }
+  if (slug === DOG_GROOMING_SERVICE) {
+    return lang === "en" ? "Dog grooming" : "Estética canina";
   }
   return lang === "en" ? "Service" : "Servicio";
 }

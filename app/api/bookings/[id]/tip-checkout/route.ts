@@ -13,7 +13,7 @@ export const maxDuration = 60;
 const APP_URL = getPublicAppUrl();
 const MAX_TIP_CENTS = 500_000;
 
-/** POST { tipMxnCents } — optional tip after balance paid (housekeeping + veterinary). */
+/** POST { tipMxnCents } — optional tip after balance paid (quote-gated services). */
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const userId = await getUserIdFromRequest(req);
@@ -49,7 +49,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     if (!(await listingSupportsSupplementPayments(supabase, String(booking.listing_id)))) {
       return NextResponse.json(
-        { error: "Propina en app aplica solo a limpieza del hogar y servicios veterinarios" },
+        { error: "Propina en app aplica solo a servicios con cotización en la app (limpieza, veterinaria, cuidado de mascotas)" },
         { status: 400 },
       );
     }
