@@ -54,6 +54,11 @@ export const DEFAULT_DOG_GROOMING_DISCLAIMER_ES =
 export const DEFAULT_DOG_GROOMING_DISCLAIMER_EN =
   "Price may vary by breed, weight, coat condition, and behavior. Confirmed when the pet is assessed.";
 
+export const DEFAULT_PLUMBING_DISCLAIMER_ES =
+  "El precio es referencia. Puede ajustarse después de la visita al domicilio, inspección del trabajo y materiales necesarios. Materiales se cotizan aparte salvo que el menú indique lo contrario.";
+export const DEFAULT_PLUMBING_DISCLAIMER_EN =
+  "Prices are reference only. The final quote may change after an on-site visit, job inspection, and required materials. Materials are quoted separately unless the menu states otherwise.";
+
 export type ServiceMenuItem = {
   sku: string;
   name_es: string;
@@ -611,6 +616,35 @@ export function dogGroomingStarterMenu(): ServiceMenu {
   };
 }
 
+/** Pre-filled starter menu for plumbing (San Miguel de Allende, neighborhood tier). */
+export function plumbingStarterMenu(): ServiceMenu {
+  const items: ServiceMenuItem[] = [
+    { sku: "visit_diagnostic", name_es: "Visita de diagnóstico / cotización en domicilio", name_en: "On-site diagnostic visit", price_mxn_cents: 50000 },
+    { sku: "fix_faucet", name_es: "Reparar grifo / mezcladora (mano de obra)", name_en: "Faucet / mixer repair (labor)", price_mxn_cents: 85000 },
+    { sku: "fix_toilet", name_es: "Reparación de inodoro (flapper, válvula, fuga)", name_en: "Toilet repair", price_mxn_cents: 220000 },
+    { sku: "unclog_drain", name_es: "Destape de drenaje / fregadero", name_en: "Drain / sink unclog", price_mxn_cents: 120000 },
+    { sku: "unclog_main", name_es: "Destape línea principal (referencia)", name_en: "Main line unclog (reference)", price_mxn_cents: 250000 },
+    { sku: "replace_shower_head", name_es: "Cambio de regadera (mano de obra)", name_en: "Shower head replacement (labor)", price_mxn_cents: 65000 },
+    { sku: "fix_water_heater_minor", name_es: "Reparación menor calentador (mano de obra)", name_en: "Water heater minor repair (labor)", price_mxn_cents: 180000 },
+    { sku: "install_water_heater", name_es: "Instalación calentador (solo mano de obra)", name_en: "Water heater install (labor only)", price_mxn_cents: 350000 },
+    { sku: "leak_detection", name_es: "Detección de fugas (referencia)", name_en: "Leak detection (reference)", price_mxn_cents: 150000 },
+    { sku: "outdoor_faucet", name_es: "Instalación / reparación llave de jardín", name_en: "Outdoor faucet install/repair", price_mxn_cents: 90000 },
+    { sku: "gas_line_check", name_es: "Revisión instalación de gas (referencia)", name_en: "Gas line inspection (reference)", price_mxn_cents: 180000 },
+    { sku: "replace_stop_valve", name_es: "Cambio llave de paso", name_en: "Stop valve replacement", price_mxn_cents: 75000 },
+    { sku: "water_pressure", name_es: "Ajuste presión de agua", name_en: "Water pressure adjustment", price_mxn_cents: 65000 },
+    { sku: "travel_fee", name_es: "Visita fuera de zona / traslado", name_en: "Out-of-zone travel fee", price_mxn_cents: 35000 },
+    { sku: "emergency_surcharge", name_es: "Urgencia / fuera de horario", name_en: "Emergency / after-hours surcharge", price_mxn_cents: 90000 },
+    { sku: "materials_allowance", name_es: "Materiales (referencia — se confirma en visita)", name_en: "Materials (reference — confirmed on visit)", price_mxn_cents: 0 },
+  ];
+  return {
+    version: 1,
+    currency: "MXN",
+    items,
+    disclaimer_es: DEFAULT_PLUMBING_DISCLAIMER_ES,
+    disclaimer_en: DEFAULT_PLUMBING_DISCLAIMER_EN,
+  };
+}
+
 /** Sample menu for pet-care landing page (mix of common items). */
 export function petCareLandingSampleMenu(): ServiceMenu {
   const walk = dogWalkingStarterMenu().items.slice(0, 4);
@@ -642,6 +676,8 @@ export function starterMenuForProviderSlug(
       return petSittingStarterMenu();
     case "estetica_canina":
       return dogGroomingStarterMenu();
+    case "plomero":
+      return plumbingStarterMenu();
     default:
       return null;
   }

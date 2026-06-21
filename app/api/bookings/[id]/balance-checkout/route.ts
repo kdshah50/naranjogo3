@@ -41,7 +41,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     if (!(await listingSupportsSupplementPayments(supabase, String(booking.listing_id)))) {
       return NextResponse.json(
-        { error: "Este pago de saldo aplica solo a limpieza del hogar y servicios veterinarios" },
+        { error: "Este pago de saldo aplica solo a servicios con cotización en la app (limpieza, veterinaria, plomería)" },
         { status: 400 },
       );
     }
