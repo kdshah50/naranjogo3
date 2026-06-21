@@ -54,6 +54,11 @@ export const DEFAULT_DOG_GROOMING_DISCLAIMER_ES =
 export const DEFAULT_DOG_GROOMING_DISCLAIMER_EN =
   "Price may vary by breed, weight, coat condition, and behavior. Confirmed when the pet is assessed.";
 
+export const DEFAULT_ELECTRICIAN_DISCLAIMER_ES =
+  "El precio es referencia. Puede ajustarse después de la visita al domicilio, inspección del trabajo y materiales necesarios. Materiales se cotizan aparte salvo que el menú indique lo contrario.";
+export const DEFAULT_ELECTRICIAN_DISCLAIMER_EN =
+  "Prices are reference only. The final quote may change after an on-site visit, job inspection, and required materials. Materials are quoted separately unless the menu states otherwise.";
+
 export type ServiceMenuItem = {
   sku: string;
   name_es: string;
@@ -611,6 +616,35 @@ export function dogGroomingStarterMenu(): ServiceMenu {
   };
 }
 
+/** Pre-filled starter menu for electrician (San Miguel de Allende, neighborhood tier). */
+export function electricianStarterMenu(): ServiceMenu {
+  const items: ServiceMenuItem[] = [
+    { sku: "visit_diagnostic", name_es: "Visita de diagnóstico eléctrico", name_en: "Electrical diagnostic visit", price_mxn_cents: 50000 },
+    { sku: "outlet_repair", name_es: "Reparar contacto dañado", name_en: "Outlet repair", price_mxn_cents: 90000 },
+    { sku: "outlet_install", name_es: "Instalar contacto nuevo (mano de obra + pieza básica)", name_en: "New outlet install (labor + basic part)", price_mxn_cents: 35000 },
+    { sku: "switch_install", name_es: "Instalar apagador / dimmer", name_en: "Switch / dimmer install", price_mxn_cents: 35000 },
+    { sku: "light_fixture", name_es: "Instalar lámpara / plafón", name_en: "Light fixture install", price_mxn_cents: 85000 },
+    { sku: "ceiling_fan", name_es: "Instalar ventilador de techo", name_en: "Ceiling fan install", price_mxn_cents: 150000 },
+    { sku: "short_circuit", name_es: "Reparar cortocircuito (referencia)", name_en: "Short circuit repair (reference)", price_mxn_cents: 285000 },
+    { sku: "breaker_replace", name_es: "Cambio de interruptor termomagnético", name_en: "Breaker replacement", price_mxn_cents: 120000 },
+    { sku: "panel_inspection", name_es: "Revisión de tablero / seguridad", name_en: "Panel inspection / safety check", price_mxn_cents: 140000 },
+    { sku: "grounding_check", name_es: "Revisión de tierras físicas", name_en: "Grounding check", price_mxn_cents: 220000 },
+    { sku: "gfci_install", name_es: "Instalar contacto GFCI (cocina/baño)", name_en: "GFCI outlet install", price_mxn_cents: 95000 },
+    { sku: "doorbell", name_es: "Timbre / interfón (referencia)", name_en: "Doorbell / intercom (reference)", price_mxn_cents: 110000 },
+    { sku: "rewire_room_ref", name_es: "Recableado un cuarto (referencia)", name_en: "Single room rewire (reference)", price_mxn_cents: 850000 },
+    { sku: "travel_fee", name_es: "Visita fuera de zona / traslado", name_en: "Out-of-zone travel fee", price_mxn_cents: 35000 },
+    { sku: "emergency_surcharge", name_es: "Urgencia / fuera de horario", name_en: "Emergency / after-hours surcharge", price_mxn_cents: 90000 },
+    { sku: "materials_allowance", name_es: "Materiales (referencia — se confirma en visita)", name_en: "Materials (reference — confirmed on visit)", price_mxn_cents: 0 },
+  ];
+  return {
+    version: 1,
+    currency: "MXN",
+    items,
+    disclaimer_es: DEFAULT_ELECTRICIAN_DISCLAIMER_ES,
+    disclaimer_en: DEFAULT_ELECTRICIAN_DISCLAIMER_EN,
+  };
+}
+
 /** Sample menu for pet-care landing page (mix of common items). */
 export function petCareLandingSampleMenu(): ServiceMenu {
   const walk = dogWalkingStarterMenu().items.slice(0, 4);
@@ -642,6 +676,8 @@ export function starterMenuForProviderSlug(
       return petSittingStarterMenu();
     case "estetica_canina":
       return dogGroomingStarterMenu();
+    case "electricista":
+      return electricianStarterMenu();
     default:
       return null;
   }

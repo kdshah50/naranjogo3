@@ -49,7 +49,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     if (!(await listingSupportsSupplementPayments(supabase, String(booking.listing_id)))) {
       return NextResponse.json(
-        { error: "Propina en app aplica solo a limpieza del hogar y servicios veterinarios" },
+        { error: "Propina en app aplica solo a servicios con cotización en la app (limpieza, veterinaria, electricista)" },
         { status: 400 },
       );
     }
