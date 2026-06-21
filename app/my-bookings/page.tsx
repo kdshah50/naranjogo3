@@ -7,6 +7,8 @@ import GuaranteeBadge from "@/components/GuaranteeBadge";
 import RoutineHabitsCard from "@/components/RoutineHabitsCard";
 import BuyerRetentionPanel from "@/components/BuyerRetentionPanel";
 import HousekeepingBookingPayments from "@/components/HousekeepingBookingPayments";
+import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
+import { providerServiceSupportsSupplementPayments } from "@/lib/provider-services";
 import { useAppLang, useAppLangActions } from "@/hooks/use-app-lang";
 import { mergeBookingsListWithDetailTruth } from "@/lib/booking-client-detail-truth";
 import { mergeBookingListAvoidStatusRegression } from "@/lib/booking-list-merge";
@@ -872,11 +874,17 @@ function MyBookingsPageInner() {
                     </details>
                   )}
 
-                  {(b.pricing_base_mxn_cents != null && b.pricing_base_mxn_cents >= 100) ||
-                  b.appointment_at ? (
+                  {(() => {
+                    const providerSlug = inferProviderSlugFromListingTitle(b.listing_title);
+                    const showSupplement =
+                      providerServiceSupportsSupplementPayments(providerSlug) &&
+                      ((b.pricing_base_mxn_cents != null && b.pricing_base_mxn_cents >= 100) || b.appointment_at);
+                    if (!showSupplement) return null;
+                    return (
                     <HousekeepingBookingPayments
                       bookingId={b.id}
                       lang={lang}
+                      providerSlug={providerSlug}
                       pricingBaseMxnCents={b.pricing_base_mxn_cents}
                       commissionAmountCents={b.commission_amount_cents}
                       balanceDueMxnCents={b.balance_due_mxn_cents}
@@ -890,7 +898,8 @@ function MyBookingsPageInner() {
                       sellerConnectReady={Boolean(b.seller_connect_ready)}
                       onPaid={() => void loadData()}
                     />
-                  ) : null}
+                    );
+                  })()}
 
                   <div className="flex flex-wrap gap-2">
                     <Link

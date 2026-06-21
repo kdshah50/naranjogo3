@@ -160,7 +160,62 @@ export function checkoutFullConnectBlockedMessage(slug: string | null | undefine
       ? "For home cleaning, pay the deposit (platform fee) first. The service balance is settled after completion."
       : "Para limpieza del hogar, paga primero el depósito (tarifa de plataforma). El saldo del servicio se liquida al completar.";
   }
+  if (slug === VETERINARY_SERVICE) {
+    return lang === "en"
+      ? "For veterinary care, pay the deposit (platform fee) first. The visit balance is settled after the appointment is complete."
+      : "Para servicios veterinarios, paga primero el depósito (tarifa de plataforma). El saldo de la consulta se liquida al completar la cita.";
+  }
   return lang === "en"
     ? "Pay the deposit (platform fee) first. Full service payment in-app may be available after the job is complete."
     : "Paga primero el depósito (tarifa de plataforma). El pago completo del servicio en la app puede estar disponible al terminar.";
+}
+
+export function supplementSummaryTitle(slug: string | null | undefined, lang: "es" | "en"): string {
+  if (slug === VETERINARY_SERVICE) {
+    return lang === "en" ? "Visit summary" : "Resumen de la consulta";
+  }
+  if (slug === HOUSEKEEPING_SERVICE) {
+    return lang === "en" ? "Cleaning summary" : "Resumen de limpieza";
+  }
+  return lang === "en" ? "Service summary" : "Resumen del servicio";
+}
+
+export function supplementAppointmentLabel(slug: string | null | undefined, lang: "es" | "en"): string {
+  if (slug === VETERINARY_SERVICE) {
+    return lang === "en" ? "Agreed appointment" : "Cita acordada";
+  }
+  if (slug === HOUSEKEEPING_SERVICE) {
+    return lang === "en" ? "Agreed visit" : "Cita acordada";
+  }
+  return lang === "en" ? "Agreed date" : "Fecha acordada";
+}
+
+export function supplementTipDescription(slug: string | null | undefined, lang: "es" | "en"): string {
+  if (slug === VETERINARY_SERVICE) {
+    return lang === "en" ? "100% for your veterinarian" : "100% para tu veterinario";
+  }
+  if (slug === HOUSEKEEPING_SERVICE) {
+    return lang === "en" ? "100% for your cleaner" : "100% para tu proveedor de limpieza";
+  }
+  return lang === "en" ? "100% for your provider" : "100% para tu proveedor";
+}
+
+export function notifyBuyerSupplementBalanceDueTitle(slug: string | null | undefined, lang: "es" | "en"): string {
+  if (slug === VETERINARY_SERVICE) {
+    return lang === "en" ? "✅ *Visit completed — Naranjogo*" : "✅ *Consulta completada — Naranjogo*";
+  }
+  if (slug === HOUSEKEEPING_SERVICE) {
+    return lang === "en" ? "✅ *Cleaning completed — Naranjogo*" : "✅ *Limpieza completada — Naranjogo*";
+  }
+  return lang === "en" ? "✅ *Service completed — Naranjogo*" : "✅ *Servicio completado — Naranjogo*";
+}
+
+export function supplementCheckoutServiceLabel(slug: string | null | undefined, lang: "es" | "en"): string {
+  if (slug === VETERINARY_SERVICE) {
+    return lang === "en" ? "Veterinary visit" : "Consulta veterinaria";
+  }
+  if (slug === HOUSEKEEPING_SERVICE) {
+    return lang === "en" ? "Cleaning service" : "Limpieza del hogar";
+  }
+  return lang === "en" ? "Service" : "Servicio";
 }

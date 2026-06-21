@@ -15,7 +15,7 @@ import { appendBookingEvent, BookingLifecycleStatus, canTransitionLifecycle } fr
 import { appendListingChatBookingLifecycleNotice, type BookingChatLifecyclePhase } from "@/lib/listing-chat-booking-notices";
 import { getPublicAppUrl } from "@/lib/app-url";
 import { sellerCanManagePaidBookingRow } from "@/lib/seller-booking-access";
-import { computeBalanceDueCents, listingIsHousekeeping } from "@/lib/housekeeping-payments";
+import { computeBalanceDueCents, listingProviderSlug, listingSupportsSupplementPayments } from "@/lib/housekeeping-payments";
 import { notifyBuyerHousekeepingBalanceDue } from "@/lib/housekeeping-balance-notify";
 import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
 import { providerServiceRequiresQuoteAccept } from "@/lib/provider-services";
@@ -440,8 +440,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
 
     if (nextStatus === "completed") {
-      const isHk = await listingIsHousekeeping(supabase, String(booking.listing_id));
-      if (isHk) {
+      const supportsSupplement = await listingSupportsSupplementPayments(supabase, String(booking.listing_id));
+      if (supportsSupplement) {
         const balanceDue = computeBalanceDueCents({
           pricing_base_mxn_cents: booking.pricing_base_mxn_cents,
           commission_amount_cents: booking.commission_amount_cents,
@@ -542,7 +542,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       const balDue = Math.round(Number(updated?.balance_due_mxn_cents ?? 0));
       if (String(updated?.balance_payment_status ?? "") === "pending" && balDue >= 100) {
         try {
-          await notifyBuyerHousekeepingBalanceDue(supabase, rowId, balDue, "es");
+          const providerSlug = await listingProviderSlug(supabase, String(booking.listing_id));
+          await notifyBuyerHousekeepingBalanceDue(supabase, rowId, balDue, "es", providerSlug);
         } catch (e) {
           console.error("[bookings/:id] balance due WhatsApp (non-fatal)", e);
         }

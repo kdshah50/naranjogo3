@@ -102,11 +102,13 @@ export default function HeaderWeather({ lang }: { lang: Lang }) {
                 className="text-[10px] text-[#92400E] leading-tight truncate"
                 title={
                   es
-                    ? "Sin permiso de ubicación: mostramos el clima de Ciudad de México. Activa la ubicación para ver tu zona."
-                    : "Location off: showing Mexico City weather. Enable location for your area."
+                    ? "Sin permiso de ubicación: mostramos el clima de San Miguel de Allende. Activa la ubicación para ver tu zona."
+                    : "Location off: showing San Miguel de Allende weather. Enable location for your area."
                 }
               >
-                {es ? "Ubicación aprox. (CDMX) · activa ubicación para tu zona" : "Approx. (Mexico City) · enable location"}
+                {es
+                  ? "Ubicación aprox. (SMA) · activa ubicación para tu zona"
+                  : "Approx. (San Miguel de Allende) · enable location"}
               </p>
             )}
           </div>

@@ -2,10 +2,15 @@
 
 import { useState } from "react";
 import { balancePayable, tipPayable } from "@/lib/housekeeping-payments";
+import {
+  supplementAppointmentLabel,
+  supplementSummaryTitle,
+} from "@/lib/service-quote-vertical";
 
 type Props = {
   bookingId: string;
   lang: "es" | "en";
+  providerSlug?: string | null;
   pricingBaseMxnCents?: number | null;
   commissionAmountCents: number;
   balanceDueMxnCents?: number | null;
@@ -33,6 +38,7 @@ const TIP_PRESETS = [1500, 2000, 3000, 5000] as const;
 export default function HousekeepingBookingPayments({
   bookingId,
   lang,
+  providerSlug,
   pricingBaseMxnCents,
   commissionAmountCents,
   balanceDueMxnCents,
@@ -73,7 +79,7 @@ export default function HousekeepingBookingPayments({
   const t =
     lang === "es"
       ? {
-          title: "Resumen de limpieza",
+          title: supplementSummaryTitle(providerSlug, lang),
           quoteTotal: "Total cotizado",
           deposit: "Depósito pagado (plataforma)",
           balanceDue: "Saldo del servicio",
@@ -85,14 +91,14 @@ export default function HousekeepingBookingPayments({
           tipPreset: "Elegir propina",
           tipCustom: "Otra cantidad (MXN)",
           payTip: "Enviar propina",
-          appointment: "Cita acordada",
+          appointment: supplementAppointmentLabel(providerSlug, lang),
           connectBlock:
             "El proveedor aún no activó Stripe Connect en Naranjogo. Paga el saldo directamente al proveedor por WhatsApp hasta que active cobros en la app.",
           connectBlockShort:
             "El proveedor debe activar Stripe Connect en Mi perfil antes de que puedas pagar el saldo en la app. Coordina el pago por WhatsApp mientras tanto.",
         }
       : {
-          title: "Cleaning summary",
+          title: supplementSummaryTitle(providerSlug, lang),
           quoteTotal: "Quoted total",
           deposit: "Deposit paid (platform)",
           balanceDue: "Service balance",
@@ -104,7 +110,7 @@ export default function HousekeepingBookingPayments({
           tipPreset: "Choose a tip",
           tipCustom: "Custom amount (MXN)",
           payTip: "Send tip",
-          appointment: "Agreed visit",
+          appointment: supplementAppointmentLabel(providerSlug, lang),
           connectBlock:
             "Your provider has not enabled Stripe Connect on Naranjogo yet. Pay the service balance directly via WhatsApp until in-app payouts are active.",
           connectBlockShort:

@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getPublicAppUrl } from "@/lib/app-url";
 import { e164DigitsForWhatsAppRecipient } from "@/lib/phone";
+import { VETERINARY_SERVICE } from "@/lib/provider-services";
+import { notifyBuyerSupplementBalanceDueTitle } from "@/lib/service-quote-vertical";
 import { formatMxn } from "@/lib/service-quote";
 import { sendWhatsAppToE164Digits, isTwilioWhatsAppConfigured } from "@/lib/twilio";
 import { idMatchVariantsForIn } from "@/lib/auth-server";
@@ -10,6 +12,7 @@ export async function notifyBuyerHousekeepingBalanceDue(
   bookingId: string,
   balanceCents: number,
   lang: "es" | "en" = "es",
+  providerSlug?: string | null,
 ): Promise<void> {
   if (!isTwilioWhatsAppConfigured() || balanceCents < 100) return;
 
@@ -38,12 +41,15 @@ export async function notifyBuyerHousekeepingBalanceDue(
   const appUrl = getPublicAppUrl();
   const link = `${appUrl}/my-bookings?ticket=${encodeURIComponent(String(booking.ticket_code ?? bookingId))}`;
   const amt = formatMxn(balanceCents, lang);
-  const title = String(listing?.title_es ?? "Limpieza");
+  const title = String(
+    listing?.title_es ?? (providerSlug === VETERINARY_SERVICE ? "Veterinaria" : "Limpieza"),
+  );
+  const heading = notifyBuyerSupplementBalanceDueTitle(providerSlug, lang);
 
   const msg =
     lang === "en"
       ? [
-          "✅ *Cleaning completed — Naranjogo*",
+          heading,
           "",
           `Service: *${title}*`,
           `Balance due: *${amt}*`,
@@ -53,7 +59,7 @@ export async function notifyBuyerHousekeepingBalanceDue(
           link,
         ].join("\n")
       : [
-          "✅ *Limpieza completada — Naranjogo*",
+          heading,
           "",
           `Servicio: *${title}*`,
           `Saldo pendiente: *${amt}*`,

@@ -1,6 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
-import { HOUSEKEEPING_SERVICE } from "@/lib/provider-services";
+import {
+  HOUSEKEEPING_SERVICE,
+  providerServiceSupportsSupplementPayments,
+} from "@/lib/provider-services";
 import { sellerConnectPayoutReady } from "@/lib/stripe-connect-ready";
 
 export type HousekeepingPaymentRow = {
@@ -32,12 +35,28 @@ export function computeBalanceDueCents(row: {
   return Math.max(0, base - Math.max(0, deposit));
 }
 
+export async function listingProviderSlug(
+  supabase: SupabaseClient,
+  listingId: string,
+): Promise<string | null> {
+  const { data } = await supabase.from("listings").select("title_es").eq("id", listingId).maybeSingle();
+  return inferProviderSlugFromListingTitle(String(data?.title_es ?? ""));
+}
+
+export async function listingSupportsSupplementPayments(
+  supabase: SupabaseClient,
+  listingId: string,
+): Promise<boolean> {
+  const slug = await listingProviderSlug(supabase, listingId);
+  return providerServiceSupportsSupplementPayments(slug);
+}
+
+/** @deprecated Use listingSupportsSupplementPayments — kept for call-site clarity in HK-only docs. */
 export async function listingIsHousekeeping(
   supabase: SupabaseClient,
   listingId: string,
 ): Promise<boolean> {
-  const { data } = await supabase.from("listings").select("title_es").eq("id", listingId).maybeSingle();
-  return inferProviderSlugFromListingTitle(String(data?.title_es ?? "")) === HOUSEKEEPING_SERVICE;
+  return listingSupportsSupplementPayments(supabase, listingId);
 }
 
 export async function sellerHasConnectForHousekeeping(

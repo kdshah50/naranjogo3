@@ -138,6 +138,16 @@ export function providerServiceRequiresQuoteAccept(slug: string | null | undefin
   return typeof slug === "string" && PROVIDER_SERVICES_WITH_QUOTE_ACCEPT.has(slug);
 }
 
+/** Deposit + post-completion balance/tip in app (housekeeping + veterinary). */
+export const PROVIDER_SERVICES_WITH_SUPPLEMENT_PAYMENTS = new Set<string>([
+  HOUSEKEEPING_SERVICE,
+  VETERINARY_SERVICE,
+]);
+
+export function providerServiceSupportsSupplementPayments(slug: string | null | undefined): boolean {
+  return typeof slug === "string" && PROVIDER_SERVICES_WITH_SUPPLEMENT_PAYMENTS.has(slug);
+}
+
 export function providerServiceLabels(slangs: string[], lang: "es" | "en"): string {
   const labels = slangs
     .map((v) => PROVIDER_SERVICES.find((s) => s.value === v)?.[lang])

@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const DEFAULT_LAT = 19.432608;
-const DEFAULT_LON = -99.133209;
+/** San Miguel de Allende — default when browser location is unavailable. */
+const DEFAULT_LAT = 20.9144;
+const DEFAULT_LON = -100.7452;
+const DEFAULT_LABEL = "San Miguel de Allende, Guanajuato, MX";
 
 type WeatherDay = {
   date: string;
@@ -84,7 +86,11 @@ export async function GET(req: NextRequest) {
     label = geo.label;
     countryCode = geo.countryCode || "MX";
   } catch {
-    label = countryCode === "US" ? "United States" : "México";
+    label = isApproximate ? DEFAULT_LABEL : countryCode === "US" ? "United States" : "México";
+  }
+
+  if (isApproximate && !label) {
+    label = DEFAULT_LABEL;
   }
 
   const useFahrenheit = countryCode === "US";
