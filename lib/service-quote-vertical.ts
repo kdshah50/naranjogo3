@@ -3,6 +3,7 @@ import {
   HOUSEKEEPING_SERVICE,
   PET_SITTING_SERVICE,
   PET_WALKING_SERVICE,
+  HANDYMAN_SERVICE,
   VETERINARY_SERVICE,
 } from "@/lib/provider-services";
 
@@ -35,6 +36,9 @@ export function buyerMenuPickerTitle(slug: string | null | undefined, lang: "es"
   }
   if (slug === DOG_GROOMING_SERVICE) {
     return lang === "en" ? "What grooming do you need?" : "¿Qué estética canina necesitas?";
+  }
+  if (slug === HANDYMAN_SERVICE) {
+    return lang === "en" ? "What handyman work do you need?" : "¿Qué trabajo de mantenimiento del hogar necesitas?";
   }
   return lang === "en" ? "What services do you need?" : "¿Qué servicios necesitas?";
 }
@@ -75,6 +79,9 @@ export function serviceRequestNoun(slug: string | null | undefined, lang: "es" |
   if (slug === DOG_GROOMING_SERVICE) {
     return lang === "en" ? "grooming request" : "solicitud de estética";
   }
+  if (slug === HANDYMAN_SERVICE) {
+    return lang === "en" ? "handyman request" : "solicitud de mantenimiento del hogar";
+  }
   return lang === "en" ? "service request" : "solicitud de servicio";
 }
 
@@ -93,6 +100,11 @@ export function serviceDepositConfirmLine(slug: string | null | undefined, lang:
     return lang === "en"
       ? "Pay the deposit (platform fee) below to confirm your pet care booking."
       : "Paga el depósito (tarifa de plataforma) abajo para confirmar tu reserva de cuidado de mascotas.";
+  }
+  if (slug === HANDYMAN_SERVICE) {
+    return lang === "en"
+      ? "Pay the deposit (platform fee) below to confirm your handyman visit."
+      : "Paga el depósito (tarifa de plataforma) abajo para confirmar tu visita de mantenimiento del hogar.";
   }
   return lang === "en"
     ? "Pay the deposit (platform fee) below to confirm your service."
@@ -125,6 +137,7 @@ export function sellerRequestPanelEmoji(slug: string | null | undefined): string
   if (slug === HOUSEKEEPING_SERVICE) return "🧹";
   if (slug === VETERINARY_SERVICE) return "🐾";
   if (isPetCareSlug(slug)) return "🐕";
+  if (slug === HANDYMAN_SERVICE) return "🛠";
   return "📋";
 }
 
@@ -138,6 +151,9 @@ export function notifyQuoteSentTitle(slug: string | null | undefined, lang: "es"
   if (isPetCareSlug(slug)) {
     return lang === "en" ? "📋 *New pet care quote — Naranjogo*" : "📋 *Nueva cotización de cuidado de mascotas — Naranjogo*";
   }
+  if (slug === HANDYMAN_SERVICE) {
+    return lang === "en" ? "📋 *New handyman quote — Naranjogo*" : "📋 *Nueva cotización de mantenimiento del hogar — Naranjogo*";
+  }
   return lang === "en" ? "📋 *New service quote — Naranjogo*" : "📋 *Nueva cotización de servicio — Naranjogo*";
 }
 
@@ -150,6 +166,9 @@ export function notifyBuyerRequestTitle(slug: string | null | undefined, lang: "
   }
   if (isPetCareSlug(slug)) {
     return lang === "en" ? "🐕 *New pet care request — Naranjogo*" : "🐕 *Nueva solicitud de cuidado de mascotas — Naranjogo*";
+  }
+  if (slug === HANDYMAN_SERVICE) {
+    return lang === "en" ? "🛠 *New handyman request — Naranjogo*" : "🛠 *Nueva solicitud de mantenimiento del hogar — Naranjogo*";
   }
   return lang === "en" ? "📋 *New service request — Naranjogo*" : "📋 *Nueva solicitud de servicio — Naranjogo*";
 }
@@ -165,6 +184,11 @@ export function checkoutFullConnectBlockedMessage(slug: string | null | undefine
       ? "For veterinary care, pay the deposit (platform fee) first. The visit balance is settled after the appointment is complete."
       : "Para servicios veterinarios, paga primero el depósito (tarifa de plataforma). El saldo de la consulta se liquida al completar la cita.";
   }
+  if (slug === HANDYMAN_SERVICE) {
+    return lang === "en"
+      ? "For handyman, pay the deposit (platform fee) first. The job balance is settled after the work is complete."
+      : "Para mantenimiento del hogar, paga primero el depósito (tarifa de plataforma). El saldo del trabajo se liquida al completar.";
+  }
   return lang === "en"
     ? "Pay the deposit (platform fee) first. Full service payment in-app may be available after the job is complete."
     : "Paga primero el depósito (tarifa de plataforma). El pago completo del servicio en la app puede estar disponible al terminar.";
@@ -176,6 +200,9 @@ export function supplementSummaryTitle(slug: string | null | undefined, lang: "e
   }
   if (slug === HOUSEKEEPING_SERVICE) {
     return lang === "en" ? "Cleaning summary" : "Resumen de limpieza";
+  }
+  if (slug === HANDYMAN_SERVICE) {
+    return lang === "en" ? "Handyman job summary" : "Resumen de mantenimiento del hogar";
   }
   return lang === "en" ? "Service summary" : "Resumen del servicio";
 }
@@ -197,6 +224,9 @@ export function supplementTipDescription(slug: string | null | undefined, lang: 
   if (slug === HOUSEKEEPING_SERVICE) {
     return lang === "en" ? "100% for your cleaner" : "100% para tu proveedor de limpieza";
   }
+  if (slug === HANDYMAN_SERVICE) {
+    return lang === "en" ? "100% for your handyman" : "100% para tu técnico de mantenimiento";
+  }
   return lang === "en" ? "100% for your provider" : "100% para tu proveedor";
 }
 
@@ -207,6 +237,9 @@ export function notifyBuyerSupplementBalanceDueTitle(slug: string | null | undef
   if (slug === HOUSEKEEPING_SERVICE) {
     return lang === "en" ? "✅ *Cleaning completed — Naranjogo*" : "✅ *Limpieza completada — Naranjogo*";
   }
+  if (slug === HANDYMAN_SERVICE) {
+    return lang === "en" ? "✅ *Handyman job completed — Naranjogo*" : "✅ *Trabajo de mantenimiento del hogar completado — Naranjogo*";
+  }
   return lang === "en" ? "✅ *Service completed — Naranjogo*" : "✅ *Servicio completado — Naranjogo*";
 }
 
@@ -216,6 +249,9 @@ export function supplementCheckoutServiceLabel(slug: string | null | undefined, 
   }
   if (slug === HOUSEKEEPING_SERVICE) {
     return lang === "en" ? "Cleaning service" : "Limpieza del hogar";
+  }
+  if (slug === HANDYMAN_SERVICE) {
+    return lang === "en" ? "Handyman service" : "Servicio de mantenimiento del hogar";
   }
   return lang === "en" ? "Service" : "Servicio";
 }

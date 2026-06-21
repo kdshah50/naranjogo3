@@ -54,6 +54,11 @@ export const DEFAULT_DOG_GROOMING_DISCLAIMER_ES =
 export const DEFAULT_DOG_GROOMING_DISCLAIMER_EN =
   "Price may vary by breed, weight, coat condition, and behavior. Confirmed when the pet is assessed.";
 
+export const DEFAULT_HANDYMAN_DISCLAIMER_ES =
+  "El precio es referencia. Puede ajustarse después de la visita al domicilio, inspección del trabajo y materiales necesarios. Materiales se cotizan aparte salvo que el menú indique lo contrario.";
+export const DEFAULT_HANDYMAN_DISCLAIMER_EN =
+  "Prices are reference only. The final quote may change after an on-site visit, job inspection, and required materials. Materials are quoted separately unless the menu states otherwise.";
+
 export type ServiceMenuItem = {
   sku: string;
   name_es: string;
@@ -611,6 +616,38 @@ export function dogGroomingStarterMenu(): ServiceMenu {
   };
 }
 
+/** Pre-filled starter menu for home maintenance / handyman (San Miguel de Allende). */
+export function handymanStarterMenu(): ServiceMenu {
+  const items: ServiceMenuItem[] = [
+    { sku: "visit_diagnostic", name_es: "Visita de evaluación / cotización", name_en: "Assessment / quote visit", price_mxn_cents: 45000 },
+    { sku: "hourly_labor", name_es: "Mano de obra por hora (referencia)", name_en: "Hourly labor (reference)", price_mxn_cents: 40000 },
+    { sku: "min_service_call", name_es: "Servicio mínimo (hasta 1 h)", name_en: "Minimum service call (up to 1 hr)", price_mxn_cents: 65000 },
+    { sku: "door_adjust", name_es: "Ajuste / alineación de puerta", name_en: "Door adjust / align", price_mxn_cents: 75000 },
+    { sku: "lock_change", name_es: "Cambio de chapas / cerradura", name_en: "Lock / latch change", price_mxn_cents: 90000 },
+    { sku: "drywall_patch_small", name_es: "Reparación drywall pequeña", name_en: "Small drywall patch", price_mxn_cents: 95000 },
+    { sku: "drywall_patch_medium", name_es: "Reparación drywall mediana", name_en: "Medium drywall patch", price_mxn_cents: 160000 },
+    { sku: "paint_touchup_room", name_es: "Retoque de pintura (cuarto pequeño)", name_en: "Paint touch-up (small room)", price_mxn_cents: 150000 },
+    { sku: "paint_wall_single", name_es: "Pintar un muro (referencia)", name_en: "Single wall paint (reference)", price_mxn_cents: 120000 },
+    { sku: "caulking_bath", name_es: "Silicona / calafateo baño o cocina", name_en: "Bathroom / kitchen caulking", price_mxn_cents: 90000 },
+    { sku: "tile_grout_repair", name_es: "Reparación de juntas (referencia)", name_en: "Grout repair (reference)", price_mxn_cents: 120000 },
+    { sku: "shelf_install", name_es: "Instalar repisas / soporte", name_en: "Shelf / bracket install", price_mxn_cents: 75000 },
+    { sku: "tv_mount", name_es: "Soporte TV en pared", name_en: "TV wall mount", price_mxn_cents: 110000 },
+    { sku: "curtain_rods", name_es: "Instalar cortineros", name_en: "Curtain rod install", price_mxn_cents: 65000 },
+    { sku: "blind_repair", name_es: "Reparación persiana", name_en: "Blind repair", price_mxn_cents: 55000 },
+    { sku: "furniture_assembly", name_es: "Ensamble mueble (referencia)", name_en: "Furniture assembly (reference)", price_mxn_cents: 85000 },
+    { sku: "screen_door", name_es: "Ajuste mosquitero / puerta", name_en: "Screen door adjust", price_mxn_cents: 70000 },
+    { sku: "travel_fee", name_es: "Visita fuera de zona / traslado", name_en: "Out-of-zone travel fee", price_mxn_cents: 30000 },
+    { sku: "materials_allowance", name_es: "Materiales (referencia — se confirma en visita)", name_en: "Materials (reference — confirmed on visit)", price_mxn_cents: 0 },
+  ];
+  return {
+    version: 1,
+    currency: "MXN",
+    items,
+    disclaimer_es: DEFAULT_HANDYMAN_DISCLAIMER_ES,
+    disclaimer_en: DEFAULT_HANDYMAN_DISCLAIMER_EN,
+  };
+}
+
 /** Sample menu for pet-care landing page (mix of common items). */
 export function petCareLandingSampleMenu(): ServiceMenu {
   const walk = dogWalkingStarterMenu().items.slice(0, 4);
@@ -642,6 +679,8 @@ export function starterMenuForProviderSlug(
       return petSittingStarterMenu();
     case "estetica_canina":
       return dogGroomingStarterMenu();
+    case "mantenimiento_hogar":
+      return handymanStarterMenu();
     default:
       return null;
   }

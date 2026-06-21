@@ -72,6 +72,7 @@ export const PROVIDER_SERVICES = [
   { value: "mecanico", es: "Mecánico", en: "Mechanic" },
   { value: "pintor", es: "Pintor", en: "Painter" },
   { value: "jardinero", es: "Jardinero", en: "Gardener" },
+  { value: "mantenimiento_hogar", es: "Mantenimiento del hogar / Handyman", en: "Home Maintenance / Handyman" },
   { value: "limpieza", es: "Limpieza del hogar", en: "House Cleaning" },
   { value: "ac", es: "Técnico AC", en: "AC Technician" },
   { value: "dentista", es: "Dentista", en: "Dentist" },
@@ -105,6 +106,7 @@ export const HOUSEKEEPING_SERVICE = "limpieza";
 export const PET_WALKING_SERVICE = "paseador";
 export const PET_SITTING_SERVICE = "pet_sitting";
 export const DOG_GROOMING_SERVICE = "estetica_canina";
+export const HANDYMAN_SERVICE = "mantenimiento_hogar";
 
 export const PET_CARE_SERVICES = new Set<string>([
   PET_WALKING_SERVICE,
@@ -119,6 +121,7 @@ export const PROVIDER_SERVICES_WITH_MENU = new Set<string>([
   PET_WALKING_SERVICE,
   PET_SITTING_SERVICE,
   DOG_GROOMING_SERVICE,
+  HANDYMAN_SERVICE,
 ]);
 
 export function providerServiceSupportsMenu(slug: string | null | undefined): boolean {
@@ -132,16 +135,18 @@ export const PROVIDER_SERVICES_WITH_QUOTE_ACCEPT = new Set<string>([
   PET_WALKING_SERVICE,
   PET_SITTING_SERVICE,
   DOG_GROOMING_SERVICE,
+  HANDYMAN_SERVICE,
 ]);
 
 export function providerServiceRequiresQuoteAccept(slug: string | null | undefined): boolean {
   return typeof slug === "string" && PROVIDER_SERVICES_WITH_QUOTE_ACCEPT.has(slug);
 }
 
-/** Deposit + post-completion balance/tip in app (housekeeping + veterinary). */
+/** Deposit + post-completion balance/tip in app (housekeeping, veterinary, home trades). */
 export const PROVIDER_SERVICES_WITH_SUPPLEMENT_PAYMENTS = new Set<string>([
   HOUSEKEEPING_SERVICE,
   VETERINARY_SERVICE,
+  HANDYMAN_SERVICE,
 ]);
 
 export function providerServiceSupportsSupplementPayments(slug: string | null | undefined): boolean {
