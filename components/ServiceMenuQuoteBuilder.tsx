@@ -201,7 +201,7 @@ export default function ServiceMenuQuoteBuilder({
     .filter((x) => x.qty > 0);
 
   const applyDisabled = disabled || totalCents <= 0 || busy;
-  const officialQuoteFlow = Boolean(onSendOfficialQuote && quoteLayout === "housekeeping");
+  const officialQuoteFlow = Boolean(onSendOfficialQuote);
 
   const applyToAgreedPrice = () => {
     onApplyTotal?.(String(totalCents / 100));
@@ -646,7 +646,7 @@ export default function ServiceMenuQuoteBuilder({
               : "Usa el botón verde para que el cliente reciba Aceptar / Rechazar y WhatsApp — no «Enviar al chat»."}
           </p>
         ) : null}
-        {variant === "seller" && onSendOfficialQuote && quoteLayout === "housekeeping" ? (
+        {variant === "seller" && onSendOfficialQuote ? (
           <button
             type="button"
             onClick={() => void sendOfficialQuote()}
