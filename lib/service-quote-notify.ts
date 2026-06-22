@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getPublicAppUrl } from "@/lib/app-url";
 import { formatMxn, type ServiceQuoteStatus } from "@/lib/service-quote";
-import { notifyBuyerRequestTitle, notifyQuoteSentTitle } from "@/lib/service-quote-vertical";
+import { notifyBuyerRequestTitle, notifyQuoteSentTitle, notifyBuyerRequestConfirmationTitle, notifyBuyerRequestConfirmationLine } from "@/lib/service-quote-vertical";
 import { phoneDigitsForAccountPool } from "@/lib/user-phone-notify";
 import { sendWhatsAppToE164Digits, isTwilioWhatsAppConfigured } from "@/lib/twilio";
 
@@ -116,6 +116,61 @@ export async function notifySellerBuyerServiceRequest(opts: {
   if (!ok) {
     console.error("[service-quote-notify] seller request WhatsApp send failed", {
       sellerIdTail: String(opts.sellerId).slice(-8),
+    });
+  }
+}
+
+/** Confirmation to the buyer right after they submit a structured service request. */
+export async function notifyBuyerServiceRequestSent(opts: {
+  supabase: SupabaseClient;
+  buyerId: string;
+  listingId: string;
+  listingTitle: string;
+  conversationId: string;
+  totalCents: number;
+  lang?: "es" | "en";
+  providerSlug?: string | null;
+}): Promise<void> {
+  if (!isTwilioWhatsAppConfigured()) return;
+  const digits = await loadUserPhone(opts.supabase, opts.buyerId);
+  if (!digits) return;
+
+  const lang = opts.lang ?? "es";
+  const appUrl = getPublicAppUrl();
+  const link = `${appUrl}/listing/${opts.listingId}?chat=${opts.conversationId}`;
+  const total = formatMxn(opts.totalCents, lang);
+  const title = notifyBuyerRequestConfirmationTitle(opts.providerSlug, lang);
+  const bodyLine = notifyBuyerRequestConfirmationLine(opts.providerSlug, lang);
+
+  const msg =
+    lang === "en"
+      ? [
+          title,
+          "",
+          `Service: *${opts.listingTitle}*`,
+          `Estimated: *${total}*`,
+          "",
+          bodyLine,
+          "",
+          "Track status in the app:",
+          link,
+        ].join("\n")
+      : [
+          title,
+          "",
+          `Servicio: *${opts.listingTitle}*`,
+          `Estimado: *${total}*`,
+          "",
+          bodyLine,
+          "",
+          "Sigue el estado en la app:",
+          link,
+        ].join("\n");
+
+  const ok = await sendWhatsAppToE164Digits(digits, msg);
+  if (!ok) {
+    console.error("[service-quote-notify] buyer request confirmation WhatsApp send failed", {
+      buyerIdTail: String(opts.buyerId).slice(-8),
     });
   }
 }

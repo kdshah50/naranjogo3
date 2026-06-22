@@ -27,7 +27,7 @@ import {
   replicateServiceQuoteGateToBuyerPool,
   resolveConversationForBuyer,
 } from "@/lib/service-quote-server";
-import { notifySellerBuyerServiceRequest } from "@/lib/service-quote-notify";
+import { notifySellerBuyerServiceRequest, notifyBuyerServiceRequestSent } from "@/lib/service-quote-notify";
 import { quoteLayoutForSlug } from "@/lib/service-quote-vertical";
 import { expandUserAccountIdPool, userIsListingSellerAccount } from "@/lib/user-account-pool";
 
@@ -212,6 +212,21 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       });
     } catch (e) {
       console.error("[service-quote/request] seller WhatsApp failed (non-fatal)", e);
+    }
+
+    try {
+      await notifyBuyerServiceRequestSent({
+        supabase,
+        buyerId: conv.buyer_id,
+        listingId,
+        listingTitle: String(listing.title_es ?? "Servicio"),
+        conversationId: conv.id,
+        totalCents,
+        lang,
+        providerSlug: slug,
+      });
+    } catch (e) {
+      console.error("[service-quote/request] buyer WhatsApp failed (non-fatal)", e);
     }
 
     return NextResponse.json({

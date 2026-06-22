@@ -154,6 +154,63 @@ export function notifyBuyerRequestTitle(slug: string | null | undefined, lang: "
   return lang === "en" ? "📋 *New service request — Naranjogo*" : "📋 *Nueva solicitud de servicio — Naranjogo*";
 }
 
+/** WhatsApp to buyer immediately after they submit a structured service request. */
+export function notifyBuyerRequestConfirmationTitle(
+  slug: string | null | undefined,
+  lang: "es" | "en",
+): string {
+  if (slug === DOG_GROOMING_SERVICE) {
+    return lang === "en" ? "✅ *Grooming request sent — Naranjogo*" : "✅ *Solicitud de estética enviada — Naranjogo*";
+  }
+  if (slug === HOUSEKEEPING_SERVICE) {
+    return lang === "en" ? "✅ *Cleaning request sent — Naranjogo*" : "✅ *Solicitud de limpieza enviada — Naranjogo*";
+  }
+  if (slug === VETERINARY_SERVICE) {
+    return lang === "en" ? "✅ *Consultation request sent — Naranjogo*" : "✅ *Solicitud de consulta enviada — Naranjogo*";
+  }
+  if (slug === PET_WALKING_SERVICE) {
+    return lang === "en" ? "✅ *Dog walking request sent — Naranjogo*" : "✅ *Solicitud de paseo enviada — Naranjogo*";
+  }
+  if (slug === PET_SITTING_SERVICE) {
+    return lang === "en" ? "✅ *Pet sitting request sent — Naranjogo*" : "✅ *Solicitud de cuidado enviada — Naranjogo*";
+  }
+  return lang === "en" ? "✅ *Request sent — Naranjogo*" : "✅ *Solicitud enviada — Naranjogo*";
+}
+
+export function notifyBuyerRequestConfirmationLine(
+  slug: string | null | undefined,
+  lang: "es" | "en",
+): string {
+  if (slug === DOG_GROOMING_SERVICE) {
+    return lang === "en"
+      ? "We notified your groomer. We'll WhatsApp you when they send a quote."
+      : "Avisamos a tu esteticista. Te escribiremos por WhatsApp cuando envíe la cotización.";
+  }
+  if (slug === HOUSEKEEPING_SERVICE) {
+    return lang === "en"
+      ? "We notified your cleaner. We'll WhatsApp you when they send a quote."
+      : "Avisamos a tu equipo de limpieza. Te escribiremos por WhatsApp cuando envíe la cotización.";
+  }
+  if (slug === VETERINARY_SERVICE) {
+    return lang === "en"
+      ? "We notified your vet. We'll WhatsApp you when they send a quote."
+      : "Avisamos a tu veterinario. Te escribiremos por WhatsApp cuando envíe la cotización.";
+  }
+  if (slug === PET_WALKING_SERVICE) {
+    return lang === "en"
+      ? "We notified your dog walker. We'll WhatsApp you when they send a quote."
+      : "Avisamos a tu paseador. Te escribiremos por WhatsApp cuando envíe la cotización.";
+  }
+  if (slug === PET_SITTING_SERVICE) {
+    return lang === "en"
+      ? "We notified your pet sitter. We'll WhatsApp you when they send a quote."
+      : "Avisamos a tu cuidador. Te escribiremos por WhatsApp cuando envíe la cotización.";
+  }
+  return lang === "en"
+    ? "We notified your provider. We'll WhatsApp you when they send a quote."
+    : "Avisamos a tu proveedor. Te escribiremos por WhatsApp cuando envíe la cotización.";
+}
+
 export function checkoutFullConnectBlockedMessage(slug: string | null | undefined, lang: "es" | "en"): string {
   if (slug === HOUSEKEEPING_SERVICE) {
     return lang === "en"
