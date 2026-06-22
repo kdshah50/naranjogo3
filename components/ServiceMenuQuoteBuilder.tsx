@@ -99,6 +99,8 @@ export default function ServiceMenuQuoteBuilder({
   const [serviceAddress, setServiceAddress] = useState("");
   const [preferredAtLocal, setPreferredAtLocal] = useState("");
   const [contactErr, setContactErr] = useState("");
+  const [submitErr, setSubmitErr] = useState("");
+  const contactSectionRef = useRef<HTMLDivElement | null>(null);
   const cartPrefillAppliedRef = useRef(false);
 
   useEffect(() => {
@@ -257,11 +259,13 @@ export default function ServiceMenuQuoteBuilder({
 
   const submitRequest = async () => {
     if (!onSubmitRequest || selectedLines.length === 0) return;
+    setSubmitErr("");
     if (variant === "buyer" && requiresBuyerContact) {
       const contact = buildBuyerContact();
       const err = contact ? validateBuyerQuoteContact(contact, lang) : lang === "en" ? "Complete your contact details." : "Completa tus datos de contacto.";
       if (err) {
         setContactErr(err);
+        contactSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
         return;
       }
       setContactErr("");
@@ -278,6 +282,14 @@ export default function ServiceMenuQuoteBuilder({
       setWhatsappPhone("");
       setServiceAddress("");
       setPreferredAtLocal("");
+    } catch (e: unknown) {
+      const msg =
+        e instanceof Error
+          ? e.message
+          : lang === "en"
+            ? "Could not send request. Try again."
+            : "No se pudo enviar la solicitud. Intenta de nuevo.";
+      setSubmitErr(msg);
     } finally {
       setBusy(false);
     }
@@ -343,7 +355,10 @@ export default function ServiceMenuQuoteBuilder({
             : "Arma un presupuesto desde tu menú"}
       </p>
       {variant === "buyer" && requiresBuyerContact && (
-        <div className="rounded-lg border border-[#BFDBFE] bg-[#EFF6FF] p-2 space-y-2">
+        <div
+          ref={contactSectionRef}
+          className="rounded-lg border border-[#BFDBFE] bg-[#EFF6FF] p-2 space-y-2"
+        >
           <p className="text-[10px] font-bold text-[#1E40AF]">
             {lang === "en" ? "Your contact details (required before quote)" : "Tus datos de contacto (obligatorio antes de la cotización)"}
           </p>
@@ -674,6 +689,11 @@ export default function ServiceMenuQuoteBuilder({
                 : "Enviar solicitud al proveedor"}
           </button>
         ) : null}
+      {submitErr ? (
+        <p className="text-[11px] font-semibold text-red-600 leading-snug" role="alert">
+          {submitErr}
+        </p>
+      ) : null}
         {variant === "seller" && onApplyTotal && !officialQuoteFlow ? (
           <button
             type="button"
