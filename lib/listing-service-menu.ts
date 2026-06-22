@@ -232,7 +232,7 @@ export function resolveListingServiceMenu(
   providerSlug: string | null | undefined,
 ): ParsedServiceMenu {
   const parsed = parseServiceMenu(raw);
-  if (parsed.ok) return parsed;
+  if (parsed.ok && hasServiceMenu(parsed.menu)) return parsed;
   const starter = starterMenuForProviderSlug(providerSlug);
   if (hasServiceMenu(starter)) return { ok: true, menu: starter };
   return parsed;
