@@ -16,7 +16,11 @@ export type BuyerQuoteContact = {
 };
 
 export function normalizeContactPhoneInput(raw: string): string | null {
-  const digits = canonicalizeAuthPhone(normalizeAuthPhone(String(raw ?? "").trim()));
+  let digits = canonicalizeAuthPhone(normalizeAuthPhone(String(raw ?? "").trim()));
+  // Bare 10-digit national numbers → Mexico +52 (primary market), same as auth signup.
+  if (/^\d{10}$/.test(digits)) {
+    digits = `52${digits}`;
+  }
   return isValidAuthPhone(digits) ? digits : null;
 }
 

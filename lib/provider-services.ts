@@ -138,10 +138,13 @@ export function providerServiceRequiresQuoteAccept(slug: string | null | undefin
   return typeof slug === "string" && PROVIDER_SERVICES_WITH_QUOTE_ACCEPT.has(slug);
 }
 
-/** Deposit + post-completion balance/tip in app (housekeeping + veterinary). */
+/** Deposit + post-completion balance/tip in app (housekeeping, veterinary, pet care). */
 export const PROVIDER_SERVICES_WITH_SUPPLEMENT_PAYMENTS = new Set<string>([
   HOUSEKEEPING_SERVICE,
   VETERINARY_SERVICE,
+  PET_WALKING_SERVICE,
+  PET_SITTING_SERVICE,
+  DOG_GROOMING_SERVICE,
 ]);
 
 export function providerServiceSupportsSupplementPayments(slug: string | null | undefined): boolean {

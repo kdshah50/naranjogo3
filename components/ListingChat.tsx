@@ -786,7 +786,13 @@ export default function ListingChat({
   };
 
   const submitCleaningRequest = async (payload: QuoteBuilderPayload) => {
-    if (role !== "buyer") return;
+    if (role !== "buyer") {
+      throw new Error(
+        lang === "en"
+          ? "Log in as a buyer (not the provider) to send a service request."
+          : "Inicia sesión como comprador (no como proveedor) para enviar una solicitud.",
+      );
+    }
     setError("");
     const r = await fetch(`/api/listings/${encodeURIComponent(listingId)}/service-booking/quote/request`, {
       method: "POST",

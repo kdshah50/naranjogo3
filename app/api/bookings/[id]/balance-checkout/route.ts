@@ -10,7 +10,7 @@ import { supplementCheckoutServiceLabel } from "@/lib/service-quote-vertical";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-/** POST — buyer pays job balance after provider marks completed (housekeeping + veterinary). */
+/** POST — buyer pays job balance after provider marks completed (quote-gated services). */
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const userId = await getUserIdFromRequest(req);
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     if (!(await listingSupportsSupplementPayments(supabase, String(booking.listing_id)))) {
       return NextResponse.json(
-        { error: "Este pago de saldo aplica solo a limpieza del hogar y servicios veterinarios" },
+        { error: "Este pago de saldo aplica solo a servicios con cotización en la app (limpieza, veterinaria, cuidado de mascotas)" },
         { status: 400 },
       );
     }

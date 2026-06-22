@@ -154,6 +154,63 @@ export function notifyBuyerRequestTitle(slug: string | null | undefined, lang: "
   return lang === "en" ? "📋 *New service request — Naranjogo*" : "📋 *Nueva solicitud de servicio — Naranjogo*";
 }
 
+/** WhatsApp to buyer immediately after they submit a structured service request. */
+export function notifyBuyerRequestConfirmationTitle(
+  slug: string | null | undefined,
+  lang: "es" | "en",
+): string {
+  if (slug === DOG_GROOMING_SERVICE) {
+    return lang === "en" ? "✅ *Grooming request sent — Naranjogo*" : "✅ *Solicitud de estética enviada — Naranjogo*";
+  }
+  if (slug === HOUSEKEEPING_SERVICE) {
+    return lang === "en" ? "✅ *Cleaning request sent — Naranjogo*" : "✅ *Solicitud de limpieza enviada — Naranjogo*";
+  }
+  if (slug === VETERINARY_SERVICE) {
+    return lang === "en" ? "✅ *Consultation request sent — Naranjogo*" : "✅ *Solicitud de consulta enviada — Naranjogo*";
+  }
+  if (slug === PET_WALKING_SERVICE) {
+    return lang === "en" ? "✅ *Dog walking request sent — Naranjogo*" : "✅ *Solicitud de paseo enviada — Naranjogo*";
+  }
+  if (slug === PET_SITTING_SERVICE) {
+    return lang === "en" ? "✅ *Pet sitting request sent — Naranjogo*" : "✅ *Solicitud de cuidado enviada — Naranjogo*";
+  }
+  return lang === "en" ? "✅ *Request sent — Naranjogo*" : "✅ *Solicitud enviada — Naranjogo*";
+}
+
+export function notifyBuyerRequestConfirmationLine(
+  slug: string | null | undefined,
+  lang: "es" | "en",
+): string {
+  if (slug === DOG_GROOMING_SERVICE) {
+    return lang === "en"
+      ? "We notified your groomer. We'll WhatsApp you when they send a quote."
+      : "Avisamos a tu esteticista. Te escribiremos por WhatsApp cuando envíe la cotización.";
+  }
+  if (slug === HOUSEKEEPING_SERVICE) {
+    return lang === "en"
+      ? "We notified your cleaner. We'll WhatsApp you when they send a quote."
+      : "Avisamos a tu equipo de limpieza. Te escribiremos por WhatsApp cuando envíe la cotización.";
+  }
+  if (slug === VETERINARY_SERVICE) {
+    return lang === "en"
+      ? "We notified your vet. We'll WhatsApp you when they send a quote."
+      : "Avisamos a tu veterinario. Te escribiremos por WhatsApp cuando envíe la cotización.";
+  }
+  if (slug === PET_WALKING_SERVICE) {
+    return lang === "en"
+      ? "We notified your dog walker. We'll WhatsApp you when they send a quote."
+      : "Avisamos a tu paseador. Te escribiremos por WhatsApp cuando envíe la cotización.";
+  }
+  if (slug === PET_SITTING_SERVICE) {
+    return lang === "en"
+      ? "We notified your pet sitter. We'll WhatsApp you when they send a quote."
+      : "Avisamos a tu cuidador. Te escribiremos por WhatsApp cuando envíe la cotización.";
+  }
+  return lang === "en"
+    ? "We notified your provider. We'll WhatsApp you when they send a quote."
+    : "Avisamos a tu proveedor. Te escribiremos por WhatsApp cuando envíe la cotización.";
+}
+
 export function checkoutFullConnectBlockedMessage(slug: string | null | undefined, lang: "es" | "en"): string {
   if (slug === HOUSEKEEPING_SERVICE) {
     return lang === "en"
@@ -164,6 +221,21 @@ export function checkoutFullConnectBlockedMessage(slug: string | null | undefine
     return lang === "en"
       ? "For veterinary care, pay the deposit (platform fee) first. The visit balance is settled after the appointment is complete."
       : "Para servicios veterinarios, paga primero el depósito (tarifa de plataforma). El saldo de la consulta se liquida al completar la cita.";
+  }
+  if (slug === PET_WALKING_SERVICE) {
+    return lang === "en"
+      ? "For dog walking, pay the deposit (platform fee) first. The walk balance is settled after the service is complete."
+      : "Para paseo de perros, paga primero el depósito (tarifa de plataforma). El saldo del paseo se liquida al completar el servicio.";
+  }
+  if (slug === PET_SITTING_SERVICE) {
+    return lang === "en"
+      ? "For pet sitting, pay the deposit (platform fee) first. The balance is settled after the stay is complete."
+      : "Para pet sitting, paga primero el depósito (tarifa de plataforma). El saldo se liquida al terminar el cuidado.";
+  }
+  if (slug === DOG_GROOMING_SERVICE) {
+    return lang === "en"
+      ? "For grooming, pay the deposit (platform fee) first. The service balance is settled after grooming is complete."
+      : "Para estética canina, paga primero el depósito (tarifa de plataforma). El saldo se liquida al completar el servicio.";
   }
   return lang === "en"
     ? "Pay the deposit (platform fee) first. Full service payment in-app may be available after the job is complete."
@@ -176,6 +248,15 @@ export function supplementSummaryTitle(slug: string | null | undefined, lang: "e
   }
   if (slug === HOUSEKEEPING_SERVICE) {
     return lang === "en" ? "Cleaning summary" : "Resumen de limpieza";
+  }
+  if (slug === PET_WALKING_SERVICE) {
+    return lang === "en" ? "Walk summary" : "Resumen del paseo";
+  }
+  if (slug === PET_SITTING_SERVICE) {
+    return lang === "en" ? "Pet sitting summary" : "Resumen del cuidado";
+  }
+  if (slug === DOG_GROOMING_SERVICE) {
+    return lang === "en" ? "Grooming summary" : "Resumen de estética";
   }
   return lang === "en" ? "Service summary" : "Resumen del servicio";
 }
@@ -197,6 +278,15 @@ export function supplementTipDescription(slug: string | null | undefined, lang: 
   if (slug === HOUSEKEEPING_SERVICE) {
     return lang === "en" ? "100% for your cleaner" : "100% para tu proveedor de limpieza";
   }
+  if (slug === PET_WALKING_SERVICE) {
+    return lang === "en" ? "100% for your dog walker" : "100% para tu paseador";
+  }
+  if (slug === PET_SITTING_SERVICE) {
+    return lang === "en" ? "100% for your pet sitter" : "100% para tu cuidador de mascotas";
+  }
+  if (slug === DOG_GROOMING_SERVICE) {
+    return lang === "en" ? "100% for your groomer" : "100% para tu estilista canino";
+  }
   return lang === "en" ? "100% for your provider" : "100% para tu proveedor";
 }
 
@@ -207,6 +297,15 @@ export function notifyBuyerSupplementBalanceDueTitle(slug: string | null | undef
   if (slug === HOUSEKEEPING_SERVICE) {
     return lang === "en" ? "✅ *Cleaning completed — Naranjogo*" : "✅ *Limpieza completada — Naranjogo*";
   }
+  if (slug === PET_WALKING_SERVICE) {
+    return lang === "en" ? "✅ *Walk completed — Naranjogo*" : "✅ *Paseo completado — Naranjogo*";
+  }
+  if (slug === PET_SITTING_SERVICE) {
+    return lang === "en" ? "✅ *Pet sitting completed — Naranjogo*" : "✅ *Cuidado completado — Naranjogo*";
+  }
+  if (slug === DOG_GROOMING_SERVICE) {
+    return lang === "en" ? "✅ *Grooming completed — Naranjogo*" : "✅ *Estética completada — Naranjogo*";
+  }
   return lang === "en" ? "✅ *Service completed — Naranjogo*" : "✅ *Servicio completado — Naranjogo*";
 }
 
@@ -216,6 +315,15 @@ export function supplementCheckoutServiceLabel(slug: string | null | undefined, 
   }
   if (slug === HOUSEKEEPING_SERVICE) {
     return lang === "en" ? "Cleaning service" : "Limpieza del hogar";
+  }
+  if (slug === PET_WALKING_SERVICE) {
+    return lang === "en" ? "Dog walking" : "Paseo de perros";
+  }
+  if (slug === PET_SITTING_SERVICE) {
+    return lang === "en" ? "Pet sitting" : "Pet sitting / cuidado";
+  }
+  if (slug === DOG_GROOMING_SERVICE) {
+    return lang === "en" ? "Dog grooming" : "Estética canina";
   }
   return lang === "en" ? "Service" : "Servicio";
 }

@@ -232,7 +232,7 @@ export function resolveListingServiceMenu(
   providerSlug: string | null | undefined,
 ): ParsedServiceMenu {
   const parsed = parseServiceMenu(raw);
-  if (parsed.ok) return parsed;
+  if (parsed.ok && hasServiceMenu(parsed.menu)) return parsed;
   const starter = starterMenuForProviderSlug(providerSlug);
   if (hasServiceMenu(starter)) return { ok: true, menu: starter };
   return parsed;
@@ -596,8 +596,76 @@ export function dogGroomingStarterMenu(): ServiceMenu {
     { sku: "nail_trim", name_es: "Corte de uñas", name_en: "Nail trim", price_mxn_cents: 12000 },
     { sku: "ear_clean", name_es: "Limpieza de oídos", name_en: "Ear cleaning", price_mxn_cents: 15000 },
     { sku: "deshedding", name_es: "Deslanado / cardado", name_en: "Deshedding / brushing", price_mxn_cents: 25000 },
-    { sku: "flea_bath", name_es: "Baño antipulgas", name_en: "Flea bath", price_mxn_cents: 40000 },
-    { sku: "teeth_brush", name_es: "Cepillado dental", name_en: "Teeth brushing", price_mxn_cents: 10000 },
+    { sku: "dental_cleaning", name_es: "Limpieza dental", name_en: "Dental cleaning", price_mxn_cents: 5000 },
+    {
+      sku: "teeth_brush",
+      name_es:
+        "Cepillado dental (dejamos pasta y cepillo contigo; visitas siguientes solo limpieza $50)",
+      name_en:
+        "Teeth brushing (toothpaste & brush left with you; follow-up visits: cleaning only $50)",
+      price_mxn_cents: 25000,
+    },
+    {
+      sku: "paw_nose_moisturizing",
+      name_es: "Hidratación de almohadillas y nariz",
+      name_en: "Paw pad and nose moisturizing",
+      price_mxn_cents: 5000,
+    },
+    {
+      sku: "flea_treatment_290",
+      name_es: "Tratamiento antipulgas",
+      name_en: "Flea treatment",
+      price_mxn_cents: 29000,
+    },
+    {
+      sku: "flea_treatment_350",
+      name_es: "Tratamiento antipulgas (alternativa)",
+      name_en: "Flea treatment (alternate)",
+      price_mxn_cents: 35000,
+    },
+    { sku: "flea_bath", name_es: "Baño antipulgas", name_en: "Flea bath", price_mxn_cents: 10000 },
+    {
+      sku: "derm_bath",
+      name_es: "Baño dermatológico",
+      name_en: "Dermatological bath",
+      price_mxn_cents: 10000,
+    },
+    {
+      sku: "derm_shampoo",
+      name_es: "Shampoo dermatológico",
+      name_en: "Dermatological shampoo",
+      price_mxn_cents: 49000,
+    },
+    {
+      sku: "coat_shampoo_color",
+      name_es: "Shampoo pelaje blanco, negro o dorado",
+      name_en: "Shampoo for white, black, or golden coats",
+      price_mxn_cents: 35000,
+    },
+    {
+      sku: "collagen_small",
+      name_es: "Colágeno raza pequeña (firmeza, elasticidad y textura del pelaje)",
+      name_en: "Collagen small breed (adds firmness, elasticity, body, and coat texture)",
+      price_mxn_cents: 8000,
+    },
+    {
+      sku: "collagen_medium",
+      name_es: "Colágeno raza mediana (firmeza, elasticidad y textura del pelaje)",
+      name_en: "Collagen medium breed (adds firmness, elasticity, body, and coat texture)",
+      price_mxn_cents: 10000,
+    },
+    {
+      sku: "collagen_large",
+      name_es: "Colágeno raza grande (firmeza, elasticidad y textura del pelaje)",
+      name_en: "Collagen large breed (adds firmness, elasticity, body, and coat texture)",
+      price_mxn_cents: 12000,
+    },
+    {
+      sku: "collagen_xl",
+      name_es: "Colágeno raza extra grande (firmeza, elasticidad y textura del pelaje)",
+      name_en: "Collagen extra-large breed (adds firmness, elasticity, body, and coat texture)",
+      price_mxn_cents: 15000,
+    },
     { sku: "mobile_visit", name_es: "Visita a domicilio (zona local)", name_en: "Mobile visit (local zone)", price_mxn_cents: 20000 },
     { sku: "matting_surcharge", name_es: "Recargo nudos / pelaje muy enredado", name_en: "Matting / heavy tangle surcharge", price_mxn_cents: 30000 },
     { sku: "puppy_intro", name_es: "Primera estética cachorro", name_en: "Puppy intro groom", price_mxn_cents: 40000 },
