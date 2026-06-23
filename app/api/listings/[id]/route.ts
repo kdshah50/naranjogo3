@@ -2,10 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminSupabase, getUserIdFromRequest, isSameUserId } from "@/lib/auth-server";
 import { getAdminPin, isAdminPinConfigured } from "@/lib/admin-pin";
 import { getServiceRoleRestHeaders, getSupabaseUrl } from "@/lib/service-rest";
-import {
-  parseServiceMenu,
-  serviceMenuPayloadFromFormRows,
-} from "@/lib/listing-service-menu";
+import { serviceMenuForListingPatch } from "@/lib/listing-service-menu";
 import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
 import { embedListingInBackground } from "@/lib/listing-embedding";
 
@@ -85,10 +82,6 @@ async function getListingTitleEs(listingId: string): Promise<string | null> {
   return String(data.title_es);
 }
 
-function emptyPersistedServiceMenu(providerSlug: string | null) {
-  return serviceMenuPayloadFromFormRows([], providerSlug);
-}
-
 async function getListingSellerId(listingId: string): Promise<string | null> {
   const supabase = createAdminSupabase();
   const { data, error } = await supabase
@@ -145,15 +138,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if ("service_menu" in payload) {
       const titleEs = await getListingTitleEs(listingId);
       const providerSlug = inferProviderSlugFromListingTitle(titleEs);
-      if (payload.service_menu === null) {
-        payload.service_menu = emptyPersistedServiceMenu(providerSlug);
-      } else {
-        const parsed = parseServiceMenu(payload.service_menu);
-        if (!parsed.ok) {
-          return NextResponse.json({ error: parsed.error }, { status: 400 });
-        }
-        payload.service_menu = parsed.menu;
+      const parsed = serviceMenuForListingPatch(payload.service_menu, providerSlug);
+      if (!parsed.ok) {
+        return NextResponse.json({ error: parsed.error }, { status: 400 });
       }
+      payload.service_menu = parsed.menu;
     }
 
     if (Object.keys(payload).length === 0) {

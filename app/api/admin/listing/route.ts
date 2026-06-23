@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAdminPin, isAdminPinConfigured } from "@/lib/admin-pin";
 import { createAdminSupabase } from "@/lib/auth-server";
 import { embedListingInBackground } from "@/lib/listing-embedding";
+import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
+import { serviceMenuForListingPatch } from "@/lib/listing-service-menu";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +28,8 @@ export async function POST(req: NextRequest) {
       | "commission"
       | "package"
       | "calendar_sync"
-      | "before_after";
+      | "before_after"
+      | "service_menu";
     if (!id || !action) {
       return NextResponse.json({ error: "id y action requeridos" }, { status: 400 });
     }
@@ -243,6 +246,43 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "No se encontró el anuncio" }, { status: 404 });
       }
       return NextResponse.json({ ok: true });
+    }
+
+    if (action === "service_menu") {
+      const { data: listingRow, error: fetchError } = await supabase
+        .from("listings")
+        .select("title_es")
+        .eq("id", id.trim())
+        .maybeSingle();
+
+      if (fetchError) {
+        console.error("[admin/listing] service_menu fetch", fetchError);
+        return NextResponse.json({ error: fetchError.message }, { status: 500 });
+      }
+      if (!listingRow?.title_es) {
+        return NextResponse.json({ error: "No se encontró el anuncio" }, { status: 404 });
+      }
+
+      const providerSlug = inferProviderSlugFromListingTitle(String(listingRow.title_es));
+      const parsed = serviceMenuForListingPatch(body?.service_menu, providerSlug);
+      if (!parsed.ok) {
+        return NextResponse.json({ error: parsed.error }, { status: 400 });
+      }
+
+      const { data, error } = await supabase
+        .from("listings")
+        .update({ service_menu: parsed.menu })
+        .eq("id", id.trim())
+        .select("id,service_menu");
+
+      if (error) {
+        console.error("[admin/listing] service_menu", error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+      if (!data?.length) {
+        return NextResponse.json({ error: "No se encontró el anuncio" }, { status: 404 });
+      }
+      return NextResponse.json({ ok: true, service_menu: data[0]?.service_menu ?? parsed.menu });
     }
 
     return NextResponse.json({ error: "action inválida" }, { status: 400 });

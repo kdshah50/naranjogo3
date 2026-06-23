@@ -278,6 +278,17 @@ export function editorMenuRowsFromListing(
   return serviceMenuFormRowsFromMenu(starter, lang);
 }
 
+/** Normalize PATCH/admin body into a menu row ready for DB (never null — empty menus stay explicit). */
+export function serviceMenuForListingPatch(
+  raw: unknown,
+  providerSlug: string | null | undefined,
+): ParsedServiceMenu {
+  if (raw === null || raw === undefined) {
+    return parseServiceMenu(serviceMenuPayloadFromFormRows([], providerSlug));
+  }
+  return parseServiceMenu(raw);
+}
+
 /** Build API payload from editor rows + provider slug (disclaimers from slug). */
 export function serviceMenuPayloadFromFormRows(
   rows: ServiceMenuFormRow[],

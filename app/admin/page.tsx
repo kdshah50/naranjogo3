@@ -394,8 +394,16 @@ function AdminPageInner() {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      throw new Error(typeof data?.error === "string" ? data.error : ad.saveError);
+      const err = data?.error;
+      const msg =
+        typeof err === "string"
+          ? err
+          : err != null
+            ? JSON.stringify(err)
+            : ad.saveError;
+      throw new Error(msg);
     }
+    return data as Record<string, unknown>;
   };
 
   const buildPackagePayload = (id: string) => {
@@ -429,27 +437,31 @@ function AdminPageInner() {
     }
   };
 
+  const persistServiceMenu = async (listingId: string, providerSlug: string) => {
+    const payload = serviceMenuPayloadFromFormRows(menuRows[listingId] ?? [], providerSlug);
+    const data = await postAdmin({
+      id: listingId,
+      action: "service_menu",
+      service_menu: payload,
+    });
+    const parsed = data.service_menu ? parseServiceMenu(data.service_menu) : null;
+    if (parsed?.ok) {
+      setMenuRows((prev) => ({
+        ...prev,
+        [listingId]: serviceMenuFormRowsFromMenu(parsed.menu, lang),
+      }));
+      setListings((prev) =>
+        prev.map((l) => (l.id === listingId ? { ...l, service_menu: parsed.menu } : l)),
+      );
+    }
+  };
+
   const saveServiceMenu = async (listingId: string, providerSlug: string) => {
     setSaving(listingId);
     try {
-      const payload = serviceMenuPayloadFromFormRows(menuRows[listingId] ?? [], providerSlug);
-      const res = await fetch(`/api/listings/${listingId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pin: pin.trim(), service_menu: payload }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(typeof data?.error === "string" ? data.error : ad.saveError);
-      }
+      await persistServiceMenu(listingId, providerSlug);
       showMsg(ad.menuSaved);
-      const parsed = data.service_menu ? parseServiceMenu(data.service_menu) : null;
-      if (parsed?.ok) {
-        setMenuRows((prev) => ({
-          ...prev,
-          [listingId]: serviceMenuFormRowsFromMenu(parsed.menu, lang),
-        }));
-      }
+      await load();
     } catch (e: unknown) {
       showMsg(e instanceof Error ? e.message : ad.saveError, true);
     } finally {
@@ -461,6 +473,12 @@ function AdminPageInner() {
     setSaving(id);
     const pct = parseFloat(commissions[id] ?? "5");
     try {
+      const providerSlug = menuProviderSlugForListing(
+        listings.find((l) => l.id === id)?.title_es ?? "",
+      );
+      if (providerSlug && menuRows[id]) {
+        await persistServiceMenu(id, providerSlug);
+      }
       const pkg = buildPackagePayload(id);
       await postAdmin({ id, action: "approve", commission_pct: pct, ...pkg });
       showMsg(`✅ Approved — comisión ${pct}%${pkg.package_session_count ? ` — paquete ${pkg.package_session_count} sesiones` : ""}`);

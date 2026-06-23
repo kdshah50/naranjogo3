@@ -141,8 +141,8 @@ export function adminLabels(lang: Lang) {
     menuCollapse: es ? "Ocultar menú" : "Hide menu",
     menuHint:
       es
-        ? "Edita precios y servicios del proveedor. Los cambios se publican en el anuncio de inmediato."
-        : "Edit provider prices and services. Changes publish on the listing immediately.",
+        ? "Quita filas con ✕ y pulsa «Guardar menú» (o «Aprobar» guarda el menú también). Así el anuncio deja de mostrar la plantilla por defecto."
+        : "Remove rows with ✕ and click «Save menu» (Approve saves the menu too). That stops the listing from showing the default template.",
     saveMenu: es ? "Guardar menú" : "Save menu",
     menuSaved: es ? "✅ Menú guardado" : "✅ Menu saved",
     viewListing: es ? "Ver anuncio público" : "View public listing",
