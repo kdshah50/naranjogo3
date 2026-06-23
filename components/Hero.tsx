@@ -34,6 +34,7 @@ const T = {
     cleaningSearch: "limpieza del hogar",
     vetChip: "Veterinaria",
     petChip: "Cuidado de mascotas",
+    transportChip: "Taxi / transporte",
   },
   en: {
     badge: "ZIP 37745 • SERVICES",
@@ -52,6 +53,7 @@ const T = {
     cleaningSearch: "house cleaning",
     vetChip: "Veterinary",
     petChip: "Pet care",
+    transportChip: "Taxi / rides",
   },
 };
 
@@ -239,6 +241,12 @@ function HeroInner({ initialQuery }: { initialQuery: string }) {
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold bg-white/10 text-white/90 hover:bg-white/20 border border-white/25 transition-colors"
           >
             🐕 {t.petChip}
+          </Link>
+          <Link
+            href={`/transporte${lang === "en" ? "?lang=en" : ""}`}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold bg-white/10 text-white/90 hover:bg-white/20 border border-white/25 transition-colors"
+          >
+            🚕 {t.transportChip}
           </Link>
           <button
             type="button"

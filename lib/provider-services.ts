@@ -105,6 +105,7 @@ export const HOUSEKEEPING_SERVICE = "limpieza";
 export const PET_WALKING_SERVICE = "paseador";
 export const PET_SITTING_SERVICE = "pet_sitting";
 export const DOG_GROOMING_SERVICE = "estetica_canina";
+export const TRANSPORT_APP_SERVICE = "transporte_app";
 
 export const PET_CARE_SERVICES = new Set<string>([
   PET_WALKING_SERVICE,
@@ -119,6 +120,7 @@ export const PROVIDER_SERVICES_WITH_MENU = new Set<string>([
   PET_WALKING_SERVICE,
   PET_SITTING_SERVICE,
   DOG_GROOMING_SERVICE,
+  TRANSPORT_APP_SERVICE,
 ]);
 
 export function providerServiceSupportsMenu(slug: string | null | undefined): boolean {
@@ -132,6 +134,7 @@ export const PROVIDER_SERVICES_WITH_QUOTE_ACCEPT = new Set<string>([
   PET_WALKING_SERVICE,
   PET_SITTING_SERVICE,
   DOG_GROOMING_SERVICE,
+  TRANSPORT_APP_SERVICE,
 ]);
 
 export function providerServiceRequiresQuoteAccept(slug: string | null | undefined): boolean {
@@ -145,6 +148,7 @@ export const PROVIDER_SERVICES_WITH_SUPPLEMENT_PAYMENTS = new Set<string>([
   PET_WALKING_SERVICE,
   PET_SITTING_SERVICE,
   DOG_GROOMING_SERVICE,
+  TRANSPORT_APP_SERVICE,
 ]);
 
 export function providerServiceSupportsSupplementPayments(slug: string | null | undefined): boolean {

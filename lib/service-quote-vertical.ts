@@ -3,6 +3,7 @@ import {
   HOUSEKEEPING_SERVICE,
   PET_SITTING_SERVICE,
   PET_WALKING_SERVICE,
+  TRANSPORT_APP_SERVICE,
   VETERINARY_SERVICE,
 } from "@/lib/provider-services";
 
@@ -36,6 +37,9 @@ export function buyerMenuPickerTitle(slug: string | null | undefined, lang: "es"
   if (slug === DOG_GROOMING_SERVICE) {
     return lang === "en" ? "What grooming do you need?" : "¿Qué estética canina necesitas?";
   }
+  if (slug === TRANSPORT_APP_SERVICE) {
+    return lang === "en" ? "Which ride do you need?" : "¿Qué viaje necesitas?";
+  }
   return lang === "en" ? "What services do you need?" : "¿Qué servicios necesitas?";
 }
 
@@ -46,6 +50,9 @@ export function preferredDatetimeLabel(slug: string | null | undefined, lang: "e
   if (isPetCareSlug(slug)) {
     return lang === "en" ? "Preferred day & time" : "Día y hora preferidos";
   }
+  if (slug === TRANSPORT_APP_SERVICE) {
+    return lang === "en" ? "Preferred pickup day & time" : "Día y hora preferidos de recogida";
+  }
   return lang === "en" ? "Preferred visit day & time" : "Día y hora preferidos de la visita";
 }
 
@@ -54,6 +61,9 @@ export function serviceAddressLabel(slug: string | null | undefined, lang: "es" 
     return lang === "en" ? "Visit / clinic address" : "Dirección de visita o clínica";
   }
   if (slug === PET_WALKING_SERVICE) {
+    return lang === "en" ? "Pickup address" : "Dirección de recogida";
+  }
+  if (slug === TRANSPORT_APP_SERVICE) {
     return lang === "en" ? "Pickup address" : "Dirección de recogida";
   }
   return lang === "en" ? "Service address" : "Dirección del servicio";
@@ -75,6 +85,9 @@ export function serviceRequestNoun(slug: string | null | undefined, lang: "es" |
   if (slug === DOG_GROOMING_SERVICE) {
     return lang === "en" ? "grooming request" : "solicitud de estética";
   }
+  if (slug === TRANSPORT_APP_SERVICE) {
+    return lang === "en" ? "ride request" : "solicitud de viaje";
+  }
   return lang === "en" ? "service request" : "solicitud de servicio";
 }
 
@@ -93,6 +106,11 @@ export function serviceDepositConfirmLine(slug: string | null | undefined, lang:
     return lang === "en"
       ? "Pay the deposit (platform fee) below to confirm your pet care booking."
       : "Paga el depósito (tarifa de plataforma) abajo para confirmar tu reserva de cuidado de mascotas.";
+  }
+  if (slug === TRANSPORT_APP_SERVICE) {
+    return lang === "en"
+      ? "Pay the deposit (platform fee) below to confirm your ride."
+      : "Paga el depósito (tarifa de plataforma) abajo para confirmar tu viaje.";
   }
   return lang === "en"
     ? "Pay the deposit (platform fee) below to confirm your service."
@@ -125,6 +143,7 @@ export function sellerRequestPanelEmoji(slug: string | null | undefined): string
   if (slug === HOUSEKEEPING_SERVICE) return "🧹";
   if (slug === VETERINARY_SERVICE) return "🐾";
   if (isPetCareSlug(slug)) return "🐕";
+  if (slug === TRANSPORT_APP_SERVICE) return "🚕";
   return "📋";
 }
 
@@ -138,6 +157,9 @@ export function notifyQuoteSentTitle(slug: string | null | undefined, lang: "es"
   if (isPetCareSlug(slug)) {
     return lang === "en" ? "📋 *New pet care quote — Naranjogo*" : "📋 *Nueva cotización de cuidado de mascotas — Naranjogo*";
   }
+  if (slug === TRANSPORT_APP_SERVICE) {
+    return lang === "en" ? "📋 *New ride quote — Naranjogo*" : "📋 *Nueva cotización de viaje — Naranjogo*";
+  }
   return lang === "en" ? "📋 *New service quote — Naranjogo*" : "📋 *Nueva cotización de servicio — Naranjogo*";
 }
 
@@ -150,6 +172,9 @@ export function notifyBuyerRequestTitle(slug: string | null | undefined, lang: "
   }
   if (isPetCareSlug(slug)) {
     return lang === "en" ? "🐕 *New pet care request — Naranjogo*" : "🐕 *Nueva solicitud de cuidado de mascotas — Naranjogo*";
+  }
+  if (slug === TRANSPORT_APP_SERVICE) {
+    return lang === "en" ? "🚕 *New ride request — Naranjogo*" : "🚕 *Nueva solicitud de viaje — Naranjogo*";
   }
   return lang === "en" ? "📋 *New service request — Naranjogo*" : "📋 *Nueva solicitud de servicio — Naranjogo*";
 }
@@ -173,6 +198,9 @@ export function notifyBuyerRequestConfirmationTitle(
   }
   if (slug === PET_SITTING_SERVICE) {
     return lang === "en" ? "✅ *Pet sitting request sent — Naranjogo*" : "✅ *Solicitud de cuidado enviada — Naranjogo*";
+  }
+  if (slug === TRANSPORT_APP_SERVICE) {
+    return lang === "en" ? "✅ *Ride request sent — Naranjogo*" : "✅ *Solicitud de viaje enviada — Naranjogo*";
   }
   return lang === "en" ? "✅ *Request sent — Naranjogo*" : "✅ *Solicitud enviada — Naranjogo*";
 }
@@ -206,6 +234,11 @@ export function notifyBuyerRequestConfirmationLine(
       ? "We notified your pet sitter. We'll WhatsApp you when they send a quote."
       : "Avisamos a tu cuidador. Te escribiremos por WhatsApp cuando envíe la cotización.";
   }
+  if (slug === TRANSPORT_APP_SERVICE) {
+    return lang === "en"
+      ? "We notified your driver. We'll WhatsApp you when they send a quote."
+      : "Avisamos a tu conductor. Te escribiremos por WhatsApp cuando envíe la cotización.";
+  }
   return lang === "en"
     ? "We notified your provider. We'll WhatsApp you when they send a quote."
     : "Avisamos a tu proveedor. Te escribiremos por WhatsApp cuando envíe la cotización.";
@@ -237,6 +270,11 @@ export function checkoutFullConnectBlockedMessage(slug: string | null | undefine
       ? "For grooming, pay the deposit (platform fee) first. The service balance is settled after grooming is complete."
       : "Para estética canina, paga primero el depósito (tarifa de plataforma). El saldo se liquida al completar el servicio.";
   }
+  if (slug === TRANSPORT_APP_SERVICE) {
+    return lang === "en"
+      ? "For rides, pay the deposit (platform fee) first. The trip balance is settled after the ride is complete."
+      : "Para viajes, paga primero el depósito (tarifa de plataforma). El saldo del viaje se liquida al completar el trayecto.";
+  }
   return lang === "en"
     ? "Pay the deposit (platform fee) first. Full service payment in-app may be available after the job is complete."
     : "Paga primero el depósito (tarifa de plataforma). El pago completo del servicio en la app puede estar disponible al terminar.";
@@ -258,6 +296,9 @@ export function supplementSummaryTitle(slug: string | null | undefined, lang: "e
   if (slug === DOG_GROOMING_SERVICE) {
     return lang === "en" ? "Grooming summary" : "Resumen de estética";
   }
+  if (slug === TRANSPORT_APP_SERVICE) {
+    return lang === "en" ? "Ride summary" : "Resumen del viaje";
+  }
   return lang === "en" ? "Service summary" : "Resumen del servicio";
 }
 
@@ -267,6 +308,9 @@ export function supplementAppointmentLabel(slug: string | null | undefined, lang
   }
   if (slug === HOUSEKEEPING_SERVICE) {
     return lang === "en" ? "Agreed visit" : "Cita acordada";
+  }
+  if (slug === TRANSPORT_APP_SERVICE) {
+    return lang === "en" ? "Agreed pickup" : "Recogida acordada";
   }
   return lang === "en" ? "Agreed date" : "Fecha acordada";
 }
@@ -287,6 +331,9 @@ export function supplementTipDescription(slug: string | null | undefined, lang: 
   if (slug === DOG_GROOMING_SERVICE) {
     return lang === "en" ? "100% for your groomer" : "100% para tu estilista canino";
   }
+  if (slug === TRANSPORT_APP_SERVICE) {
+    return lang === "en" ? "100% for your driver" : "100% para tu conductor";
+  }
   return lang === "en" ? "100% for your provider" : "100% para tu proveedor";
 }
 
@@ -306,6 +353,9 @@ export function notifyBuyerSupplementBalanceDueTitle(slug: string | null | undef
   if (slug === DOG_GROOMING_SERVICE) {
     return lang === "en" ? "✅ *Grooming completed — Naranjogo*" : "✅ *Estética completada — Naranjogo*";
   }
+  if (slug === TRANSPORT_APP_SERVICE) {
+    return lang === "en" ? "✅ *Ride completed — Naranjogo*" : "✅ *Viaje completado — Naranjogo*";
+  }
   return lang === "en" ? "✅ *Service completed — Naranjogo*" : "✅ *Servicio completado — Naranjogo*";
 }
 
@@ -324,6 +374,9 @@ export function supplementCheckoutServiceLabel(slug: string | null | undefined, 
   }
   if (slug === DOG_GROOMING_SERVICE) {
     return lang === "en" ? "Dog grooming" : "Estética canina";
+  }
+  if (slug === TRANSPORT_APP_SERVICE) {
+    return lang === "en" ? "Taxi / ride" : "Taxi / transporte";
   }
   return lang === "en" ? "Service" : "Servicio";
 }

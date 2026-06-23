@@ -54,6 +54,11 @@ export const DEFAULT_DOG_GROOMING_DISCLAIMER_ES =
 export const DEFAULT_DOG_GROOMING_DISCLAIMER_EN =
   "Price may vary by breed, weight, coat condition, and behavior. Confirmed when the pet is assessed.";
 
+export const DEFAULT_TAXI_RIDE_DISCLAIMER_ES =
+  "El precio puede variar por tráfico, horario, paradas extra o espera adicional. Se confirma en mensaje antes del viaje.";
+export const DEFAULT_TAXI_RIDE_DISCLAIMER_EN =
+  "Price may vary with traffic, time of day, extra stops, or additional wait time. Confirmed by message before the ride.";
+
 export type ServiceMenuItem = {
   sku: string;
   name_es: string;
@@ -679,6 +684,121 @@ export function dogGroomingStarterMenu(): ServiceMenu {
   };
 }
 
+/** Pre-filled starter menu for taxi / ride-hailing fixed-price trips. */
+export function taxiRideShareStarterMenu(): ServiceMenu {
+  const items: ServiceMenuItem[] = [
+    {
+      sku: "wait_time_hour",
+      name_es: "Tiempo de espera (por hora)",
+      name_en: "Wait time (per hour)",
+      price_mxn_cents: 30000,
+    },
+    {
+      sku: "centro_atotonilco",
+      name_es: "Centro a Atotonilco (por viaje)",
+      name_en: "City Center to Atotonilco (per trip)",
+      price_mxn_cents: 25000,
+    },
+    {
+      sku: "return_sma",
+      name_es: "Regreso a SMA (por viaje)",
+      name_en: "Return to SMA (per trip)",
+      price_mxn_cents: 25000,
+    },
+    {
+      sku: "go_return_wait_3hr",
+      name_es: "Ida y vuelta + 3 h de espera",
+      name_en: "Go and return + 3 hr wait",
+      price_mxn_cents: 90000,
+    },
+    {
+      sku: "round_trip_wait_total",
+      name_es: "Total — ida y vuelta + 3 h espera",
+      name_en: "Total — round trip plus 3 hr wait",
+      price_mxn_cents: 140000,
+    },
+    {
+      sku: "airport_guanajuato",
+      name_es: "Aeropuerto Guanajuato (ciudad)",
+      name_en: "Guanajuato (city) airport",
+      price_mxn_cents: 200000,
+    },
+    {
+      sku: "airport_leon",
+      name_es: "Aeropuerto León (Guanajuato)",
+      name_en: "León (Guanajuato) airport",
+      price_mxn_cents: 250000,
+    },
+    {
+      sku: "airport_queretaro",
+      name_es: "Aeropuerto Querétaro",
+      name_en: "Querétaro (Guanajuato) airport",
+      price_mxn_cents: 180000,
+    },
+    {
+      sku: "airport_cdmx",
+      name_es: "Ciudad de México",
+      name_en: "Mexico City",
+      price_mxn_cents: 600000,
+    },
+    {
+      sku: "events_appointments",
+      name_es: "Eventos / citas",
+      name_en: "Events / appointments",
+      price_mxn_cents: 30000,
+    },
+    {
+      sku: "weddings",
+      name_es: "Bodas",
+      name_en: "Weddings",
+      price_mxn_cents: 30000,
+    },
+    {
+      sku: "quinceanera",
+      name_es: "Quinceañera",
+      name_en: "Quinceañera",
+      price_mxn_cents: 30000,
+    },
+    {
+      sku: "single_trip",
+      name_es: "Viaje sencillo",
+      name_en: "Single trip",
+      price_mxn_cents: 10000,
+    },
+    {
+      sku: "medical_oneway",
+      name_es: "Cita médica — solo ida",
+      name_en: "Medical appointment — one way",
+      price_mxn_cents: 10000,
+    },
+    {
+      sku: "quick_individual",
+      name_es: "Viajes individuales rápidos",
+      name_en: "Quick individual trips",
+      price_mxn_cents: 8000,
+    },
+    {
+      sku: "shopping_oneway",
+      name_es: "Compras — solo ida",
+      name_en: "Shopping trips — one way",
+      price_mxn_cents: 10000,
+    },
+    {
+      sku: "other_trip",
+      name_es: "Otro",
+      name_en: "Other",
+      price_mxn_cents: 10000,
+    },
+  ];
+  return {
+    version: 1,
+    currency: "MXN",
+    items,
+    disclaimer_es: DEFAULT_TAXI_RIDE_DISCLAIMER_ES,
+    disclaimer_en: DEFAULT_TAXI_RIDE_DISCLAIMER_EN,
+  };
+}
+
 /** Sample menu for pet-care landing page (mix of common items). */
 export function petCareLandingSampleMenu(): ServiceMenu {
   const walk = dogWalkingStarterMenu().items.slice(0, 4);
@@ -710,6 +830,8 @@ export function starterMenuForProviderSlug(
       return petSittingStarterMenu();
     case "estetica_canina":
       return dogGroomingStarterMenu();
+    case "transporte_app":
+      return taxiRideShareStarterMenu();
     default:
       return null;
   }
