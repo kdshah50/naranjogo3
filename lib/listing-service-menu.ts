@@ -227,8 +227,12 @@ export function effectiveServiceMenuForListing(
   menu: ServiceMenu | null | undefined,
   providerSlug: string | null | undefined,
 ): ServiceMenu | null {
-  if (hasServiceMenu(menu)) return menu;
-  return starterMenuForProviderSlug(providerSlug);
+  // Column explicitly set (including empty items: []) — honor DB; do not resurrect starter.
+  if (menu !== null && menu !== undefined) {
+    return hasServiceMenu(menu) ? menu : null;
+  }
+  const starter = starterMenuForProviderSlug(providerSlug);
+  return hasServiceMenu(starter) ? starter : null;
 }
 
 /** Parse listing menu jsonb or fall back to provider starter template (quote-gated slugs). */
@@ -236,10 +240,13 @@ export function resolveListingServiceMenu(
   raw: unknown,
   providerSlug: string | null | undefined,
 ): ParsedServiceMenu {
+  if (raw === null || raw === undefined) {
+    const starter = starterMenuForProviderSlug(providerSlug);
+    if (hasServiceMenu(starter)) return { ok: true, menu: starter };
+    return { ok: true, menu: emptyMenu() };
+  }
   const parsed = parseServiceMenu(raw);
-  if (parsed.ok && hasServiceMenu(parsed.menu)) return parsed;
-  const starter = starterMenuForProviderSlug(providerSlug);
-  if (hasServiceMenu(starter)) return { ok: true, menu: starter };
+  if (!parsed.ok) return parsed;
   return parsed;
 }
 
@@ -257,11 +264,26 @@ export function serviceMenuFormRowsFromMenu(
   }));
 }
 
+/** Form rows for the menu editor UI (signup, profile, admin). When DB menu is unset, show starter (matches public page). */
+export function editorMenuRowsFromListing(
+  raw: ServiceMenu | null | undefined,
+  providerSlug: string | null | undefined,
+  lang: "es" | "en" = "es",
+): ServiceMenuFormRow[] {
+  if (raw != null) {
+    const parsed = parseServiceMenu(raw);
+    return serviceMenuFormRowsFromMenu(parsed.ok ? parsed.menu : null, lang);
+  }
+  const starter = starterMenuForProviderSlug(providerSlug);
+  return serviceMenuFormRowsFromMenu(starter, lang);
+}
+
 /** Build API payload from editor rows + provider slug (disclaimers from slug). */
 export function serviceMenuPayloadFromFormRows(
   rows: ServiceMenuFormRow[],
   providerSlug: string | null | undefined,
-): { items: { name_es: string; price_mxn: number }[] } & ReturnType<typeof menuDisclaimersForProviderSlug> | null {
+): ServiceMenu | Record<string, unknown> {
+  const disclaimers = menuDisclaimersForProviderSlug(providerSlug);
   const cleaned = rows
     .map((r) => ({
       name_es: r.name.trim(),
@@ -269,8 +291,15 @@ export function serviceMenuPayloadFromFormRows(
     }))
     .filter((r) => r.name_es.length > 0 && Number.isFinite(r.pesos) && r.pesos > 0)
     .map((r) => ({ name_es: r.name_es, price_mxn: r.pesos }));
-  if (cleaned.length === 0) return null;
-  return { items: cleaned, ...menuDisclaimersForProviderSlug(providerSlug) };
+  if (cleaned.length === 0) {
+    return {
+      version: 1,
+      currency: "MXN",
+      items: [],
+      ...disclaimers,
+    };
+  }
+  return { items: cleaned, ...disclaimers };
 }
 
 /** Quick room-type qty controls for housekeeping quote builder (maps to menu SKUs). */

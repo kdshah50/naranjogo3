@@ -13,6 +13,7 @@ import {
   parseServiceMenu,
   serviceMenuFormRowsFromMenu,
   serviceMenuPayloadFromFormRows,
+  editorMenuRowsFromListing,
   type ServiceMenu,
   type ServiceMenuFormRow,
 } from "@/lib/listing-service-menu";
@@ -44,9 +45,9 @@ function menuProviderSlugForListing(title: string): string | null {
 }
 
 function menuRowsFromListing(listing: Listing, lang: "es" | "en"): ServiceMenuFormRow[] {
-  const parsed = listing.service_menu ? parseServiceMenu(listing.service_menu) : null;
-  const menu = parsed?.ok ? parsed.menu : null;
-  return serviceMenuFormRowsFromMenu(menu, lang);
+  const slug = menuProviderSlugForListing(listing.title_es);
+  if (!slug) return [];
+  return editorMenuRowsFromListing(listing.service_menu ?? null, slug, lang);
 }
 
 type UserRow = {

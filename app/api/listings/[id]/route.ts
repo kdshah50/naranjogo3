@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminSupabase, getUserIdFromRequest, isSameUserId } from "@/lib/auth-server";
 import { getAdminPin, isAdminPinConfigured } from "@/lib/admin-pin";
 import { getServiceRoleRestHeaders, getSupabaseUrl } from "@/lib/service-rest";
-import { hasServiceMenu, parseServiceMenu } from "@/lib/listing-service-menu";
+import {
+  parseServiceMenu,
+  serviceMenuPayloadFromFormRows,
+} from "@/lib/listing-service-menu";
+import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
 import { embedListingInBackground } from "@/lib/listing-embedding";
 
 const hJson = () => ({ ...getServiceRoleRestHeaders(), "Content-Type": "application/json" as const });
@@ -70,6 +74,21 @@ function stripPinOnly(body: Record<string, unknown>): Record<string, unknown> {
   return rest;
 }
 
+async function getListingTitleEs(listingId: string): Promise<string | null> {
+  const supabase = createAdminSupabase();
+  const { data, error } = await supabase
+    .from("listings")
+    .select("title_es")
+    .eq("id", listingId)
+    .maybeSingle();
+  if (error || !data?.title_es) return null;
+  return String(data.title_es);
+}
+
+function emptyPersistedServiceMenu(providerSlug: string | null) {
+  return serviceMenuPayloadFromFormRows([], providerSlug);
+}
+
 async function getListingSellerId(listingId: string): Promise<string | null> {
   const supabase = createAdminSupabase();
   const { data, error } = await supabase
@@ -121,17 +140,19 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     const payload = auth.asAdmin ? stripPinOnly(body) : sanitizeOwnerPatchBody(body);
 
-    // Normalize / validate the service menu. Empty menu (no items) is stored as NULL
-    // so the column reverts to "no menu published" state.
+    // Normalize / validate service menu. Persist explicit empty menus so the public page
+    // does not fall back to the starter template after admin/provider edits.
     if ("service_menu" in payload) {
+      const titleEs = await getListingTitleEs(listingId);
+      const providerSlug = inferProviderSlugFromListingTitle(titleEs);
       if (payload.service_menu === null) {
-        payload.service_menu = null;
+        payload.service_menu = emptyPersistedServiceMenu(providerSlug);
       } else {
         const parsed = parseServiceMenu(payload.service_menu);
         if (!parsed.ok) {
           return NextResponse.json({ error: parsed.error }, { status: 400 });
         }
-        payload.service_menu = hasServiceMenu(parsed.menu) ? parsed.menu : null;
+        payload.service_menu = parsed.menu;
       }
     }
 

@@ -10,6 +10,7 @@ import {
   parseServiceMenu,
   serviceMenuFormRowsFromMenu,
   serviceMenuPayloadFromFormRows,
+  editorMenuRowsFromListing,
   type ServiceMenu,
   type ServiceMenuFormRow,
 } from "@/lib/listing-service-menu";
@@ -117,7 +118,7 @@ function ProfileListingMenuInner() {
         if (!cancelled) {
           setListing(data);
           setProviderSlug(slug);
-          setRows(serviceMenuFormRowsFromMenu(menu, lang));
+          setRows(editorMenuRowsFromListing(data.service_menu ?? null, slug, lang));
           setLoading(false);
         }
       } catch {
