@@ -64,9 +64,16 @@ export function serviceAddressLabel(slug: string | null | undefined, lang: "es" 
     return lang === "en" ? "Pickup address" : "Dirección de recogida";
   }
   if (slug === TRANSPORT_APP_SERVICE) {
-    return lang === "en" ? "Pickup address" : "Dirección de recogida";
+    return lang === "en" ? "From / pickup" : "Origen / recogida";
   }
   return lang === "en" ? "Service address" : "Dirección del servicio";
+}
+
+export function dropoffAddressLabel(slug: string | null | undefined, lang: "es" | "en"): string {
+  if (slug === TRANSPORT_APP_SERVICE) {
+    return lang === "en" ? "To / drop-off" : "Destino / entrega";
+  }
+  return lang === "en" ? "Destination" : "Destino";
 }
 
 export function serviceRequestNoun(slug: string | null | undefined, lang: "es" | "en"): string {

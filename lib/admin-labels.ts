@@ -136,6 +136,16 @@ export function adminLabels(lang: Lang) {
       es
         ? "La tarifa de plataforma usa el % de comisión sobre este total. Deja ambos vacíos solo para precio de visita única."
         : "Platform fee uses % commission on this total. Leave both empty for single-visit list price only.",
+    menuTitle: es ? "Menú de servicios (precios fijos)" : "Service menu (fixed prices)",
+    menuExpand: es ? "Editar menú" : "Edit menu",
+    menuCollapse: es ? "Ocultar menú" : "Hide menu",
+    menuHint:
+      es
+        ? "Edita precios y servicios del proveedor. Los cambios se publican en el anuncio de inmediato."
+        : "Edit provider prices and services. Changes publish on the listing immediately.",
+    saveMenu: es ? "Guardar menú" : "Save menu",
+    menuSaved: es ? "✅ Menú guardado" : "✅ Menu saved",
+    viewListing: es ? "Ver anuncio público" : "View public listing",
     liveCalendarTitle: es ? "Sincronización de calendario en vivo" : "Live calendar sync",
     liveCalendarBody:
       es

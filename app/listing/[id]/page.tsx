@@ -28,8 +28,9 @@ import { getSellerPlatformJobStats } from "@/lib/seller-platform-stats";
 import { parseBeforeAfterPhotoUrls } from "@/lib/provider-trust";
 import ListingTrustStrip from "@/components/ListingTrustStrip";
 import ListingBeforeAfterSection from "@/components/ListingBeforeAfterSection";
+import ListingTransportRideBanner from "@/components/ListingTransportRideBanner";
 import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
-import { providerServiceRequiresQuoteAccept } from "@/lib/provider-services";
+import { providerServiceRequiresQuoteAccept, TRANSPORT_APP_SERVICE } from "@/lib/provider-services";
 import { quoteLayoutForSlug } from "@/lib/service-quote-vertical";
 
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
@@ -218,6 +219,9 @@ export default async function ListingPage({
             menu={effectiveServiceMenu}
             lang={listingLang}
           />
+        )}
+        {isServiceListing && providerSlug === TRANSPORT_APP_SERVICE && (
+          <ListingTransportRideBanner lang={listingLang} />
         )}
         {isServiceListing && sellerId && (
           <ListingTrustStrip

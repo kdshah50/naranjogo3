@@ -1,9 +1,22 @@
 "use client";
 import { useState, useEffect, useCallback, Suspense } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import ServiceMenuEditor from "@/components/ServiceMenuEditor";
 import { useAppLang } from "@/hooks/use-app-lang";
-import { formatCurrencyMXN, formatDateMedium, formatDateTimeShort } from "@/lib/locale-format";
 import { adminLabels } from "@/lib/admin-labels";
+import {
+  inferProviderSlugFromListingTitle,
+  listingTitleSupportsServiceMenu,
+} from "@/lib/infer-listing-provider-slug";
+import {
+  parseServiceMenu,
+  serviceMenuFormRowsFromMenu,
+  serviceMenuPayloadFromFormRows,
+  type ServiceMenu,
+  type ServiceMenuFormRow,
+} from "@/lib/listing-service-menu";
+import { formatCurrencyMXN, formatDateMedium, formatDateTimeShort } from "@/lib/locale-format";
 
 type Listing = {
   id: string;
@@ -17,11 +30,24 @@ type Listing = {
   commission_pct: number | null;
   package_session_count?: number | null;
   package_total_price_mxn?: number | null;
+  service_menu?: ServiceMenu | null;
   created_at: string;
   calendar_sync_enabled?: boolean | null;
   calendar_last_synced_at?: string | null;
   users: { display_name: string; phone: string } | null;
 };
+
+function menuProviderSlugForListing(title: string): string | null {
+  const slug = inferProviderSlugFromListingTitle(title);
+  if (!slug || !listingTitleSupportsServiceMenu(title)) return null;
+  return slug;
+}
+
+function menuRowsFromListing(listing: Listing, lang: "es" | "en"): ServiceMenuFormRow[] {
+  const parsed = listing.service_menu ? parseServiceMenu(listing.service_menu) : null;
+  const menu = parsed?.ok ? parsed.menu : null;
+  return serviceMenuFormRowsFromMenu(menu, lang);
+}
 
 type UserRow = {
   id: string;
@@ -73,6 +99,8 @@ function AdminPageInner() {
   const [commissions, setCommissions] = useState<Record<string, string>>({});
   const [pkgSess, setPkgSess] = useState<Record<string, string>>({});
   const [pkgPesos, setPkgPesos] = useState<Record<string, string>>({});
+  const [menuRows, setMenuRows] = useState<Record<string, ServiceMenuFormRow[]>>({});
+  const [menuOpen, setMenuOpen] = useState<Record<string, boolean>>({});
   const [msg, setMsg] = useState("");
   const [msgError, setMsgError] = useState(false);
 
@@ -171,6 +199,7 @@ function AdminPageInner() {
     const c: Record<string, string> = {};
     const ps: Record<string, string> = {};
     const pp: Record<string, string> = {};
+    const mr: Record<string, ServiceMenuFormRow[]> = {};
     (Array.isArray(data) ? data : []).forEach((l: Listing) => {
       c[l.id] = String(l.commission_pct ?? 5);
       if (l.package_session_count != null && l.package_session_count >= 2) {
@@ -179,12 +208,16 @@ function AdminPageInner() {
       if (l.package_total_price_mxn != null && l.package_total_price_mxn > 0) {
         pp[l.id] = String(l.package_total_price_mxn / 100);
       }
+      if (menuProviderSlugForListing(l.title_es)) {
+        mr[l.id] = menuRowsFromListing(l, lang);
+      }
     });
     setCommissions(c);
     setPkgSess(ps);
     setPkgPesos(pp);
+    setMenuRows(mr);
     setLoading(false);
-  }, [filter, pin]);
+  }, [filter, lang, pin]);
 
   const loadUsers = useCallback(async () => {
     setUsersLoading(true);
@@ -390,6 +423,34 @@ function AdminPageInner() {
       await load();
     } catch (e: unknown) {
       showMsg(e instanceof Error ? e.message : "Error", true);
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const saveServiceMenu = async (listingId: string, providerSlug: string) => {
+    setSaving(listingId);
+    try {
+      const payload = serviceMenuPayloadFromFormRows(menuRows[listingId] ?? [], providerSlug);
+      const res = await fetch(`/api/listings/${listingId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin: pin.trim(), service_menu: payload }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(typeof data?.error === "string" ? data.error : ad.saveError);
+      }
+      showMsg(ad.menuSaved);
+      const parsed = data.service_menu ? parseServiceMenu(data.service_menu) : null;
+      if (parsed?.ok) {
+        setMenuRows((prev) => ({
+          ...prev,
+          [listingId]: serviceMenuFormRowsFromMenu(parsed.menu, lang),
+        }));
+      }
+    } catch (e: unknown) {
+      showMsg(e instanceof Error ? e.message : ad.saveError, true);
     } finally {
       setSaving(null);
     }
@@ -1066,6 +1127,60 @@ function AdminPageInner() {
                 <p className="text-sm text-[#374151] bg-[#F4F0EB] rounded-xl px-4 py-3 mb-4 leading-relaxed">
                   {listing.description_es?.slice(0, 200)}{listing.description_es?.length > 200 ? "..." : ""}
                 </p>
+
+                {(() => {
+                  const providerSlug = menuProviderSlugForListing(listing.title_es);
+                  if (!providerSlug) return null;
+                  const open = Boolean(menuOpen[listing.id]);
+                  return (
+                    <div className="mb-4 p-3 rounded-xl bg-amber-50/90 border border-amber-200/80">
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                        <p className="text-xs font-semibold text-amber-950">{ad.menuTitle}</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Link
+                            href={`/listing/${listing.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[11px] font-semibold text-[#1B4332] hover:underline"
+                          >
+                            {ad.viewListing} →
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setMenuOpen((prev) => ({ ...prev, [listing.id]: !open }))
+                            }
+                            className="text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-amber-300 text-amber-950 hover:bg-amber-100 transition-colors"
+                          >
+                            {open ? ad.menuCollapse : ad.menuExpand}
+                          </button>
+                        </div>
+                      </div>
+                      {open && (
+                        <>
+                          <p className="text-[10px] text-amber-900 mb-3 leading-snug">{ad.menuHint}</p>
+                          <ServiceMenuEditor
+                            providerSlug={providerSlug}
+                            lang={lang}
+                            rows={menuRows[listing.id] ?? []}
+                            onRowsChange={(rows) =>
+                              setMenuRows((prev) => ({ ...prev, [listing.id]: rows }))
+                            }
+                            disabled={saving === listing.id}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => void saveServiceMenu(listing.id, providerSlug)}
+                            disabled={saving === listing.id}
+                            className="mt-3 text-xs px-3 py-2 rounded-lg bg-amber-700 text-white font-semibold hover:bg-amber-800 transition-colors disabled:opacity-40"
+                          >
+                            {saving === listing.id ? "…" : ad.saveMenu}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* Optional package: N sessions for $X total (commission base) */}
                 <div className="mb-4 p-3 rounded-xl bg-amber-50/80 border border-amber-200/80">

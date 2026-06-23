@@ -396,6 +396,19 @@ export default function TransporteLandingPage({
             >
               {t.buyerCta} →
             </Link>
+            <div className="mt-4 pt-4 border-t border-[#E5E0D8]">
+              <p className="text-xs text-[#6B7280] mb-2 leading-relaxed">
+                {lang === "en"
+                  ? "On-demand ride (from colonia to colonia, live fare estimate):"
+                  : "Viaje al momento (de colonia a colonia, tarifa estimada en vivo):"}
+              </p>
+              <Link
+                href={lang === "en" ? "/viaje?lang=en" : "/viaje"}
+                className="inline-flex items-center gap-2 text-sm font-semibold text-[#78350F] hover:underline"
+              >
+                🚕 {lang === "en" ? "Request a taxi now" : "Pedir taxi ahora"} →
+              </Link>
+            </div>
           </div>
         </section>
 

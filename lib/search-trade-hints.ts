@@ -81,7 +81,39 @@ const TRADE_HINTS: { re: RegExp; terms: string[] }[] = [
       "paseo de mascotas",
     ],
   },
+  {
+    re: /\b(taxi|cabs?\b|uber|didi|lyft|ride[\s-]?hail(ing)?|ride\s+share|rideshare|transporte|transport|chauffeur|chofer|private\s+driver|airport\s+(run|transfer|shuttle)|aeropuerto|QRO\b|quer[eé]taro|GTO\b|guanajuato|le[oó]n\b|CDMX|m[eé]xico\s+city|ciudad\s+de\s+m[eé]xico|from\s+.+\s+to|de\s+.+\s+a|sma\b|san\s+miguel)\b/i,
+    terms: [
+      "taxi",
+      "Transporte / Taxi",
+      "transporte",
+      "transporte por aplicación",
+      "ride-hailing",
+      "chofer",
+    ],
+  },
 ];
+
+const TAXI_INTENT_RE =
+  /\b(taxi|cabs?\b|uber|didi|lyft|ride[\s-]?hail(ing)?|ride\s+share|rideshare|transporte|transport|chauffeur|chofer|private\s+driver|airport\s+(run|transfer|shuttle)|aeropuerto|QRO\b|quer[eé]taro|GTO\b|guanajuato|le[oó]n\b|CDMX|m[eé]xico\s+city|ciudad\s+de\s+m[eé]xico|from\s+.+\s+to|de\s+.+\s+a)\b/i;
+
+/** True when the user is looking for taxi / ride-hailing, not generic services. */
+export function isTaxiTransportSearchQuery(userQuery: string, keywordPhrase = ""): boolean {
+  return TAXI_INTENT_RE.test(`${userQuery}\n${keywordPhrase}`);
+}
+
+/** Keep hybrid results on taxi listings when the query is ride-related. */
+export function listingMatchesTaxiTransportIntent(listing: {
+  title_es?: string | null;
+  subcategory_kind?: string | null;
+}): boolean {
+  const kind = String(listing.subcategory_kind ?? "").trim().toLowerCase();
+  if (kind === "ride") return true;
+  const title = String(listing.title_es ?? "").trim().toLowerCase();
+  return /\b(taxi|transporte\s*\/?\s*taxi|ride\s*\/?\s*taxi|chofer|transporte\s+por\s+aplicaci|ride-hailing|uber)\b/i.test(
+    title,
+  );
+}
 
 /** Noise words when tokenizing user query for OR title search (EN + ES). */
 const QUERY_NOISE_WORDS =

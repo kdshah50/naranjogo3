@@ -7,7 +7,11 @@ import {
   parseSearchQuery,
   type ParsedQueryFilters,
 } from "@/lib/search-query-parse";
-import { sparseSearchTokens } from "@/lib/search-trade-hints";
+import {
+  isTaxiTransportSearchQuery,
+  listingMatchesTaxiTransportIntent,
+  sparseSearchTokens,
+} from "@/lib/search-trade-hints";
 import { embedText } from "@/lib/listing-embedding";
 import { createAdminSupabase } from "@/lib/auth-server";
 import { fetchListingRankMultipliers } from "@/lib/listing-rank";
@@ -85,7 +89,7 @@ function mergeUiPricePesosIntoParsed(
   return out;
 }
 
-const SELECT_COLS_FULL = "id,seller_id,created_at,title_es,price_mxn,category_id,condition,location_city,location_lat,location_lng,shipping_available,negotiable,photo_urls,payment_methods,users!fk_listings_seller(display_name,trust_badge,ine_verified,rfc_verified,phone_verified)";
+const SELECT_COLS_FULL = "id,seller_id,created_at,title_es,price_mxn,category_id,subcategory_kind,condition,location_city,location_lat,location_lng,shipping_available,negotiable,photo_urls,payment_methods,users!fk_listings_seller(display_name,trust_badge,ine_verified,rfc_verified,phone_verified)";
 const SELECT_COLS_BASE = "id,seller_id,created_at,title_es,price_mxn,category_id,condition,location_city,location_lat,location_lng,shipping_available,negotiable,photo_urls,users!fk_listings_seller(display_name,trust_badge,ine_verified,rfc_verified,phone_verified)";
 
 const USER_EMBED_SELECT =
@@ -388,6 +392,13 @@ export async function GET(req: NextRequest) {
       _score: Math.round(l._score * m * 10000) / 10000,
     };
   });
+
+  if (query && isTaxiTransportSearchQuery(query, sparsePhrase)) {
+    const taxiOnly = fused.filter((l) => listingMatchesTaxiTransportIntent(l));
+    if (taxiOnly.length > 0) {
+      fused = taxiOnly;
+    }
+  }
 
   const results = fused
     .sort((a, b) => b._score - a._score)

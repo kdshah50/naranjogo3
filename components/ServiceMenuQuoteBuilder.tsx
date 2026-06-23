@@ -24,9 +24,11 @@ import {
 } from "@/lib/buyer-quote-contact";
 import {
   buyerMenuPickerTitle,
+  dropoffAddressLabel,
   preferredDatetimeLabel,
   serviceAddressLabel,
 } from "@/lib/service-quote-vertical";
+import { TRANSPORT_APP_SERVICE } from "@/lib/provider-services";
 
 export type QuoteBuilderPayload = {
   totalCents: number;
@@ -97,6 +99,9 @@ export default function ServiceMenuQuoteBuilder({
   const [whatsappDifferent, setWhatsappDifferent] = useState(false);
   const [whatsappPhone, setWhatsappPhone] = useState("");
   const [serviceAddress, setServiceAddress] = useState("");
+  const [pickupAddress, setPickupAddress] = useState("");
+  const [dropoffAddress, setDropoffAddress] = useState("");
+  const [transportMode, setTransportMode] = useState<"custom" | "menu">("custom");
   const [preferredAtLocal, setPreferredAtLocal] = useState("");
   const [contactErr, setContactErr] = useState("");
   const [submitErr, setSubmitErr] = useState("");
@@ -140,12 +145,25 @@ export default function ServiceMenuQuoteBuilder({
     [qtyBySku],
   );
 
+  const isTransportCustomRequest =
+    variant === "buyer" &&
+    providerSlug === TRANSPORT_APP_SERVICE &&
+    transportMode === "custom";
+
+  const resolvedCartLines = useMemo(() => {
+    if (cartLines.length > 0) return cartLines;
+    if (isTransportCustomRequest && menu?.items.some((it) => it.sku === "other_trip")) {
+      return [{ sku: "other_trip", qty: 1 }];
+    }
+    return cartLines;
+  }, [cartLines, isTransportCustomRequest, menu?.items]);
+
   const housekeepingTotals = useMemo(
     () =>
       quoteLayout === "housekeeping"
-        ? computeHousekeepingQuoteTotals(menu, cartLines, visitFrequency)
+        ? computeHousekeepingQuoteTotals(menu, resolvedCartLines, visitFrequency)
         : null,
-    [quoteLayout, menu, cartLines, visitFrequency],
+    [quoteLayout, menu, resolvedCartLines, visitFrequency],
   );
 
   const isRecurring =
@@ -155,8 +173,8 @@ export default function ServiceMenuQuoteBuilder({
     if (quoteLayout === "housekeeping" && housekeepingTotals) {
       return housekeepingAgreedPriceCents(housekeepingTotals, quoteBasis);
     }
-    return computeServiceMenuQuoteCents(menu, cartLines);
-  }, [quoteLayout, housekeepingTotals, quoteBasis, menu, cartLines]);
+    return computeServiceMenuQuoteCents(menu, resolvedCartLines);
+  }, [quoteLayout, housekeepingTotals, quoteBasis, menu, resolvedCartLines]);
 
   const menuSkus = useMemo(
     () => new Set((menu?.items ?? []).map((it) => it.sku)),
@@ -199,10 +217,15 @@ export default function ServiceMenuQuoteBuilder({
   };
 
   const selectedLines = menu.items
-    .map((it) => ({ it, qty: qtyBySku[it.sku] ?? 0 }))
+    .map((it) => ({ it, qty: resolvedCartLines.find((c) => c.sku === it.sku)?.qty ?? 0 }))
     .filter((x) => x.qty > 0);
 
-  const applyDisabled = disabled || totalCents <= 0 || busy;
+  const hasResolvedSelection = selectedLines.length > 0;
+  const applyDisabled =
+    disabled ||
+    busy ||
+    (!isTransportCustomRequest && totalCents <= 0) ||
+    (isTransportCustomRequest && !hasResolvedSelection);
   const officialQuoteFlow = Boolean(onSendOfficialQuote);
 
   const applyToAgreedPrice = () => {
@@ -214,18 +237,34 @@ export default function ServiceMenuQuoteBuilder({
     const preferredAt = preferredAtLocal.trim()
       ? new Date(preferredAtLocal).toISOString()
       : "";
+    const address = isTransportCustomRequest
+      ? `Origen: ${pickupAddress.trim()}\nDestino: ${dropoffAddress.trim()}`
+      : serviceAddress.trim();
     return {
       firstName: contactFirstName.trim(),
       lastName: contactLastName.trim(),
       contactPhone: contactPhone.trim(),
       whatsappPhone: whatsappDifferent && whatsappPhone.trim() ? whatsappPhone.trim() : null,
-      serviceAddress: serviceAddress.trim(),
+      serviceAddress: address,
       preferredAt,
     };
   };
 
+  const validateTransportCustomContact = (): string | null => {
+    if (!isTransportCustomRequest) return null;
+    const from = pickupAddress.trim();
+    const to = dropoffAddress.trim();
+    if (from.length < 4) {
+      return lang === "en" ? "Enter where you are leaving from." : "Indica el origen del viaje.";
+    }
+    if (to.length < 4) {
+      return lang === "en" ? "Enter your destination." : "Indica el destino del viaje.";
+    }
+    return null;
+  };
+
   const buildPayload = (): QuoteBuilderPayload => {
-    const lineItems = lineItemsFromCart(menu, cartLines);
+    const lineItems = lineItemsFromCart(menu, resolvedCartLines);
     const messageBody = buildMenuQuoteMessage({
       menu: menu!,
       lineItems,
@@ -237,7 +276,7 @@ export default function ServiceMenuQuoteBuilder({
     });
     return {
       totalCents,
-      cartLines,
+      cartLines: resolvedCartLines,
       lineItems,
       visitFrequency,
       quoteBasis,
@@ -258,9 +297,15 @@ export default function ServiceMenuQuoteBuilder({
   };
 
   const submitRequest = async () => {
-    if (!onSubmitRequest || selectedLines.length === 0) return;
+    if (!onSubmitRequest || !hasResolvedSelection) return;
     setSubmitErr("");
     if (variant === "buyer" && requiresBuyerContact) {
+      const transportErr = validateTransportCustomContact();
+      if (transportErr) {
+        setContactErr(transportErr);
+        contactSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        return;
+      }
       const contact = buildBuyerContact();
       const err = contact ? validateBuyerQuoteContact(contact, lang) : lang === "en" ? "Complete your contact details." : "Completa tus datos de contacto.";
       if (err) {
@@ -281,6 +326,8 @@ export default function ServiceMenuQuoteBuilder({
       setWhatsappDifferent(false);
       setWhatsappPhone("");
       setServiceAddress("");
+      setPickupAddress("");
+      setDropoffAddress("");
       setPreferredAtLocal("");
     } catch (e: unknown) {
       const msg =
@@ -354,6 +401,34 @@ export default function ServiceMenuQuoteBuilder({
             ? "Build a quote from your menu"
             : "Arma un presupuesto desde tu menú"}
       </p>
+      {variant === "buyer" && providerSlug === TRANSPORT_APP_SERVICE && (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setTransportMode("custom")}
+            disabled={disabled || busy}
+            className={`text-[10px] font-semibold px-2.5 py-1 rounded-full border ${
+              transportMode === "custom"
+                ? "bg-[#1B4332] text-white border-[#1B4332]"
+                : "bg-white text-[#78350F] border-amber-300"
+            }`}
+          >
+            {lang === "en" ? "Custom trip (from / to)" : "Viaje a medida (origen / destino)"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setTransportMode("menu")}
+            disabled={disabled || busy}
+            className={`text-[10px] font-semibold px-2.5 py-1 rounded-full border ${
+              transportMode === "menu"
+                ? "bg-[#1B4332] text-white border-[#1B4332]"
+                : "bg-white text-[#78350F] border-amber-300"
+            }`}
+          >
+            {lang === "en" ? "Fixed fare menu" : "Tarifa fija del menú"}
+          </button>
+        </div>
+      )}
       {variant === "buyer" && requiresBuyerContact && (
         <div
           ref={contactSectionRef}
@@ -425,24 +500,63 @@ export default function ServiceMenuQuoteBuilder({
               />
             </label>
           ) : null}
-          <label className="block space-y-0.5">
-            <span className="text-[10px] font-semibold text-[#1E3A8A]">
-              {serviceAddressLabel(providerSlug, lang)} *
-            </span>
-            <textarea
-              value={serviceAddress}
-              onChange={(e) => setServiceAddress(e.target.value)}
-              disabled={disabled || busy}
-              rows={2}
-              maxLength={500}
-              placeholder={
-                lang === "en"
-                  ? "Street, number, colonia, city, access instructions…"
-                  : "Calle, número, colonia, ciudad, instrucciones de acceso…"
-              }
-              className="w-full rounded-lg border border-blue-200 bg-white px-2 py-1.5 text-[11px] outline-none focus:border-[#2563EB] disabled:opacity-50"
-            />
-          </label>
+          {isTransportCustomRequest ? (
+            <>
+              <label className="block space-y-0.5">
+                <span className="text-[10px] font-semibold text-[#1E3A8A]">
+                  {serviceAddressLabel(providerSlug, lang)} *
+                </span>
+                <textarea
+                  value={pickupAddress}
+                  onChange={(e) => setPickupAddress(e.target.value)}
+                  disabled={disabled || busy}
+                  rows={2}
+                  maxLength={240}
+                  placeholder={
+                    lang === "en" ? "e.g. Centro, SMA — hotel or street address" : "ej. Centro, SMA — hotel o calle"
+                  }
+                  className="w-full rounded-lg border border-blue-200 bg-white px-2 py-1.5 text-[11px] outline-none focus:border-[#2563EB] disabled:opacity-50"
+                />
+              </label>
+              <label className="block space-y-0.5">
+                <span className="text-[10px] font-semibold text-[#1E3A8A]">
+                  {dropoffAddressLabel(providerSlug, lang)} *
+                </span>
+                <textarea
+                  value={dropoffAddress}
+                  onChange={(e) => setDropoffAddress(e.target.value)}
+                  disabled={disabled || busy}
+                  rows={2}
+                  maxLength={240}
+                  placeholder={
+                    lang === "en"
+                      ? "e.g. Querétaro airport (QRO) or full address"
+                      : "ej. Aeropuerto Querétaro (QRO) o dirección completa"
+                  }
+                  className="w-full rounded-lg border border-blue-200 bg-white px-2 py-1.5 text-[11px] outline-none focus:border-[#2563EB] disabled:opacity-50"
+                />
+              </label>
+            </>
+          ) : (
+            <label className="block space-y-0.5">
+              <span className="text-[10px] font-semibold text-[#1E3A8A]">
+                {serviceAddressLabel(providerSlug, lang)} *
+              </span>
+              <textarea
+                value={serviceAddress}
+                onChange={(e) => setServiceAddress(e.target.value)}
+                disabled={disabled || busy}
+                rows={2}
+                maxLength={500}
+                placeholder={
+                  lang === "en"
+                    ? "Street, number, colonia, city, access instructions…"
+                    : "Calle, número, colonia, ciudad, instrucciones de acceso…"
+                }
+                className="w-full rounded-lg border border-blue-200 bg-white px-2 py-1.5 text-[11px] outline-none focus:border-[#2563EB] disabled:opacity-50"
+              />
+            </label>
+          )}
           <label className="block space-y-0.5">
             <span className="text-[10px] font-semibold text-[#1E3A8A]">
               {preferredDatetimeLabel(providerSlug, lang)} *
@@ -578,6 +692,7 @@ export default function ServiceMenuQuoteBuilder({
           )}
         </div>
       )}
+      {!isTransportCustomRequest ? (
       <div className="max-h-44 overflow-y-auto divide-y divide-amber-100">
         {menu.items.map((it) => {
           const qty = qtyBySku[it.sku] ?? 0;
@@ -615,6 +730,13 @@ export default function ServiceMenuQuoteBuilder({
           );
         })}
       </div>
+      ) : (
+        <p className="text-[10px] text-[#92400E] leading-snug">
+          {lang === "en"
+            ? "The driver will confirm the fare for your route after you send this request."
+            : "El conductor confirmará la tarifa de tu ruta después de enviar esta solicitud."}
+        </p>
+      )}
       <div className="flex items-center justify-between pt-1 border-t border-amber-200">
         <span className="text-[11px] text-[#78350F]">
           {quoteLayout === "housekeeping" && isRecurring
