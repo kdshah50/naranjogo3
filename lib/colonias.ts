@@ -28,6 +28,14 @@ export const COLONIAS: Record<string, ColoniaInfo> = {
 
 export const COLONIA_KEYS = Object.keys(COLONIAS).filter(k => k !== "otro");
 
+/** Colonia chip order for hero search (alphabetical by display label). */
+export function sortedColoniaKeys(lang: "es" | "en" = "es"): string[] {
+  const locale = lang === "en" ? "en" : "es";
+  return COLONIA_KEYS.slice().sort((a, b) =>
+    coloniaLabel(a, lang).localeCompare(coloniaLabel(b, lang), locale, { sensitivity: "base" }),
+  );
+}
+
 export const ALL_COLONIA_KEYS = Object.keys(COLONIAS);
 
 export function coloniaLabel(key: string, lang: "es" | "en" = "es"): string {

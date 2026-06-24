@@ -2,7 +2,7 @@
 import { useState, Suspense, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { COLONIAS, COLONIA_KEYS, detectColoniaInQuery, coloniaLabel } from "@/lib/colonias";
+import { COLONIAS, sortedColoniaKeys, detectColoniaInQuery, coloniaLabel } from "@/lib/colonias";
 
 /** Slider top = “no upper cap” in the URL (pmax omitted). Whole MXN pesos. */
 const PRICE_MAX_UI = 5_000_000;
@@ -286,7 +286,7 @@ function HeroInner({ initialQuery }: { initialQuery: string }) {
           </span>
         </div>
         <div className="flex flex-wrap justify-center gap-2 max-w-xl mx-auto">
-          {COLONIA_KEYS.map((key) => {
+          {sortedColoniaKeys(lang).map((key) => {
             const c = COLONIAS[key];
             const active = activeColonia === key;
             return (

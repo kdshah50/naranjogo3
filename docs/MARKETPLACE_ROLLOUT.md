@@ -58,6 +58,12 @@ Chips under the search bar in `components/Hero.tsx`:
 
 Footer cross-links: `components/TrustBar.tsx` (cleaning, tailoring, bilingual errands).
 
+**Home service tabs:** `components/ServiceVerticalTabs.tsx` — six vertical shortcuts (cleaning, vet, pet, rides, tailoring, errands) below the retention banner.
+
+**Colonia chips:** sorted alphabetically by label in `lib/colonias.ts` (`sortedColoniaKeys`).
+
+**Tianguis hover story:** `components/TianguisWordmark.tsx` — brand paragraph on header hover (desktop).
+
 To add a chip: extend the `T` translations and a `Link` in the Hero shortcuts block; add a landing page under `app/<slug>/page.tsx` following the other verticals.
 
 ## Saldo Naranjo (wallet) for services
