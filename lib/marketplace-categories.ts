@@ -11,12 +11,12 @@ export type MarketplaceCategory = {
 
 export const MARKETPLACE_CATEGORIES: MarketplaceCategory[] = [
   { id: "services", icon: "🔧", label: { es: "Servicios", en: "Services" }, browseEnabled: true },
-  { id: "electronics", icon: "📱", label: { es: "Electrónica", en: "Electronics" }, browseEnabled: true },
-  { id: "vehicles", icon: "🚗", label: { es: "Vehículos", en: "Vehicles" }, browseEnabled: true },
-  { id: "fashion", icon: "👗", label: { es: "Moda", en: "Fashion" }, browseEnabled: true },
-  { id: "home", icon: "🏠", label: { es: "Hogar", en: "Home" }, browseEnabled: true },
-  { id: "realestate", icon: "🏡", label: { es: "Bienes Raíces", en: "Real Estate" }, browseEnabled: true },
-  { id: "sports", icon: "⚽", label: { es: "Deportes", en: "Sports" }, browseEnabled: true },
+  { id: "electronics", icon: "📱", label: { es: "Electrónica", en: "Electronics" }, browseEnabled: false },
+  { id: "vehicles", icon: "🚗", label: { es: "Vehículos", en: "Vehicles" }, browseEnabled: false },
+  { id: "fashion", icon: "👗", label: { es: "Moda", en: "Fashion" }, browseEnabled: false },
+  { id: "home", icon: "🏠", label: { es: "Hogar", en: "Home" }, browseEnabled: false },
+  { id: "realestate", icon: "🏡", label: { es: "Bienes Raíces", en: "Real Estate" }, browseEnabled: false },
+  { id: "sports", icon: "⚽", label: { es: "Deportes", en: "Sports" }, browseEnabled: false },
 ];
 
 const ENABLED_IDS = new Set(

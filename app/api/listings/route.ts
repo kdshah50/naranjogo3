@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
       is_verified:        isVerified,
       location_city:      body.location_city ?? body.city ?? "San Miguel de Allende",
       location_state:     body.location_state ?? "Guanajuato",
-      zip_code:           body.zip_code ?? "37745",
+      zip_code:           body.zip_code ?? "37700",
       location_lat:       body.location_lat ?? 20.91528,
       location_lng:       body.location_lng ?? -100.74389,
       shipping_available: body.shipping_available ?? body.shipping ?? false,

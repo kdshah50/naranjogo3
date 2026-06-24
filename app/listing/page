@@ -56,7 +56,7 @@ export default async function HomePage({ searchParams }: Props) {
       <section className="max-w-5xl mx-auto px-4 py-10">
         <div className="flex items-center justify-between mb-6">
           <h2 className="font-serif text-2xl font-bold text-[#1C1917]">
-            {query ? `Resultados para "${query}"` : "Servicios en CP 37745"}
+            {query ? `Resultados para "${query}"` : "Servicios en CP 37700"}
           </h2>
           <span className="text-sm text-[#6B7280]">{cards.length} artículos activos</span>
         </div>

@@ -18,10 +18,10 @@ function fmtPesos(n: number, lang: "es" | "en") {
 
 const T = {
   es: {
-    badge: "CP 37745 • SERVICIOS",
+    badge: "CP 37700 • SERVICIOS",
     line1: "eCommerce",
     line2: "con Confianza",
-    sub: "Servicios locales verificados en código postal 37745.",
+    sub: "Servicios locales verificados en código postal 37700.",
     placeholder: "Ej. plomero en Centro, dentista en Aurora...",
     btn: "Buscar",
     near: "Cerca de mí",
@@ -37,10 +37,10 @@ const T = {
     transportChip: "Taxi / transporte",
   },
   en: {
-    badge: "ZIP 37745 • SERVICES",
+    badge: "ZIP 37700 • SERVICES",
     line1: "eCommerce",
     line2: "with Confidence",
-    sub: "Verified local services in ZIP code 37745.",
+    sub: "Verified local services in ZIP code 37700.",
     placeholder: "E.g. plumber in Centro, dentist in Aurora...",
     btn: "Search",
     near: "Near me",

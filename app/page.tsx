@@ -16,7 +16,7 @@ import { normalizeBrowseCategory } from "@/lib/marketplace-categories";
 
 export const dynamic = "force-dynamic";
 
-const SMA_ZIP   = "37745";
+const SMA_ZIP   = "37700";
 const SMA_LAT   = 20.91528;
 const SMA_LNG   = -100.74389;
 const APP_URL = getPublicAppUrl();

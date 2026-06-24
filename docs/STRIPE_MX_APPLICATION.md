@@ -94,7 +94,7 @@ registration.
 
 ```
 Naranjogo es un marketplace digital para servicios locales en San
-Miguel de Allende (CP 37745). Los compradores reservan y pagan en
+Miguel de Allende (CP 37700). Los compradores reservan y pagan en
 línea. Cobramos una comisión por reserva pagada. Los proveedores
 verificados cobran sus servicios vía Stripe Connect.
 ```
@@ -246,7 +246,7 @@ email says:
 
 - **"Necesitamos más información sobre tu modelo de negocio"** — reply
   with the Section 3 description + 2 screenshots: (1) a live listing,
-  (2) the `/arreglos-de-ropa` landing page. Mention you serve CP 37745
+  (2) the `/arreglos-de-ropa` landing page. Mention you serve CP 37700
   exclusively at first.
 - **"Modelo de negocio no soportado"** — request a manual review with
   the same evidence. Most marketplaces eventually get through; it just

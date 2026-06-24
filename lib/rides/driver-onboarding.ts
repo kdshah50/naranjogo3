@@ -133,7 +133,7 @@ export function buildDriverListingPayload(input: DriverSignupInput, sellerId: st
     is_verified: false,
     location_city: locationCity,
     location_state: "Guanajuato",
-    zip_code: "37745",
+    zip_code: "37700",
     location_lat: coloniaData.lat,
     location_lng: coloniaData.lng,
     shipping_available: false,

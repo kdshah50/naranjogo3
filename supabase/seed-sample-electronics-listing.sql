@@ -45,7 +45,7 @@ SELECT
   true,
   'San Miguel de Allende',
   'Guanajuato',
-  '37745',
+  '37700',
   20.91528,
   -100.74389,
   true,

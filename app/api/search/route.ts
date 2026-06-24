@@ -36,7 +36,7 @@ const DUPLICATE_SOFT_SCORE_MULT = 0.38;
  * | Provider rank| Yes         | `get_listing_rank_multipliers`: in-app response time, booking completion/cancel, repeat buyers, reviews, × `users.provider_rank_multiplier` (admin bypass penalty). |
  */
 const OPENAI_KEY = process.env.OPENAI_API_KEY ?? "";
-const SMA_ZIP = "37745";
+const SMA_ZIP = "37700";
 
 /** Drop weak vector matches (reduces unrelated trades when every listing is vaguely similar). */
 const ABS_THRESHOLD = 0.26;
