@@ -11,6 +11,7 @@ export async function GET(req: NextRequest) {
   }
   return NextResponse.json({
     loggedIn: true,
+    userId: p.sub,
     phone: typeof p.phone === "string" ? p.phone : undefined,
     badge: typeof p.badge === "string" ? p.badge : undefined,
   });
