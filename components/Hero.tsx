@@ -35,6 +35,8 @@ const T = {
     vetChip: "Veterinaria",
     petChip: "Cuidado de mascotas",
     transportChip: "Taxi / transporte",
+    tailoringChip: "Arreglos de ropa",
+    errandsChip: "Mandados bilingüe",
   },
   en: {
     badge: "ZIP 37700 • SERVICES",
@@ -54,6 +56,8 @@ const T = {
     vetChip: "Veterinary",
     petChip: "Pet care",
     transportChip: "Taxi / rides",
+    tailoringChip: "Tailoring",
+    errandsChip: "Bilingual errands",
   },
 };
 
@@ -247,6 +251,18 @@ function HeroInner({ initialQuery }: { initialQuery: string }) {
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold bg-white/10 text-white/90 hover:bg-white/20 border border-white/25 transition-colors"
           >
             🚕 {t.transportChip}
+          </Link>
+          <Link
+            href={`/arreglos-de-ropa${lang === "en" ? "?lang=en" : ""}`}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold bg-white/10 text-white/90 hover:bg-white/20 border border-white/25 transition-colors"
+          >
+            🪡 {t.tailoringChip}
+          </Link>
+          <Link
+            href={`/mandados-bilingue${lang === "en" ? "?lang=en" : ""}`}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold bg-white/10 text-white/90 hover:bg-white/20 border border-white/25 transition-colors"
+          >
+            📋 {t.errandsChip}
           </Link>
           <button
             type="button"

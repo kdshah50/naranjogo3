@@ -25,7 +25,7 @@ export default function TrustBar() {
           ✓ Registra tu servicio gratis → Join us
         </a>
       </div>
-      <div className="max-w-5xl mx-auto mt-4 flex flex-col sm:flex-row items-center justify-end gap-3 text-center sm:text-right">
+      <div className="max-w-5xl mx-auto mt-4 flex flex-col sm:flex-row items-center justify-end gap-3 text-center sm:text-right flex-wrap">
         <a
           href="/limpieza-del-hogar"
           className="text-xs text-white/70 hover:text-white underline underline-offset-2"
@@ -37,6 +37,12 @@ export default function TrustBar() {
           className="text-xs text-white/70 hover:text-white underline underline-offset-2"
         >
           ¿Costurera o sastre? Conoce el programa de arreglos de ropa →
+        </a>
+        <a
+          href="/mandados-bilingue"
+          className="text-xs text-white/70 hover:text-white underline underline-offset-2"
+        >
+          ¿Mandados bilingüe? Conoce el programa → Bilingual errands program
         </a>
       </div>
     </div>

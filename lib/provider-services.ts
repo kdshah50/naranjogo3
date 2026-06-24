@@ -106,6 +106,7 @@ export const PET_WALKING_SERVICE = "paseador";
 export const PET_SITTING_SERVICE = "pet_sitting";
 export const DOG_GROOMING_SERVICE = "estetica_canina";
 export const TRANSPORT_APP_SERVICE = "transporte_app";
+export const BILINGUAL_ERRANDS_SERVICE = "mandados";
 
 export const PET_CARE_SERVICES = new Set<string>([
   PET_WALKING_SERVICE,
