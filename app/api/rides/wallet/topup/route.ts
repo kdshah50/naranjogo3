@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserIdFromRequest } from "@/lib/auth-server";
 import { getPublicAppUrl } from "@/lib/app-url";
-import { isRidesEnabled } from "@/lib/rides/flags";
+import { isWalletEnabled } from "@/lib/wallet-flags";
 import { createWalletTopupCheckoutSession } from "@/lib/rides/wallet-oxxo";
 
 export const dynamic = "force-dynamic";
@@ -15,10 +15,10 @@ export const maxDuration = 60;
  * returns the hosted-checkout URL. Wallet is credited later by the Stripe
  * webhook when payment confirms (Step 7).
  *
- * Gated by RIDES_ENABLED — returns 404 in production until launch.
+ * Gated by WALLET_ENABLED (or RIDES_ENABLED when unset).
  */
 export async function POST(req: NextRequest) {
-  if (!isRidesEnabled()) {
+  if (!isWalletEnabled()) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 

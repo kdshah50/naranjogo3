@@ -132,6 +132,10 @@ export default function ServiceBookingBlock({
   const prevContacted = useRef(false);
   /** Buyer checkout: default tarifa sola; optional pago completo si el proveedor tiene Connect. */
   const [checkoutMode, setCheckoutMode] = useState<"commission_only" | "full_connect">("commission_only");
+  const [paymentMethod, setPaymentMethod] = useState<"stripe" | "wallet">("stripe");
+  const [walletBalanceCents, setWalletBalanceCents] = useState<number | null>(null);
+  const [walletEnabled, setWalletEnabled] = useState(false);
+  const [walletLoading, setWalletLoading] = useState(false);
 
   const load = useCallback(async () => {
     setMsg("");
@@ -267,6 +271,72 @@ export default function ServiceBookingBlock({
     }
   }, [booking?.sellerConnectReady, booking?.fullConnectPreview, booking?.requiresQuoteAccept]);
 
+  useEffect(() => {
+    if (checkoutMode !== "commission_only") {
+      setPaymentMethod("stripe");
+    }
+  }, [checkoutMode]);
+
+  useEffect(() => {
+    const contacted = Boolean(booking?.contactedInApp);
+    const hasPaid = Boolean(booking?.checkoutBlocked);
+    const requiresQuote = Boolean(booking?.requiresQuoteAccept);
+    const canPayDeposit = booking?.canPayDeposit !== false;
+    const quoteBlocksPay = requiresQuote && !canPayDeposit && !hasPaid;
+    const showPay = contacted && !hasPaid && !quoteBlocksPay;
+
+    if (!showPay || checkoutMode !== "commission_only" || !meId) {
+      setWalletEnabled(false);
+      setWalletBalanceCents(null);
+      return;
+    }
+
+    let cancelled = false;
+    setWalletLoading(true);
+    void fetch("/api/rides/wallet", { credentials: "same-origin", cache: "no-store" })
+      .then(async (r) => {
+        if (r.status === 404) {
+          if (!cancelled) {
+            setWalletEnabled(false);
+            setWalletBalanceCents(null);
+          }
+          return;
+        }
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          if (!cancelled) {
+            setWalletEnabled(false);
+            setWalletBalanceCents(null);
+          }
+          return;
+        }
+        if (!cancelled) {
+          setWalletEnabled(true);
+          setWalletBalanceCents(Number(data?.wallet?.balance_mxn_cents ?? 0));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setWalletEnabled(false);
+          setWalletBalanceCents(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setWalletLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    booking?.contactedInApp,
+    booking?.checkoutBlocked,
+    booking?.requiresQuoteAccept,
+    booking?.canPayDeposit,
+    checkoutMode,
+    meId,
+  ]);
+
   /** Server uses merged account (phone) to detect seller; client id match is fallback. */
   const iAmSellerOnThisListing = Boolean(booking?.isSeller) || Boolean(sellerId && meId && sameUserId(meId, sellerId));
 
@@ -303,6 +373,7 @@ export default function ServiceBookingBlock({
           listingId,
           note: note.trim() || undefined,
           checkoutMode,
+          paymentMethod,
         }),
       });
       const data = await res.json();
@@ -312,7 +383,9 @@ export default function ServiceBookingBlock({
         const err = (data as { error?: string }).error ?? serviceBookingCopy(listingLang).checkoutErr;
         throw new Error(serverMsg || (detail ? `${err} ${detail}` : err));
       }
-      if (data.url) {
+      if (data.redirectUrl) {
+        window.location.href = data.redirectUrl;
+      } else if (data.url) {
         window.location.href = data.url;
       }
     } catch (e: unknown) {
@@ -370,6 +443,12 @@ export default function ServiceBookingBlock({
   const canPayDeposit = booking.canPayDeposit !== false;
   const quoteBlocksPay = requiresQuote && !canPayDeposit && !hasPaid;
   const showPayStep = contacted && !hasPaid && !quoteBlocksPay;
+  const walletCanPay =
+    walletEnabled &&
+    walletBalanceCents != null &&
+    walletBalanceCents >= booking.commissionAmountCents;
+  const showWalletPay =
+    showPayStep && checkoutMode === "commission_only" && walletEnabled && !walletLoading;
 
   const liveHintEn =
     liveAvailability?.syncEnabled && (liveAvailability.upcomingSlotCount ?? 0) > 0
@@ -912,9 +991,72 @@ export default function ServiceBookingBlock({
             </div>
           )}
 
+          {showWalletPay && (
+            <div className="rounded-xl border border-[#E5E0D8] bg-white p-3 space-y-2">
+              <p className="text-[11px] font-semibold text-[#374151]">
+                {listingLang === "en" ? "Pay with" : "Pagar con"}
+              </p>
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="payment-method"
+                  className="mt-1"
+                  checked={paymentMethod === "stripe"}
+                  onChange={() => setPaymentMethod("stripe")}
+                />
+                <span className="text-xs text-[#374151] leading-snug">
+                  {listingLang === "en" ? "Card (Stripe Checkout)" : "Tarjeta (Stripe Checkout)"}
+                </span>
+              </label>
+              <label className={`flex items-start gap-2 ${walletCanPay ? "cursor-pointer" : "opacity-60"}`}>
+                <input
+                  type="radio"
+                  name="payment-method"
+                  className="mt-1"
+                  checked={paymentMethod === "wallet"}
+                  disabled={!walletCanPay}
+                  onChange={() => setPaymentMethod("wallet")}
+                />
+                <span className="text-xs text-[#374151] leading-snug">
+                  {listingLang === "en" ? (
+                    <>
+                      <strong>Saldo Naranjo</strong> — available{" "}
+                      {formatMXN(walletBalanceCents ?? 0, listingLang)}
+                      {!walletCanPay && (
+                        <>
+                          {" "}
+                          (need {formatMXN(booking.commissionAmountCents, listingLang)} —{" "}
+                          <Link href="/saldo" className="underline font-medium">
+                            top up
+                          </Link>
+                          )
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <strong>Saldo Naranjo</strong> — disponible{" "}
+                      {formatMXN(walletBalanceCents ?? 0, listingLang)}
+                      {!walletCanPay && (
+                        <>
+                          {" "}
+                          (faltan {formatMXN(booking.commissionAmountCents, listingLang)} —{" "}
+                          <Link href="/saldo" className="underline font-medium">
+                            cargar saldo
+                          </Link>
+                          )
+                        </>
+                      )}
+                    </>
+                  )}
+                </span>
+              </label>
+            </div>
+          )}
+
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || (paymentMethod === "wallet" && !walletCanPay)}
             onClick={() => void startCheckout()}
             className="w-full py-3 rounded-xl bg-[#1B4332] text-white text-sm font-semibold disabled:opacity-40 flex items-center justify-center gap-2"
           >
@@ -922,7 +1064,15 @@ export default function ServiceBookingBlock({
               ? listingLang === "en"
                 ? "Processing…"
                 : "Procesando…"
-              : checkoutMode === "full_connect" && booking.fullConnectPreview
+              : paymentMethod === "wallet" && checkoutMode === "commission_only"
+                ? listingLang === "en"
+                  ? requiresQuote
+                    ? `Pay deposit ${formatMXN(booking.commissionAmountCents, listingLang)} with Saldo`
+                    : `Pay ${formatMXN(booking.commissionAmountCents, listingLang)} with Saldo`
+                  : requiresQuote
+                    ? `Pagar depósito ${formatMXN(booking.commissionAmountCents, listingLang)} con Saldo`
+                    : `Pagar ${formatMXN(booking.commissionAmountCents, listingLang)} con Saldo`
+                : checkoutMode === "full_connect" && booking.fullConnectPreview
                 ? listingLang === "en"
                   ? `Pay ${formatMXN(booking.fullConnectPreview.totalCents, listingLang)} (full checkout)`
                   : `Pagar ${formatMXN(booking.fullConnectPreview.totalCents, listingLang)} (total)`
@@ -940,13 +1090,17 @@ export default function ServiceBookingBlock({
           </button>
 
           <p className="text-center text-xs text-[#6B7280]">
-            {isService
+            {paymentMethod === "wallet" && checkoutMode === "commission_only"
               ? listingLang === "en"
-                ? "Secure checkout with Stripe."
-                : "Pago seguro con Stripe."
-              : listingLang === "en"
-                ? "Secure payment with Stripe. After paying, continue coordinating in app messages."
-                : "Pago seguro con Stripe. Al pagar, sigue coordinando en los mensajes de la app."}
+                ? "Paid instantly from your Naranjo balance."
+                : "Se cobra al instante de tu saldo Naranjo."
+              : isService
+                ? listingLang === "en"
+                  ? "Secure checkout with Stripe."
+                  : "Pago seguro con Stripe."
+                : listingLang === "en"
+                  ? "Secure payment with Stripe. After paying, continue coordinating in app messages."
+                  : "Pago seguro con Stripe. Al pagar, sigue coordinando en los mensajes de la app."}
           </p>
 
           {loyaltyHint && loyaltyHint.discountPct > 0 && booking.commissionBeforeLoyaltyCents == null && (

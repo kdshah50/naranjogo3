@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminSupabase, getUserIdFromRequest } from "@/lib/auth-server";
 import { getStripe } from "@/lib/stripe";
-import { isRidesEnabled } from "@/lib/rides/flags";
+import { isWalletEnabled } from "@/lib/wallet-flags";
 import { getWalletForUser } from "@/lib/rides/wallet-server";
 import { handleWalletTopupSessionCompleted } from "@/lib/rides/wallet-webhook";
 
@@ -17,7 +17,7 @@ const jsonNoStore = { "Cache-Control": "no-store, max-age=0" as const };
  * has not run yet (wrong URL, signature mismatch, or delay).
  */
 export async function GET(req: NextRequest) {
-  if (!isRidesEnabled()) {
+  if (!isWalletEnabled()) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 

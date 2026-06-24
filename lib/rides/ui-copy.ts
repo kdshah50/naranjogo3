@@ -6,7 +6,7 @@ export function ledgerKindLabel(kind: string, lang: Lang): string {
     load_bonus: { es: "Bono de carga", en: "Top-up bonus" },
     hold: { es: "Reserva por viaje", en: "Ride hold" },
     release: { es: "Liberación de reserva", en: "Hold release" },
-    capture: { es: "Cargo por viaje", en: "Ride charge" },
+    capture: { es: "Cargo de saldo", en: "Balance charge" },
     refund: { es: "Reembolso", en: "Refund" },
     payout_debit: { es: "Pago a conductor", en: "Driver payout" },
     adjustment: { es: "Ajuste", en: "Adjustment" },
@@ -224,7 +224,7 @@ const VIAJE = {
 const SALDO = {
   es: {
     title: "Saldo Naranjo",
-    subtitle: "Carga saldo prepagado para usar en NaranjoGo.",
+    subtitle: "Carga saldo prepagado para reservar servicios y viajes en NaranjoGo.",
     topupSuccessOxxo:
       "Recibimos tu solicitud. Si pagas en OXXO, el saldo aparecerá cuando se confirme el pago.",
     topupSuccessCard: "Recibimos tu pago. Tu saldo se actualizará en unos segundos.",
@@ -246,7 +246,7 @@ const SALDO = {
   },
   en: {
     title: "Naranjo Balance",
-    subtitle: "Prepaid balance for NaranjoGo rides.",
+    subtitle: "Prepaid balance for service bookings and rides on NaranjoGo.",
     topupSuccessOxxo:
       "We received your request. If you pay at OXXO, balance will appear once payment is confirmed.",
     topupSuccessCard: "Payment received. Your balance will update in a few seconds.",

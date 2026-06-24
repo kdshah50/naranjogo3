@@ -1,18 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminSupabase, getUserIdFromRequest } from "@/lib/auth-server";
-import { isRidesEnabled } from "@/lib/rides/flags";
+import { isWalletEnabled } from "@/lib/wallet-flags";
 import { getWalletForUser } from "@/lib/rides/wallet-server";
 
 /**
  * GET /api/rides/wallet
  *
  * Returns the authenticated user's Saldo Naranjo balance and recent ledger.
- * Gated by `RIDES_ENABLED` — returns 404 in production until launch.
+ * Gated by `WALLET_ENABLED` (or `RIDES_ENABLED` when unset).
  *
  * See: docs/RIDES_AI_PLAN.md §9 (Wallet + OXXO).
  */
 export async function GET(req: NextRequest) {
-  if (!isRidesEnabled()) {
+  if (!isWalletEnabled()) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 

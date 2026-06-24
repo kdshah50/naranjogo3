@@ -20,6 +20,9 @@ import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-
 import { providerServiceRequiresQuoteAccept } from "@/lib/provider-services";
 import { checkoutFullConnectBlockedMessage } from "@/lib/service-quote-vertical";
 import { loadServiceQuoteGateForBuyerPool, agreedGateFromQuoteRow } from "@/lib/service-quote-server";
+import { isWalletEnabled } from "@/lib/wallet-flags";
+import { captureWalletForServiceDeposit } from "@/lib/wallet-service-payment";
+import { finalizeServiceBookingDepositPaid } from "@/lib/service-booking-deposit-paid";
 
 export const dynamic = "force-dynamic";
 /** Allow Stripe + retries to finish on Vercel (requires Hobby 10s default or Pro for 60s). */
@@ -30,9 +33,10 @@ const APP_URL = getPublicAppUrl();
 type CheckoutMode = "commission_only" | "full_connect";
 
 /**
- * POST { listingId, note?, checkoutMode?: 'commission_only' | 'full_connect' }
+ * POST { listingId, note?, checkoutMode?: 'commission_only' | 'full_connect', paymentMethod?: 'stripe' | 'wallet' }
  * commission_only: Stripe session charges platform fee only (default).
  * full_connect: subtotal + comisión + IVA; requires seller Stripe Connect (same split as cart).
+ * paymentMethod wallet: commission_only deposit from Saldo Naranjo (requires WALLET_ENABLED).
  */
 export async function POST(req: NextRequest) {
   try {
@@ -47,6 +51,25 @@ export async function POST(req: NextRequest) {
     const checkoutModeRaw = String((json as { checkoutMode?: string }).checkoutMode ?? "commission_only").trim();
     const checkoutMode: CheckoutMode =
       checkoutModeRaw === "full_connect" ? "full_connect" : "commission_only";
+    const paymentMethodRaw = String((json as { paymentMethod?: string }).paymentMethod ?? "stripe")
+      .trim()
+      .toLowerCase();
+    const paymentMethod = paymentMethodRaw === "wallet" ? "wallet" : "stripe";
+
+    if (paymentMethod === "wallet") {
+      if (!isWalletEnabled()) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+      if (checkoutMode !== "commission_only") {
+        return NextResponse.json(
+          {
+            error:
+              "El pago con saldo solo aplica a la tarifa de plataforma. Elige «solo tarifa» o paga con tarjeta.",
+          },
+          { status: 400 },
+        );
+      }
+    }
 
     if (!listingId) {
       return NextResponse.json({ error: "listingId requerido" }, { status: 400 });
@@ -395,6 +418,49 @@ export async function POST(req: NextRequest) {
     }
 
     const bookingId = String(booking.id);
+
+    if (paymentMethod === "wallet") {
+      const commissionCents = Number(insertPayload.commission_amount_cents ?? 0);
+      const capture = await captureWalletForServiceDeposit(supabase, {
+        userId,
+        serviceBookingId: bookingId,
+        amountMxnCents: commissionCents,
+      });
+
+      if (!capture.ok) {
+        await supabase.from("service_bookings").delete().eq("id", booking.id);
+        const status = capture.code === "insufficient_balance" ? 402 : 400;
+        return NextResponse.json({ error: capture.error, code: capture.code }, { status });
+      }
+
+      const finalized = await finalizeServiceBookingDepositPaid(supabase, {
+        bookingId,
+        source: "wallet_checkout",
+      });
+
+      if (!finalized.ok) {
+        console.error("[checkout] wallet finalize failed after capture", finalized.error, { bookingId });
+        return NextResponse.json({ error: finalized.error }, { status: 500 });
+      }
+
+      if (loyaltyDiscount > 0 && loyaltyDiscountPct > 0) {
+        try {
+          await redeemDiscount(supabase, userId, booking.id, loyaltyDiscount, loyaltyDiscountPct);
+        } catch (loyaltyErr) {
+          console.error("[checkout] loyalty redeem failed (non-fatal)", loyaltyErr);
+        }
+      }
+
+      return NextResponse.json({
+        redirectUrl: `${APP_URL}/booking/success?id=${encodeURIComponent(bookingId)}`,
+        bookingId: booking.id,
+        checkoutMode,
+        paymentMethod: "wallet",
+        loyaltyDiscount:
+          loyaltyDiscount > 0 ? { pct: loyaltyDiscountPct, amountCents: loyaltyDiscount } : null,
+      });
+    }
+
     sessionParams.metadata = { ...sessionParams.metadata, booking_id: bookingId };
     if (checkoutMode === "full_connect" && sessionParams.payment_intent_data?.metadata) {
       sessionParams.payment_intent_data = {

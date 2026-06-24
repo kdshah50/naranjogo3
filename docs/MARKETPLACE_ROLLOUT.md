@@ -59,3 +59,19 @@ Chips under the search bar in `components/Hero.tsx`:
 Footer cross-links: `components/TrustBar.tsx` (cleaning, tailoring, bilingual errands).
 
 To add a chip: extend the `T` translations and a `Link` in the Hero shortcuts block; add a landing page under `app/<slug>/page.tsx` following the other verticals.
+
+## Saldo Naranjo (wallet) for services
+
+Buyers can load prepaid balance at **`/saldo`** and pay the **platform fee / deposit** on service listings with **Saldo Naranjo** (cleaning, vet, pet, tailoring, errands, etc.).
+
+| Env var | Production default | Purpose |
+|---------|-------------------|---------|
+| `WALLET_ENABLED` | unset (off) | Set `true` to enable `/saldo`, wallet top-up API, and “Pay with Saldo” on service checkout |
+| `RIDES_ENABLED` | `false` | When `true`, also enables rides; wallet follows rides if `WALLET_ENABLED` is unset |
+| `WALLET_TOPUP_OXXO_ENABLED` | `false` | OXXO + card top-up via Stripe (Mexican account required for OXXO) |
+
+**Scope (v1):** `commission_only` deposit checkout only — not `full_connect`, balance supplement, or tips. Stripe Checkout remains the default; wallet is an optional payment method in `ServiceBookingBlock`.
+
+**Key files:** `lib/wallet-flags.ts`, `lib/wallet-service-payment.ts`, `app/api/bookings/checkout/route.ts`, `app/api/rides/wallet/*`, `components/ServiceBookingBlock.tsx`.
+
+**Rollout:** set `WALLET_ENABLED=true` on Vercel Production when ready; no need to enable rides.

@@ -7,7 +7,7 @@ import { notifyBuyerBookingCommissionPaid } from "@/lib/buyer-booking-notify";
 import { notifySellerBookingCommissionPaid } from "@/lib/seller-booking-notify";
 import { appendBookingEvent, ensureTicketCodeForPaidBooking, statusAfterPaymentSucceeded } from "@/lib/booking-lifecycle";
 import { appendListingChatPaymentNotice, appendListingChatPaymentNoticeForBookingId } from "@/lib/payment-confirmed-chat";
-import { isRidesEnabled } from "@/lib/rides/flags";
+import { isWalletEnabled } from "@/lib/wallet-flags";
 import { handleWalletTopupSessionCompleted } from "@/lib/rides/wallet-webhook";
 
 export const dynamic = "force-dynamic";
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
   // Handles both card (sync) and OXXO (async) success events. Returns 200 on
   // every code path so Stripe doesn't retry unnecessarily.
   if (
-    isRidesEnabled() &&
+    isWalletEnabled() &&
     (event.type === "checkout.session.completed" ||
       event.type === "checkout.session.async_payment_succeeded")
   ) {
