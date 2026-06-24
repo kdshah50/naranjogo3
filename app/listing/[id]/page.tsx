@@ -33,6 +33,8 @@ import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-
 import { providerServiceRequiresQuoteAccept, TRANSPORT_APP_SERVICE } from "@/lib/provider-services";
 import { quoteLayoutForSlug } from "@/lib/service-quote-vertical";
 
+export const dynamic = "force-dynamic";
+
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
   const supaUrl = getSupabaseUrl();
   const h = getServiceRoleRestHeaders();

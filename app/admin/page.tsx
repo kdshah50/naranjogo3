@@ -453,15 +453,16 @@ function AdminPageInner() {
       setListings((prev) =>
         prev.map((l) => (l.id === listingId ? { ...l, service_menu: parsed.menu } : l)),
       );
+      return parsed.menu.items.length;
     }
+    return 0;
   };
 
   const saveServiceMenu = async (listingId: string, providerSlug: string) => {
     setSaving(listingId);
     try {
-      await persistServiceMenu(listingId, providerSlug);
-      showMsg(ad.menuSaved);
-      await load();
+      const count = await persistServiceMenu(listingId, providerSlug);
+      showMsg(ad.menuSaved(count));
     } catch (e: unknown) {
       showMsg(e instanceof Error ? e.message : ad.saveError, true);
     } finally {
@@ -1038,6 +1039,12 @@ function AdminPageInner() {
           ))}
         </div>
 
+        {filter === "pending" && (
+          <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 mb-4 leading-snug">
+            {ad.menuVerifiedFilterHint}
+          </p>
+        )}
+
         <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50/60 px-4 py-4">
           <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
             <div>
@@ -1154,7 +1161,12 @@ function AdminPageInner() {
                   return (
                     <div className="mb-4 p-3 rounded-xl bg-amber-50/90 border border-amber-200/80">
                       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                        <p className="text-xs font-semibold text-amber-950">{ad.menuTitle}</p>
+                        <div>
+                          <p className="text-xs font-semibold text-amber-950">{ad.menuTitle}</p>
+                          <p className="text-[10px] text-amber-800 mt-0.5">
+                            {ad.menuLiveCount((menuRows[listing.id] ?? []).filter((r) => r.name.trim() && r.pesos.trim()).length)}
+                          </p>
+                        </div>
                         <div className="flex flex-wrap items-center gap-2">
                           <Link
                             href={`/listing/${listing.id}`}

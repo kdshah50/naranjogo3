@@ -144,7 +144,16 @@ export function adminLabels(lang: Lang) {
         ? "Quita filas con ✕ y pulsa «Guardar menú» (o «Aprobar» guarda el menú también). Así el anuncio deja de mostrar la plantilla por defecto."
         : "Remove rows with ✕ and click «Save menu» (Approve saves the menu too). That stops the listing from showing the default template.",
     saveMenu: es ? "Guardar menú" : "Save menu",
-    menuSaved: es ? "✅ Menú guardado" : "✅ Menu saved",
+    menuSaved: (count: number) =>
+      es
+        ? `✅ Menú guardado (${count} servicio${count === 1 ? "" : "s"} en el anuncio)`
+        : `✅ Menu saved (${count} service${count === 1 ? "" : "s"} on listing)`,
+    menuLiveCount: (count: number) =>
+      es ? `${count} servicio${count === 1 ? "" : "s"} en el anuncio` : `${count} service${count === 1 ? "" : "s"} on listing`,
+    menuVerifiedFilterHint:
+      es
+        ? "Anuncios ya verificados (como Dog Grooming) aparecen en «Verificados» o «Todos», no en «Pendientes»."
+        : "Already-verified listings (e.g. Dog Grooming) appear under Verified or All, not Pending.",
     viewListing: es ? "Ver anuncio público" : "View public listing",
     liveCalendarTitle: es ? "Sincronización de calendario en vivo" : "Live calendar sync",
     liveCalendarBody:

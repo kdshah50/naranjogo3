@@ -283,10 +283,20 @@ export function serviceMenuForListingPatch(
   raw: unknown,
   providerSlug: string | null | undefined,
 ): ParsedServiceMenu {
-  if (raw === null || raw === undefined) {
-    return parseServiceMenu(serviceMenuPayloadFromFormRows([], providerSlug));
-  }
-  return parseServiceMenu(raw);
+  const parsed =
+    raw === null || raw === undefined
+      ? parseServiceMenu(serviceMenuPayloadFromFormRows([], providerSlug))
+      : parseServiceMenu(raw);
+  if (!parsed.ok) return parsed;
+  const disclaimers = menuDisclaimersForProviderSlug(providerSlug);
+  return {
+    ok: true,
+    menu: {
+      ...parsed.menu,
+      disclaimer_es: disclaimers.disclaimer_es,
+      disclaimer_en: disclaimers.disclaimer_en,
+    },
+  };
 }
 
 /** Build API payload from editor rows + provider slug (disclaimers from slug). */
