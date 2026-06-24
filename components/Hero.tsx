@@ -31,7 +31,6 @@ const T = {
     priceMax: "Máx.",
     noMax: "Sin límite",
     cleaningChip: "Limpieza del hogar",
-    cleaningSearch: "limpieza del hogar",
     vetChip: "Veterinaria",
     petChip: "Cuidado de mascotas",
     transportChip: "Taxi / transporte",
@@ -52,7 +51,6 @@ const T = {
     priceMax: "Max.",
     noMax: "No max",
     cleaningChip: "Home cleaning",
-    cleaningSearch: "house cleaning",
     vetChip: "Veterinary",
     petChip: "Pet care",
     transportChip: "Taxi / rides",
@@ -264,13 +262,6 @@ function HeroInner({ initialQuery }: { initialQuery: string }) {
           >
             📋 {t.errandsChip}
           </Link>
-          <button
-            type="button"
-            onClick={() => go(t.cleaningSearch, { category: "services" })}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold bg-white/10 text-white/90 hover:bg-white/20 border border-white/25 transition-colors"
-          >
-            🔍 {lang === "es" ? "Buscar limpieza" : "Search cleaning"}
-          </button>
         </div>
 
         {/* Near me */}

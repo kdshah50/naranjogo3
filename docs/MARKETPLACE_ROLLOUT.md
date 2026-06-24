@@ -49,8 +49,7 @@ Chips under the search bar in `components/Hero.tsx`:
 
 | Chip | Route | Notes |
 |------|-------|--------|
-| Home cleaning | `/limpieza-del-hogar` | Primary vertical (gold chip) |
-| Search cleaning | `/?category=services&q=limpieza+del+hogar` | Buyer search within home cleaning |
+| Home cleaning | `/limpieza-del-hogar` | Primary vertical (gold chip); buyers search via hero search bar or landing CTA |
 | Veterinary | `/veterinaria` | |
 | Pet care | `/cuidado-mascotas` | |
 | Taxi / rides | `/transporte` | Rides off prod until `RIDES_ENABLED=true` |
