@@ -2,7 +2,6 @@ import { Suspense } from "react";
 import ListingBrowseSection from "@/components/listings/ListingBrowseSection";
 import Hero from "@/components/Hero";
 import CategoryBar from "@/components/CategoryBar";
-import ServiceVerticalTabs from "@/components/ServiceVerticalTabs";
 import TrustBar from "@/components/TrustBar";
 import RetentionHomeBanner from "@/components/RetentionHomeBanner";
 import { HomeListHeading } from "@/components/home/HomeListHeading";
@@ -183,7 +182,6 @@ export default async function HomePage({ searchParams }: Props) {
     <main className="min-h-screen bg-[#FDF8F1]">
       <Hero initialQuery={query} />
       <RetentionHomeBanner lang={initialLang} />
-      <ServiceVerticalTabs />
       <CategoryBar />
       <section className="max-w-5xl mx-auto px-4 py-10">
         <Suspense

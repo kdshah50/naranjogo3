@@ -59,6 +59,15 @@ const T = {
   },
 };
 
+const HERO_SERVICE_CHIPS = [
+  { href: "/arreglos-de-ropa", icon: "🪡", labelKey: "tailoringChip" as const, featured: false },
+  { href: "/cuidado-mascotas", icon: "🐕", labelKey: "petChip" as const, featured: false },
+  { href: "/limpieza-del-hogar", icon: "🧹", labelKey: "cleaningChip" as const, featured: true },
+  { href: "/mandados-bilingue", icon: "📋", labelKey: "errandsChip" as const, featured: false },
+  { href: "/transporte", icon: "🚕", labelKey: "transportChip" as const, featured: false },
+  { href: "/veterinaria", icon: "🐾", labelKey: "vetChip" as const, featured: false },
+] as const;
+
 function HeroInner({ initialQuery }: { initialQuery: string }) {
   const [query, setQuery] = useState(initialQuery);
   const [priceMin, setPriceMin] = useState(0);
@@ -69,6 +78,12 @@ function HeroInner({ initialQuery }: { initialQuery: string }) {
   const lang = (params.get("lang") || "es") as "es" | "en";
   const t = T[lang];
   const activeColonia = params.get("colonia") ?? "";
+  const serviceChips = HERO_SERVICE_CHIPS.map((chip) => ({
+    ...chip,
+    label: t[chip.labelKey],
+  })).sort((a, b) =>
+    a.label.localeCompare(b.label, lang === "en" ? "en" : "es", { sensitivity: "base" }),
+  );
 
   const priceKey = `${params.get("pmin") ?? ""}|${params.get("pmax") ?? ""}`;
   useEffect(() => {
@@ -224,44 +239,21 @@ function HeroInner({ initialQuery }: { initialQuery: string }) {
           </div>
         </div>
 
-        {/* Service shortcuts */}
+        {/* Service shortcuts — alphabetical by label (below price sliders) */}
         <div className="flex flex-wrap justify-center gap-2 mb-4">
-          <Link
-            href={`/limpieza-del-hogar${lang === "en" ? "?lang=en" : ""}`}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold bg-[#D4A017] text-[#1B4332] hover:bg-[#F0C040] transition-colors shadow-md"
-          >
-            🧹 {t.cleaningChip}
-          </Link>
-          <Link
-            href={`/veterinaria${lang === "en" ? "?lang=en" : ""}`}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold bg-white/10 text-white/90 hover:bg-white/20 border border-white/25 transition-colors"
-          >
-            🐾 {t.vetChip}
-          </Link>
-          <Link
-            href={`/cuidado-mascotas${lang === "en" ? "?lang=en" : ""}`}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold bg-white/10 text-white/90 hover:bg-white/20 border border-white/25 transition-colors"
-          >
-            🐕 {t.petChip}
-          </Link>
-          <Link
-            href={`/transporte${lang === "en" ? "?lang=en" : ""}`}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold bg-white/10 text-white/90 hover:bg-white/20 border border-white/25 transition-colors"
-          >
-            🚕 {t.transportChip}
-          </Link>
-          <Link
-            href={`/arreglos-de-ropa${lang === "en" ? "?lang=en" : ""}`}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold bg-white/10 text-white/90 hover:bg-white/20 border border-white/25 transition-colors"
-          >
-            🪡 {t.tailoringChip}
-          </Link>
-          <Link
-            href={`/mandados-bilingue${lang === "en" ? "?lang=en" : ""}`}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold bg-white/10 text-white/90 hover:bg-white/20 border border-white/25 transition-colors"
-          >
-            📋 {t.errandsChip}
-          </Link>
+          {serviceChips.map((chip) => (
+            <Link
+              key={chip.href}
+              href={`${chip.href}${lang === "en" ? "?lang=en" : ""}`}
+              className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold transition-colors ${
+                chip.featured
+                  ? "bg-[#D4A017] text-[#1B4332] hover:bg-[#F0C040] shadow-md"
+                  : "bg-white/10 text-white/90 hover:bg-white/20 border border-white/25"
+              }`}
+            >
+              {chip.icon} {chip.label}
+            </Link>
+          ))}
         </div>
 
         {/* Near me */}

@@ -58,9 +58,7 @@ Chips under the search bar in `components/Hero.tsx`:
 
 Footer cross-links: `components/TrustBar.tsx` (cleaning, tailoring, bilingual errands).
 
-**Home service tabs:** `components/ServiceVerticalTabs.tsx` — six vertical shortcuts (cleaning, vet, pet, rides, tailoring, errands) below the retention banner.
-
-**Colonia chips:** sorted alphabetically by label in `lib/colonias.ts` (`sortedColoniaKeys`).
+**Hero service chips:** below the price sliders in `components/Hero.tsx` — six verticals, sorted alphabetically by label (`sortedColoniaKeys` for colonia chips).
 
 **Tianguis hover story:** `components/TianguisWordmark.tsx` — brand paragraph on header hover (desktop).
 
