@@ -3,6 +3,7 @@
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { Lang } from "@/lib/i18n-lang";
+import { NARANJO_LANG_COOKIE, persistAppLangClient } from "@/lib/i18n-lang";
 
 /**
  * Resolves UI language: `?lang=` (if present) wins, then localStorage `naranjo_lang`, else Spanish.
@@ -16,7 +17,7 @@ export function useAppLang(): Lang {
 
   useEffect(() => {
     try {
-      const s = localStorage.getItem("naranjo_lang");
+      const s = localStorage.getItem(NARANJO_LANG_COOKIE);
       if (s === "en" || s === "es") setFromStorage(s);
     } catch {
       setFromStorage(null);
@@ -25,11 +26,7 @@ export function useAppLang(): Lang {
 
   useEffect(() => {
     if (fromUrl) {
-      try {
-        localStorage.setItem("naranjo_lang", fromUrl);
-      } catch {
-        /* ignore */
-      }
+      persistAppLangClient(fromUrl);
     }
   }, [fromUrl]);
 
@@ -45,11 +42,7 @@ export function useAppLangActions() {
   const params = useSearchParams();
 
   const setLang = (l: Lang) => {
-    try {
-      localStorage.setItem("naranjo_lang", l);
-    } catch {
-      /* ignore */
-    }
+    persistAppLangClient(l);
     const p = new URLSearchParams(params.toString());
     p.set("lang", l);
     const q = p.toString();

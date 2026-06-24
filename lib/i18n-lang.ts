@@ -1,7 +1,32 @@
 export type Lang = "en" | "es";
 
+export const NARANJO_LANG_COOKIE = "naranjo_lang";
+
 export function langFromParam(raw: string | undefined): Lang {
   return raw === "en" || raw === "es" ? raw : "es";
+}
+
+/** URL `?lang=` wins, then language cookie, else Spanish. */
+export function resolveAppLang(
+  searchParamLang: string | undefined,
+  cookieLang: string | undefined,
+): Lang {
+  if (searchParamLang === "en" || searchParamLang === "es") return searchParamLang;
+  if (cookieLang === "en" || cookieLang === "es") return cookieLang;
+  return "es";
+}
+
+export function persistAppLangClient(lang: Lang) {
+  try {
+    localStorage.setItem(NARANJO_LANG_COOKIE, lang);
+  } catch {
+    /* ignore */
+  }
+  try {
+    document.cookie = `${NARANJO_LANG_COOKIE}=${lang};path=/;max-age=${60 * 60 * 24 * 365};SameSite=Lax`;
+  } catch {
+    /* ignore */
+  }
 }
 
 /** Append `?lang=` or `&lang=` so navigation stays in the chosen language. */

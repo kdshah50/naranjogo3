@@ -17,8 +17,10 @@ import { PAYMENT_METHODS_MX } from "@/lib/types";
 import { getServiceRoleRestHeaders, getSupabaseUrl } from "@/lib/service-rest";
 import { SellerVerificationBadges } from "@/components/SellerVerificationBadges";
 import { embeddedSellerRow, verificationPropsFromSellerRow } from "@/lib/seller-trust-display";
-import { langFromParam } from "@/lib/i18n-lang";
+import { resolveAppLang, intlLocale } from "@/lib/i18n-lang";
+import { listingDisplayDescription, listingDisplayTitle } from "@/lib/listing-display";
 import { listingPageCopy } from "@/lib/listing-page-copy";
+import { cookies } from "next/headers";
 import ListingPhotoGallery from "@/components/ListingPhotoGallery";
 import ListingLiveAvailability from "@/components/ListingLiveAvailability";
 import { fetchLiveSlotsViaRest } from "@/lib/live-availability";
@@ -35,23 +37,32 @@ import { quoteLayoutForSlug } from "@/lib/service-quote-vertical";
 
 export const dynamic = "force-dynamic";
 
-export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
+export async function generateMetadata({
+  params,
+  searchParams,
+}: {
+  params: { id: string };
+  searchParams?: { lang?: string };
+}): Promise<Metadata> {
   const supaUrl = getSupabaseUrl();
   const h = getServiceRoleRestHeaders();
-  const res = await fetch(`${supaUrl}/rest/v1/listings?id=eq.${params.id}&select=title_es,description_es,photo_urls,price_mxn`, {
+  const listingLang = resolveAppLang(searchParams?.lang, cookies().get("naranjo_lang")?.value);
+  const res = await fetch(`${supaUrl}/rest/v1/listings?id=eq.${params.id}&select=title_es,title_en,description_es,description_en,photo_urls,price_mxn`, {
     headers: h,
     cache: "no-store",
   });
   const [data] = res.ok ? await res.json() : [];
-  if (!data) return { title: "Artículo no encontrado - Naranjogo" };
+  if (!data) return { title: listingLang === "en" ? "Listing not found - Naranjogo" : "Artículo no encontrado - Naranjogo" };
 
-  const price = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 0 }).format(data.price_mxn / 100);
+  const title = listingDisplayTitle(data, listingLang);
+  const price = new Intl.NumberFormat(intlLocale(listingLang), { style: "currency", currency: "MXN", maximumFractionDigits: 0 }).format(data.price_mxn / 100);
+  const description = listingDisplayDescription(data, listingLang).slice(0, 160);
   return {
-    title: `${data.title_es} - ${price} | Naranjogo`,
-    description: data.description_es?.slice(0, 160) ?? `${data.title_es} en venta en Naranjogo`,
+    title: `${title} - ${price} | Naranjogo`,
+    description: description || (listingLang === "en" ? `${title} on Naranjogo` : `${title} en venta en Naranjogo`),
     openGraph: {
-      title: data.title_es,
-      description: data.description_es ?? "",
+      title,
+      description: description || undefined,
       images: data.photo_urls?.[0] ? [{ url: data.photo_urls[0], width: 800, height: 600 }] : [],
     },
   };
@@ -103,9 +114,11 @@ export default async function ListingPage({
         : 0;
   }
 
-  const listingLang = langFromParam(searchParams?.lang);
+  const listingLang = resolveAppLang(searchParams?.lang, cookies().get("naranjo_lang")?.value);
   const lp = listingPageCopy(listingLang);
-  const priceLocale = listingLang === "en" ? "en-MX" : "es-MX";
+  const priceLocale = intlLocale(listingLang);
+  const listingTitle = listingDisplayTitle(listing, listingLang);
+  const listingDescription = listingDisplayDescription(listing, listingLang);
 
   const price = new Intl.NumberFormat(priceLocale, { style: "currency", currency: "MXN", maximumFractionDigits: 0 }).format(listing.price_mxn / 100);
   const isServiceListing = isServicesListing(listing);
@@ -172,7 +185,7 @@ export default async function ListingPage({
   return (
     <main id="listing-top" className="min-h-screen bg-[#FDF8F1]">
       <div className="max-w-3xl mx-auto px-4 py-8">
-        <ListingPhotoGallery photos={Array.isArray(listing.photo_urls) ? listing.photo_urls : []} title={listing.title_es} />
+        <ListingPhotoGallery photos={Array.isArray(listing.photo_urls) ? listing.photo_urls : []} title={listingTitle} />
         <div className="flex items-start justify-between mb-3">
           <span className="text-3xl font-bold text-[#1B4332]">
             {price}
@@ -181,7 +194,7 @@ export default async function ListingPage({
           {listing.negotiable && <span className="text-sm text-[#6B7280] italic">{lp.negotiable}</span>}
         </div>
         <div className="flex items-start justify-between gap-3 mb-4">
-          <h1 className="text-xl font-semibold text-[#1C1917] flex-1 min-w-0">{listing.title_es}</h1>
+          <h1 className="text-xl font-semibold text-[#1C1917] flex-1 min-w-0">{listingTitle}</h1>
           <FavoriteButton listingId={params.id} lang={listingLang} />
         </div>
         {packagePromoActive &&
@@ -288,7 +301,7 @@ export default async function ListingPage({
           </div>
         )}
 
-        {listing.description_es && <p className="text-[#374151] leading-relaxed mb-6">{listing.description_es}</p>}
+        {listingDescription && <p className="text-[#374151] leading-relaxed mb-6">{listingDescription}</p>}
 
         <ListingBeforeAfterSection pairs={beforeAfterPairs} lang={listingLang} />
 

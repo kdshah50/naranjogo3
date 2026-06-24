@@ -3,8 +3,7 @@ import { useState, Suspense, useEffect } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { withLang } from "@/lib/i18n-lang";
-import type { Lang } from "@/lib/i18n-lang";
+import { withLang, persistAppLangClient, type Lang } from "@/lib/i18n-lang";
 import HeaderWeather from "./HeaderWeather";
 import TianguisWordmark from "./TianguisWordmark";
 
@@ -15,13 +14,10 @@ function LangToggle() {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
-  const lang = (params.get("lang") === "en" ? "en" : "es") as Lang;
+  const urlLang = params.get("lang");
+  const lang = (urlLang === "en" || urlLang === "es" ? urlLang : "es") as Lang;
   const toggle = (l: string) => {
-    try {
-      localStorage.setItem("naranjo_lang", l);
-    } catch {
-      /* ignore */
-    }
+    persistAppLangClient(l as Lang);
     const p = new URLSearchParams(params.toString());
     p.set("lang", l);
     router.push(`${pathname}?${p.toString()}`);
@@ -44,7 +40,8 @@ function HeaderInner() {
   const [user, setUser] = useState<{ phone: string; badge: string } | null>(null);
   const [showMenu, setShowMenu] = useState(false);
   const params = useSearchParams();
-  const lang = (params.get("lang") === "en" ? "en" : "es") as Lang;
+  const urlLang = params.get("lang");
+  const lang = (urlLang === "en" || urlLang === "es" ? urlLang : "es") as Lang;
   const router = useRouter();
   const pathname = usePathname();
 
