@@ -2,9 +2,9 @@
 
 import {
   MAX_SERVICE_MENU_ITEMS,
+  emptyServiceMenuFormRow,
   starterMenuForProviderSlug,
   type ServiceMenuFormRow,
-  type ServiceMenuItem,
 } from "@/lib/listing-service-menu";
 import { getServiceMenuEditorCopy } from "@/lib/service-menu-editor-copy";
 
@@ -27,8 +27,9 @@ export default function ServiceMenuEditor({
     const tpl = starterMenuForProviderSlug(providerSlug);
     if (!tpl) return;
     onRowsChange(
-      tpl.items.map((it: ServiceMenuItem) => ({
-        name: lang === "en" && it.name_en ? it.name_en : it.name_es,
+      tpl.items.map((it) => ({
+        name_es: it.name_es,
+        name_en: it.name_en ?? "",
         pesos: String(it.price_mxn_cents / 100),
       })),
     );
@@ -53,22 +54,44 @@ export default function ServiceMenuEditor({
         <p className="text-xs italic text-[#A16207]">{copy.empty}</p>
       ) : (
         <div className="space-y-2">
+          <div className="hidden sm:grid sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_5rem_2rem] gap-2 px-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#92400E]">
+            <span>{copy.colEs}</span>
+            <span>{copy.colEn}</span>
+            <span>MXN</span>
+            <span />
+          </div>
           {rows.map((row, i) => (
-            <div key={i} className="flex items-center gap-2">
+            <div
+              key={i}
+              className="grid grid-cols-1 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_5rem_2rem] gap-2 items-center"
+            >
               <input
                 type="text"
-                value={row.name}
+                value={row.name_es}
                 onChange={(e) => {
                   const next = [...rows];
-                  next[i] = { ...next[i], name: e.target.value };
+                  next[i] = { ...next[i], name_es: e.target.value };
                   onRowsChange(next);
                 }}
-                placeholder={copy.namePh}
+                placeholder={copy.nameEsPh}
                 maxLength={80}
                 disabled={disabled}
-                className="flex-1 min-w-0 rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-[#B45309] disabled:opacity-50"
+                className="min-w-0 rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-[#B45309] disabled:opacity-50"
               />
-              <div className="relative w-24 shrink-0">
+              <input
+                type="text"
+                value={row.name_en}
+                onChange={(e) => {
+                  const next = [...rows];
+                  next[i] = { ...next[i], name_en: e.target.value };
+                  onRowsChange(next);
+                }}
+                placeholder={copy.nameEnPh}
+                maxLength={80}
+                disabled={disabled}
+                className="min-w-0 rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-[#B45309] disabled:opacity-50"
+              />
+              <div className="relative w-full sm:w-20 shrink-0">
                 <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[#92400E] text-xs">$</span>
                 <input
                   type="number"
@@ -88,7 +111,7 @@ export default function ServiceMenuEditor({
                 type="button"
                 onClick={() => onRowsChange(rows.filter((_, idx) => idx !== i))}
                 disabled={disabled}
-                className="px-2 py-1 text-[#9F1239] text-xs font-bold disabled:opacity-40"
+                className="px-2 py-1 text-[#9F1239] text-xs font-bold disabled:opacity-40 justify-self-end"
                 aria-label="✕"
               >
                 ✕
@@ -102,7 +125,7 @@ export default function ServiceMenuEditor({
         type="button"
         onClick={() => {
           if (rows.length >= MAX_SERVICE_MENU_ITEMS) return;
-          onRowsChange([...rows, { name: "", pesos: "" }]);
+          onRowsChange([...rows, emptyServiceMenuFormRow()]);
         }}
         disabled={disabled || rows.length >= MAX_SERVICE_MENU_ITEMS}
         className="w-full rounded-lg border border-dashed border-[#D4A017] py-1.5 text-xs font-semibold text-[#78350F] disabled:opacity-40"

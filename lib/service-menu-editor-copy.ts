@@ -11,10 +11,13 @@ export type ServiceMenuEditorCopy = {
   title: string;
   hint: string;
   templateBtn: string;
-  namePh: string;
+  nameEsPh: string;
+  nameEnPh: string;
   disclaimer: string;
   addRow: string;
   empty: string;
+  colEs: string;
+  colEn: string;
 };
 
 const BASE = {
@@ -36,6 +39,10 @@ const BASE = {
     menuTemplateBtnTransport: "Cargar plantilla sugerida (17 servicios)",
     menuAddRow: "+ Agregar servicio",
     menuRowNamePh: "Nombre (ej. Dobladillo de pantalón)",
+    menuRowNameEsPh: "Nombre en español",
+    menuRowNameEnPh: "Nombre en inglés",
+    menuColEs: "ES",
+    menuColEn: "EN",
     menuRowNamePhVet: "Nombre (ej. Consulta general perro/gato)",
     menuRowNamePhHousekeeping: "Nombre (ej. Baño profundo)",
     menuRowNamePhPetWalk: "Nombre (ej. Paseo 45 minutos)",
@@ -69,6 +76,10 @@ const BASE = {
     menuTemplateBtnTransport: "Load suggested template (17 services)",
     menuAddRow: "+ Add service",
     menuRowNamePh: "Name (e.g. Pants hem)",
+    menuRowNameEsPh: "Spanish name",
+    menuRowNameEnPh: "English name",
+    menuColEs: "ES",
+    menuColEn: "EN",
     menuRowNamePhVet: "Name (e.g. General exam dog/cat)",
     menuRowNamePhHousekeeping: "Name (e.g. Deep bathroom clean)",
     menuRowNamePhPetWalk: "Name (e.g. 45-minute walk)",
@@ -96,7 +107,10 @@ export function getServiceMenuEditorCopy(
       title: t.title,
       hint: t.menuHintVet,
       templateBtn: t.menuTemplateBtnVet,
-      namePh: t.menuRowNamePhVet,
+      nameEsPh: t.menuRowNamePhVet,
+      nameEnPh: t.menuRowNameEnPh,
+      colEs: t.menuColEs,
+      colEn: t.menuColEn,
       disclaimer: t.menuDisclaimerVet,
       addRow: t.menuAddRow,
       empty: t.menuEmpty,
@@ -107,7 +121,10 @@ export function getServiceMenuEditorCopy(
       title: t.title,
       hint: t.menuHintHousekeeping,
       templateBtn: t.menuTemplateBtnHousekeeping,
-      namePh: t.menuRowNamePhHousekeeping,
+      nameEsPh: t.menuRowNamePhHousekeeping,
+      nameEnPh: t.menuRowNameEnPh,
+      colEs: t.menuColEs,
+      colEn: t.menuColEn,
       disclaimer: t.menuDisclaimerHousekeeping,
       addRow: t.menuAddRow,
       empty: t.menuEmpty,
@@ -118,7 +135,10 @@ export function getServiceMenuEditorCopy(
       title: t.title,
       hint: t.menuHintPetWalk,
       templateBtn: t.menuTemplateBtnPetWalk,
-      namePh: t.menuRowNamePhPetWalk,
+      nameEsPh: t.menuRowNamePhPetWalk,
+      nameEnPh: t.menuRowNameEnPh,
+      colEs: t.menuColEs,
+      colEn: t.menuColEn,
       disclaimer: t.menuDisclaimerPetWalk,
       addRow: t.menuAddRow,
       empty: t.menuEmpty,
@@ -129,7 +149,10 @@ export function getServiceMenuEditorCopy(
       title: t.title,
       hint: t.menuHintPetSit,
       templateBtn: t.menuTemplateBtnPetSit,
-      namePh: t.menuRowNamePhPetSit,
+      nameEsPh: t.menuRowNamePhPetSit,
+      nameEnPh: t.menuRowNameEnPh,
+      colEs: t.menuColEs,
+      colEn: t.menuColEn,
       disclaimer: t.menuDisclaimerPetSit,
       addRow: t.menuAddRow,
       empty: t.menuEmpty,
@@ -140,7 +163,10 @@ export function getServiceMenuEditorCopy(
       title: t.title,
       hint: t.menuHintPetGroom,
       templateBtn: t.menuTemplateBtnPetGroom,
-      namePh: t.menuRowNamePhPetGroom,
+      nameEsPh: t.menuRowNamePhPetGroom,
+      nameEnPh: t.menuRowNameEnPh,
+      colEs: t.menuColEs,
+      colEn: t.menuColEn,
       disclaimer: t.menuDisclaimerPetGroom,
       addRow: t.menuAddRow,
       empty: t.menuEmpty,
@@ -151,7 +177,10 @@ export function getServiceMenuEditorCopy(
       title: t.title,
       hint: t.menuHintTransport,
       templateBtn: t.menuTemplateBtnTransport,
-      namePh: t.menuRowNamePhTransport,
+      nameEsPh: t.menuRowNamePhTransport,
+      nameEnPh: t.menuRowNameEnPh,
+      colEs: t.menuColEs,
+      colEn: t.menuColEn,
       disclaimer: t.menuDisclaimerTransport,
       addRow: t.menuAddRow,
       empty: t.menuEmpty,
@@ -161,7 +190,10 @@ export function getServiceMenuEditorCopy(
     title: t.title,
     hint: t.menuHint,
     templateBtn: t.menuTemplateBtn,
-    namePh: t.menuRowNamePh,
+    nameEsPh: t.menuRowNamePh,
+    nameEnPh: t.menuRowNameEnPh,
+    colEs: t.menuColEs,
+    colEn: t.menuColEn,
     disclaimer: t.menuDisclaimer,
     addRow: t.menuAddRow,
     empty: t.menuEmpty,

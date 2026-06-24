@@ -44,10 +44,8 @@ function menuProviderSlugForListing(title: string): string | null {
   return slug;
 }
 
-function menuRowsFromListing(listing: Listing, lang: "es" | "en"): ServiceMenuFormRow[] {
-  const slug = menuProviderSlugForListing(listing.title_es);
-  if (!slug) return [];
-  return editorMenuRowsFromListing(listing.service_menu ?? null, slug, lang);
+function menuRowsFromListing(listing: Listing, providerSlug: string): ServiceMenuFormRow[] {
+  return editorMenuRowsFromListing(listing.service_menu ?? null, providerSlug);
 }
 
 type UserRow = {
@@ -210,7 +208,8 @@ function AdminPageInner() {
         pp[l.id] = String(l.package_total_price_mxn / 100);
       }
       if (menuProviderSlugForListing(l.title_es)) {
-        mr[l.id] = menuRowsFromListing(l, lang);
+        const slug = menuProviderSlugForListing(l.title_es);
+        if (slug) mr[l.id] = menuRowsFromListing(l, slug);
       }
     });
     setCommissions(c);
@@ -448,7 +447,7 @@ function AdminPageInner() {
     if (parsed?.ok) {
       setMenuRows((prev) => ({
         ...prev,
-        [listingId]: serviceMenuFormRowsFromMenu(parsed.menu, lang),
+        [listingId]: serviceMenuFormRowsFromMenu(parsed.menu),
       }));
       setListings((prev) =>
         prev.map((l) => (l.id === listingId ? { ...l, service_menu: parsed.menu } : l)),
@@ -1164,7 +1163,7 @@ function AdminPageInner() {
                         <div>
                           <p className="text-xs font-semibold text-amber-950">{ad.menuTitle}</p>
                           <p className="text-[10px] text-amber-800 mt-0.5">
-                            {ad.menuLiveCount((menuRows[listing.id] ?? []).filter((r) => r.name.trim() && r.pesos.trim()).length)}
+                            {ad.menuLiveCount((menuRows[listing.id] ?? []).filter((r) => r.name_es.trim() && r.pesos.trim()).length)}
                           </p>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">

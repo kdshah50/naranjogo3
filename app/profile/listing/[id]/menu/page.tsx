@@ -118,7 +118,7 @@ function ProfileListingMenuInner() {
         if (!cancelled) {
           setListing(data);
           setProviderSlug(slug);
-          setRows(editorMenuRowsFromListing(data.service_menu ?? null, slug, lang));
+          setRows(editorMenuRowsFromListing(data.service_menu ?? null, slug));
           setLoading(false);
         }
       } catch {
@@ -153,7 +153,7 @@ function ProfileListingMenuInner() {
       setSuccess(t.saved);
       const parsed = data.service_menu ? parseServiceMenu(data.service_menu) : null;
       if (parsed?.ok) {
-        setRows(serviceMenuFormRowsFromMenu(parsed.menu, lang));
+        setRows(serviceMenuFormRowsFromMenu(parsed.menu));
       }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Error");

@@ -27,6 +27,7 @@ import {
 } from "@/lib/provider-services";
 import {
   serviceMenuPayloadFromFormRows,
+  type ServiceMenuFormRow,
 } from "@/lib/listing-service-menu";
 import ServiceMenuEditor from "@/components/ServiceMenuEditor";
 import { useAppLang, useAppLangActions } from "@/hooks/use-app-lang";
@@ -263,7 +264,7 @@ function UnetePageInner() {
     coaching_delivery: [] as string[],
     /** Service menu rows for slugs in PROVIDER_SERVICES_WITH_MENU (e.g. tailoring).
      *  Empty when the chosen service has no menu — submitted as null. */
-    service_menu_rows: [] as Array<{ name: string; pesos: string }>,
+    service_menu_rows: [] as ServiceMenuFormRow[],
   });
 
   const t = T[lang];

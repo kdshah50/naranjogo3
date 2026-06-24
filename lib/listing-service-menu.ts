@@ -250,16 +250,66 @@ export function resolveListingServiceMenu(
   return parsed;
 }
 
-export type ServiceMenuFormRow = { name: string; pesos: string };
+export type ServiceMenuFormRow = { name_es: string; name_en: string; pesos: string };
 
-/** Form rows for the menu editor UI (signup or profile). */
+export function emptyServiceMenuFormRow(): ServiceMenuFormRow {
+  return { name_es: "", name_en: "", pesos: "" };
+}
+
+function normalizeMenuNameKey(input: string): string {
+  return String(input ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+/** Backfill missing English labels from the provider starter template (by Spanish name or price). */
+export function enrichFormRowsFromStarter(
+  rows: ServiceMenuFormRow[],
+  providerSlug: string | null | undefined,
+): ServiceMenuFormRow[] {
+  const starter = starterMenuForProviderSlug(providerSlug);
+  if (!starter?.items?.length) return rows;
+
+  const byNameEs = new Map<string, ServiceMenuItem>();
+  const byPrice = new Map<number, ServiceMenuItem[]>();
+  for (const it of starter.items) {
+    byNameEs.set(normalizeMenuNameKey(it.name_es), it);
+    const bucket = byPrice.get(it.price_mxn_cents) ?? [];
+    bucket.push(it);
+    byPrice.set(it.price_mxn_cents, bucket);
+  }
+
+  return rows.map((row) => {
+    if (row.name_en.trim()) return row;
+    const nameKey = normalizeMenuNameKey(row.name_es);
+    let match = byNameEs.get(nameKey);
+    if (!match) {
+      const pesos = Number(String(row.pesos).trim().replace(/,/g, "."));
+      if (Number.isFinite(pesos) && pesos > 0) {
+        const cents = Math.round(pesos * 100);
+        const candidates = byPrice.get(cents) ?? [];
+        match =
+          candidates.find((c) => normalizeMenuNameKey(c.name_es) === nameKey) ??
+          (candidates.length === 1 ? candidates[0] : undefined);
+      }
+    }
+    if (match?.name_en) {
+      return { ...row, name_en: match.name_en };
+    }
+    return row;
+  });
+}
+
+/** Form rows for the menu editor UI (signup, profile, admin). */
 export function serviceMenuFormRowsFromMenu(
   menu: ServiceMenu | null | undefined,
-  lang: "es" | "en" = "es",
 ): ServiceMenuFormRow[] {
   if (!menu?.items?.length) return [];
   return menu.items.map((it) => ({
-    name: (lang === "en" && it.name_en) || it.name_es,
+    name_es: it.name_es,
+    name_en: it.name_en ?? "",
     pesos: String(it.price_mxn_cents / 100),
   }));
 }
@@ -268,14 +318,15 @@ export function serviceMenuFormRowsFromMenu(
 export function editorMenuRowsFromListing(
   raw: ServiceMenu | null | undefined,
   providerSlug: string | null | undefined,
-  lang: "es" | "en" = "es",
 ): ServiceMenuFormRow[] {
+  let rows: ServiceMenuFormRow[];
   if (raw != null) {
     const parsed = parseServiceMenu(raw);
-    return serviceMenuFormRowsFromMenu(parsed.ok ? parsed.menu : null, lang);
+    rows = serviceMenuFormRowsFromMenu(parsed.ok ? parsed.menu : null);
+  } else {
+    rows = serviceMenuFormRowsFromMenu(starterMenuForProviderSlug(providerSlug));
   }
-  const starter = starterMenuForProviderSlug(providerSlug);
-  return serviceMenuFormRowsFromMenu(starter, lang);
+  return enrichFormRowsFromStarter(rows, providerSlug);
 }
 
 /** Normalize PATCH/admin body into a menu row ready for DB (never null — empty menus stay explicit). */
@@ -305,13 +356,18 @@ export function serviceMenuPayloadFromFormRows(
   providerSlug: string | null | undefined,
 ): ServiceMenu | Record<string, unknown> {
   const disclaimers = menuDisclaimersForProviderSlug(providerSlug);
-  const cleaned = rows
+  const cleaned = enrichFormRowsFromStarter(rows, providerSlug)
     .map((r) => ({
-      name_es: r.name.trim(),
+      name_es: r.name_es.trim(),
+      name_en: r.name_en.trim(),
       pesos: Number(String(r.pesos).trim().replace(/,/g, ".")),
     }))
     .filter((r) => r.name_es.length > 0 && Number.isFinite(r.pesos) && r.pesos > 0)
-    .map((r) => ({ name_es: r.name_es, price_mxn: r.pesos }));
+    .map((r) => ({
+      name_es: r.name_es,
+      ...(r.name_en ? { name_en: r.name_en } : {}),
+      price_mxn: r.pesos,
+    }));
   if (cleaned.length === 0) {
     return {
       version: 1,
