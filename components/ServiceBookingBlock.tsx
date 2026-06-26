@@ -76,14 +76,14 @@ function paidBookingStatusCaption(status: string | null | undefined, lang: Lang)
     if (s === "in_progress") return "Provider marked this job in progress";
     if (s === "completed") return "Provider marked this service completed";
     if (s === "cancelled") return "Booking cancelled";
-    if (s === "pending") return "Payment processing";
+    if (s === "pending") return "Paid — confirmation sent to provider";
     return "Paid — awaiting next update from provider";
   }
   if (s === "scheduled") return "El proveedor marcó tu visita como agendada";
   if (s === "in_progress") return "El proveedor marcó el trabajo en curso";
   if (s === "completed") return "El proveedor marcó el servicio como completado";
   if (s === "cancelled") return "Reserva cancelada";
-  if (s === "pending") return "Procesando pago";
+  if (s === "pending") return "Pagado — confirmación enviada al proveedor";
   return "Pagado — esperando actualización del proveedor";
 }
 

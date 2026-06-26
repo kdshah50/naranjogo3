@@ -91,6 +91,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         visitFrequency: quoteMetadata.visitFrequency,
         quoteBasis: quoteMetadata.quoteBasis,
         headerKind: "provider_quote",
+        providerSlug: slug,
       });
     }
     if (!messageBody) {

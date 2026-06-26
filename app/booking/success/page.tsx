@@ -14,6 +14,7 @@ type BookingData = {
   id: string;
   listingId: string;
   paymentStatus: string;
+  checkoutPaymentStatus?: string | null;
   status: string;
   ticketCode?: string | null;
   commissionAmountCents: number;
@@ -200,11 +201,17 @@ export default function BookingSuccessPage() {
 }
 
 const POLL_INTERVAL_MS = 2000;
-const MAX_POLL_ATTEMPTS = 25;
+const MAX_POLL_ATTEMPTS = 35;
 const LIFECYCLE_POLL_MS = 30_000;
 
-function isTerminalPaymentStatus(ps: string | undefined) {
-  return ps === "paid" || ps === "failed" || ps === "refunded";
+function isTerminalPaymentStatus(ps: string | undefined, checkoutPs?: string | null) {
+  if (ps === "paid" || ps === "failed" || ps === "refunded") return true;
+  if (checkoutPs === "paid") return true;
+  return false;
+}
+
+function isPaidBooking(data: Pick<BookingData, "paymentStatus" | "checkoutPaymentStatus">) {
+  return data.paymentStatus === "paid" || data.checkoutPaymentStatus === "paid";
 }
 
 function BookingSuccessContent() {
@@ -243,11 +250,11 @@ function BookingSuccessContent() {
         if (mounted) setLoading(false);
         return;
       }
-      const json = (await res.json()) as BookingData & { paymentStatus?: string };
+      const json = (await res.json()) as BookingData & { paymentStatus?: string; checkoutPaymentStatus?: string | null };
 
       const ps = json.paymentStatus;
       const shouldPoll =
-        !isTerminalPaymentStatus(ps) && pollAttempt < MAX_POLL_ATTEMPTS;
+        !isTerminalPaymentStatus(ps, json.checkoutPaymentStatus) && pollAttempt < MAX_POLL_ATTEMPTS;
 
       if (shouldPoll) {
         setTimeout(() => {
@@ -334,7 +341,7 @@ function BookingSuccessContent() {
     );
   }
 
-  const isPaid = data.paymentStatus === "paid";
+  const isPaid = isPaidBooking(data);
   const isSellerView = Boolean(data.isSeller) && !data.isBuyer;
   const myBookingsHref =
     isPaid && data.ticketCode

@@ -3,10 +3,7 @@ import { createAdminSupabase, idMatchVariantsForIn } from "@/lib/auth-server";
 import { getStripe, stripePaymentIntentId } from "@/lib/stripe";
 import { awardPoints } from "@/lib/loyalty";
 import { maybeAwardReferralBonus } from "@/lib/referral";
-import { notifyBuyerBookingCommissionPaid } from "@/lib/buyer-booking-notify";
-import { notifySellerBookingCommissionPaid } from "@/lib/seller-booking-notify";
-import { appendBookingEvent, ensureTicketCodeForPaidBooking, statusAfterPaymentSucceeded } from "@/lib/booking-lifecycle";
-import { appendListingChatPaymentNotice, appendListingChatPaymentNoticeForBookingId } from "@/lib/payment-confirmed-chat";
+import { finalizeServiceBookingDepositPaid } from "@/lib/service-booking-deposit-paid";
 import { isWalletEnabled } from "@/lib/wallet-flags";
 import { handleWalletTopupSessionCompleted } from "@/lib/rides/wallet-webhook";
 
@@ -139,118 +136,31 @@ export async function POST(req: NextRequest) {
       console.error("[stripe-webhook] No booking_id or marketplace_order in metadata");
       return NextResponse.json({ received: true });
     }
-    const bookingIdVars = idMatchVariantsForIn(bookingIdMeta);
 
-    const sellerIdMeta = session.metadata?.seller_id?.trim() ?? "";
-    const sellerIdVars = sellerIdMeta ? idMatchVariantsForIn(sellerIdMeta) : [];
-    const { data: seller } =
-      sellerIdVars.length > 0
-        ? await supabase.from("users").select("phone").in("id", sellerIdVars).maybeSingle()
-        : { data: null as { phone: string | null } | null };
-
-    const { data: curBook, error: curErr } = await supabase
-      .from("service_bookings")
-      .select("id,status,payment_status")
-      .in("id", bookingIdVars)
-      .maybeSingle();
-
-    if (curErr || !curBook) {
-      console.error("[stripe-webhook] booking lookup", curErr);
-      return NextResponse.json({ received: true });
-    }
-    if (curBook.payment_status === "paid") {
-      return NextResponse.json({ received: true });
-    }
-
-    const nextStatus = statusAfterPaymentSucceeded(curBook.status);
-
-    // Only transition unpaid rows. Preserve scheduled / in_progress / completed if row already advanced
-    // (delayed webhook + bad payment_status, or replays).
-    const { data: bookingPaySynced, error: upErr } = await supabase
-      .from("service_bookings")
-      .update({
-        payment_status: "paid",
-        ...(intentId ? { stripe_payment_intent_id: intentId } : {}),
-        paid_at: now,
-        seller_phone_snapshot: seller?.phone ?? null,
-        contact_revealed_at: now,
-        status: nextStatus,
-        updated_at: now,
-      })
-      .in("id", bookingIdVars)
-      .eq("payment_status", "pending")
-      .neq("status", "cancelled")
-      .select("id");
-
-    if (upErr) {
-      console.error("[stripe-webhook] booking update failed", upErr);
+    const fin = await finalizeServiceBookingDepositPaid(supabase, {
+      bookingId: bookingIdMeta,
+      source: "stripe_webhook",
+      stripePaymentIntentId: intentId,
+    });
+    if (!fin.ok) {
+      console.error("[stripe-webhook] finalize deposit paid", fin.error);
       return NextResponse.json({ error: "Persist failed" }, { status: 500 });
     }
 
-    if (!bookingPaySynced?.length) {
-      return NextResponse.json({ received: true });
-    }
-
-    try {
-      await ensureTicketCodeForPaidBooking(supabase, bookingIdMeta);
-    } catch (tcErr) {
-      console.error("[stripe-webhook] ticket_code (non-fatal)", tcErr);
-    }
-
-    try {
-      await appendListingChatPaymentNoticeForBookingId(supabase, bookingIdMeta);
-    } catch (chatErr) {
-      console.error("[stripe-webhook] payment-confirmed-chat early (non-fatal)", chatErr);
-    }
-
-    try {
-      await appendBookingEvent(supabase, {
-        bookingId: bookingIdMeta,
-        actorId: null,
-        eventType: "payment_confirmed",
-        fromStatus: String(curBook.status ?? "pending"),
-        toStatus: nextStatus,
-        meta: { source: "stripe_webhook" },
-      });
-    } catch (evErr) {
-      console.error("[stripe-webhook] booking_events (non-fatal)", evErr);
-    }
-
-    try {
-      await notifySellerBookingCommissionPaid(supabase, bookingIdMeta);
-    } catch (notifyErr) {
-      console.error("[stripe-webhook] seller booking notify failed (non-fatal)", notifyErr);
-    }
-
-    try {
-      await notifyBuyerBookingCommissionPaid(supabase, bookingIdMeta);
-    } catch (notifyErr) {
-      console.error("[stripe-webhook] buyer booking notify failed (non-fatal)", notifyErr);
-    }
-
-    try {
-      const { data: bRow } = await supabase
-        .from("service_bookings")
-        .select("id,listing_id,buyer_id,ticket_code")
-        .in("id", bookingIdVars)
-        .maybeSingle();
-      if (bRow) await appendListingChatPaymentNotice(supabase, bRow);
-    } catch (chatErr) {
-      console.error("[stripe-webhook] payment-confirmed-chat (non-fatal)", chatErr);
-    }
-
-    const buyerId = session.metadata?.buyer_id;
-    const amountPaid = session.amount_total;
-    if (buyerId && amountPaid && amountPaid > 0) {
-      try {
-        await awardPoints(supabase, buyerId, bookingIdMeta, amountPaid);
-      } catch (loyaltyErr) {
-        console.error("[stripe-webhook] loyalty award failed (non-fatal)", loyaltyErr);
-      }
-      try {
-        await maybeAwardReferralBonus(supabase, buyerId, bookingIdMeta);
-      } catch (refErr) {
-        console.error("[stripe-webhook] referral bonus failed (non-fatal)", refErr);
+    if (fin.wasNewlyPaid) {
+      const buyerId = session.metadata?.buyer_id;
+      const amountPaid = session.amount_total;
+      if (buyerId && amountPaid && amountPaid > 0) {
+        try {
+          await awardPoints(supabase, buyerId, bookingIdMeta, amountPaid);
+        } catch (loyaltyErr) {
+          console.error("[stripe-webhook] loyalty award failed (non-fatal)", loyaltyErr);
+        }
+        try {
+          await maybeAwardReferralBonus(supabase, buyerId, bookingIdMeta);
+        } catch (refErr) {
+          console.error("[stripe-webhook] referral bonus failed (non-fatal)", refErr);
+        }
       }
     }
   }

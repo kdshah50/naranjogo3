@@ -7,6 +7,10 @@ import { expandUserAccountIdPool } from "@/lib/user-account-pool";
  * (if one exists) so buyer and provider see the update in-app, not only WhatsApp.
  * Idempotent per booking id (safe if webhook + verify-session both run).
  */
+export function paymentDepositChatTag(bookingId: string): string {
+  return `pay-deposit-confirmed:${bookingId.trim()}`;
+}
+
 export async function appendListingChatPaymentNotice(
   supabase: SupabaseClient,
   booking: { id: string; listing_id: string; buyer_id: string; ticket_code: string | null }
@@ -27,16 +31,16 @@ export async function appendListingChatPaymentNotice(
   if (!conv?.id || !conv.buyer_id) return;
 
   const ticket = booking.ticket_code?.trim();
-  const idTag = `id:${booking.id}`;
+  const tag = paymentDepositChatTag(booking.id);
   const body = ticket
-    ? `[Naranjogo] Reserva confirmada — depósito de plataforma pagado. Ticket: ${ticket}. ${idTag}`
-    : `[Naranjogo] Reserva confirmada — depósito de plataforma pagado. ${idTag}`;
+    ? `[Naranjogo] Reserva confirmada — depósito de plataforma pagado. Ticket: ${ticket}. ${tag}`
+    : `[Naranjogo] Reserva confirmada — depósito de plataforma pagado. ${tag}`;
 
   const { data: dup } = await supabase
     .from("listing_messages")
     .select("id")
     .eq("conversation_id", conv.id)
-    .ilike("body", `%${booking.id}%`)
+    .ilike("body", `%${tag}%`)
     .limit(1);
 
   if (dup?.length) return;

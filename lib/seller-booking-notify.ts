@@ -5,7 +5,6 @@ import { sendWhatsAppToE164Digits } from "@/lib/twilio";
 import { getPublicAppUrl } from "@/lib/app-url";
 import { phoneDigitsForAccountPool } from "@/lib/user-phone-notify";
 import { e164DigitsForWhatsAppRecipient } from "@/lib/phone";
-import { appendListingChatPaymentNotice } from "@/lib/payment-confirmed-chat";
 import { listingChatAbsoluteUrl, findListingConversationIdForBuyer } from "@/lib/listing-chat-deep-link";
 
 /** If the process dies mid-notify, another worker can reclaim after this many ms. */
@@ -91,18 +90,6 @@ export async function notifySellerBookingCommissionPaid(supabase: SupabaseClient
       .eq("id", row.id)
       .maybeSingle();
     const ticketCode = ticketRow?.ticket_code ?? row.ticket_code;
-
-    // In-app first: MX WhatsApp often fails on +52 while +521 delivers; provider still needs the update.
-    try {
-      await appendListingChatPaymentNotice(supabase, {
-        id: String(row.id),
-        listing_id: String(row.listing_id),
-        buyer_id: String(row.buyer_id),
-        ticket_code: ticketCode ? String(ticketCode) : null,
-      });
-    } catch (chatErr) {
-      console.error("[seller-booking-notify] payment in-app chat (non-fatal)", chatErr);
-    }
 
     let sellerDigits = e164DigitsForWhatsAppRecipient(row.seller_phone_snapshot?.trim() ?? "");
     if (!sellerDigits) {

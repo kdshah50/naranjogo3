@@ -24,15 +24,19 @@ export function getPublicAppUrl(): string {
   const vercelEnv = process.env.VERCEL_ENV;
   const deploymentOrigin = vercelDeploymentOrigin();
 
+  /** Production WhatsApp / ticket links always use the canonical apex, never *.vercel.app. */
+  if (vercelEnv === "production") {
+    const configured = process.env.NEXT_PUBLIC_APP_URL?.trim();
+    if (configured) return normalizeOrigin(configured);
+    return DEFAULT;
+  }
+
   if (vercelEnv && vercelEnv !== "production" && deploymentOrigin) {
     return deploymentOrigin;
   }
 
-  if (deploymentOrigin && /\.vercel\.app$/i.test(deploymentOrigin)) {
-    return deploymentOrigin;
-  }
-
   const configured = process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (!configured) return DEFAULT;
-  return normalizeOrigin(configured);
+  if (configured) return normalizeOrigin(configured);
+  if (deploymentOrigin) return deploymentOrigin;
+  return DEFAULT;
 }

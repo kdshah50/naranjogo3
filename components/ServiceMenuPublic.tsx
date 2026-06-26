@@ -2,6 +2,7 @@ import type { ServiceMenu } from "@/lib/listing-service-menu";
 import {
   DEFAULT_INSPECTION_DISCLAIMER_EN,
   DEFAULT_INSPECTION_DISCLAIMER_ES,
+  sortedServiceMenuItems,
 } from "@/lib/listing-service-menu";
 
 /**
@@ -44,7 +45,7 @@ export default function ServiceMenuPublic({
       </header>
 
       <ul className="divide-y divide-[#F2EDE3]">
-        {menu.items.map((item) => {
+        {sortedServiceMenuItems(menu, lang).map((item) => {
           const label = (lang === "en" && item.name_en) || item.name_es;
           return (
             <li

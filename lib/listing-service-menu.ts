@@ -74,6 +74,21 @@ export type ServiceMenu = {
   disclaimer_en?: string | null;
 };
 
+/** Display order: A→Z by localized label (es-MX / en-MX), stable tie-break by sku. */
+export function sortedServiceMenuItems(
+  menu: ServiceMenu | null | undefined,
+  lang: "es" | "en" = "es",
+): ServiceMenuItem[] {
+  if (!menu?.items?.length) return [];
+  const locale = lang === "en" ? "en" : "es";
+  return [...menu.items].sort((a, b) => {
+    const la = ((lang === "en" && a.name_en) || a.name_es).trim();
+    const lb = ((lang === "en" && b.name_en) || b.name_es).trim();
+    const cmp = la.localeCompare(lb, locale, { sensitivity: "base" });
+    return cmp !== 0 ? cmp : a.sku.localeCompare(b.sku);
+  });
+}
+
 export type ParsedServiceMenu =
   | { ok: true; menu: ServiceMenu }
   | { ok: false; error: string };

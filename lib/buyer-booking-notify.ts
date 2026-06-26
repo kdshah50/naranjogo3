@@ -120,7 +120,9 @@ export async function notifyBuyerBookingCommissionPaid(supabase: SupabaseClient,
     const feeMx = Math.round((row.commission_amount_cents ?? 0) / 100);
     const supportUrl = `${appUrl}/claims`;
     const bookingUrl = `${appUrl}/booking/success?id=${row.id}`;
-    const myBookingsUrl = `${appUrl}/my-bookings`;
+    const myBookingsUrl = row.ticket_code
+      ? `${appUrl}/my-bookings?ticket=${encodeURIComponent(String(row.ticket_code))}`
+      : `${appUrl}/my-bookings`;
     const ticketLine = row.ticket_code
       ? `🎫 Ticket: *${row.ticket_code}*`
       : `Referencia: ${row.id.slice(0, 8)}…`;

@@ -76,6 +76,31 @@ export function dropoffAddressLabel(slug: string | null | undefined, lang: "es" 
   return lang === "en" ? "Destination" : "Destino";
 }
 
+/** In-app chat header when buyer submits a menu-based service request. */
+export function menuQuoteRequestHeader(slug: string | null | undefined, lang: "es" | "en"): string {
+  if (slug === HOUSEKEEPING_SERVICE) {
+    return lang === "en" ? "Cleaning request (from menu):" : "Solicitud de limpieza (desde menú):";
+  }
+  if (slug === VETERINARY_SERVICE) {
+    return lang === "en"
+      ? "Veterinary service request (from menu):"
+      : "Solicitud de servicio veterinario (desde menú):";
+  }
+  if (slug === PET_WALKING_SERVICE) {
+    return lang === "en" ? "Dog walking request (from menu):" : "Solicitud de paseo (desde menú):";
+  }
+  if (slug === PET_SITTING_SERVICE) {
+    return lang === "en" ? "Pet sitting request (from menu):" : "Solicitud de cuidado (desde menú):";
+  }
+  if (slug === DOG_GROOMING_SERVICE) {
+    return lang === "en" ? "Grooming request (from menu):" : "Solicitud de estética (desde menú):";
+  }
+  if (slug === TRANSPORT_APP_SERVICE) {
+    return lang === "en" ? "Ride request (from menu):" : "Solicitud de viaje (desde menú):";
+  }
+  return lang === "en" ? "Service request (from menu):" : "Solicitud de servicio (desde menú):";
+}
+
 export function serviceRequestNoun(slug: string | null | undefined, lang: "es" | "en"): string {
   if (slug === HOUSEKEEPING_SERVICE) {
     return lang === "en" ? "cleaning request" : "solicitud de limpieza";

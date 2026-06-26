@@ -12,7 +12,6 @@ import {
   statusAfterPaymentSucceeded,
 } from "@/lib/booking-lifecycle";
 import {
-  appendListingChatPaymentNotice,
   appendListingChatPaymentNoticeForBookingId,
 } from "@/lib/payment-confirmed-chat";
 
@@ -104,16 +103,6 @@ export async function finalizeServiceBookingDepositPaid(
     } catch {
       /* non-fatal */
     }
-    try {
-      await appendListingChatPaymentNotice(supabase, {
-        id: bookingRowId,
-        listing_id: String(booking.listing_id),
-        buyer_id: String(booking.buyer_id),
-        ticket_code: (booking.ticket_code as string | null) ?? null,
-      });
-    } catch {
-      /* non-fatal */
-    }
     return { ok: true, wasNewlyPaid: false, bookingRowId };
   }
 
@@ -171,28 +160,9 @@ export async function finalizeServiceBookingDepositPaid(
     console.error(`[deposit-paid:${args.source}] buyer notify (non-fatal)`, notifyErr);
   }
 
-  const { data: fresh } = await supabase
-    .from("service_bookings")
-    .select("id,listing_id,buyer_id,ticket_code,payment_status,commission_amount_cents")
-    .in("id", bookingIdVars)
-    .maybeSingle();
-
-  if (fresh?.payment_status === "paid") {
-    try {
-      await appendListingChatPaymentNotice(supabase, {
-        id: String(fresh.id),
-        listing_id: String(fresh.listing_id),
-        buyer_id: String(fresh.buyer_id),
-        ticket_code: (fresh.ticket_code as string | null) ?? null,
-      });
-    } catch (chatErr) {
-      console.error(`[deposit-paid:${args.source}] payment-confirmed-chat (non-fatal)`, chatErr);
-    }
-  }
-
   if (wasNewlyPaid && args.source !== "verify_session") {
     const buyerId = String(booking.buyer_id ?? "");
-    const amountPaid = Number(fresh?.commission_amount_cents ?? booking.commission_amount_cents ?? 0);
+    const amountPaid = Number(booking.commission_amount_cents ?? 0);
     if (buyerId && amountPaid > 0) {
       try {
         await awardPoints(supabase, buyerId, bookingRowId, amountPaid);

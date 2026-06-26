@@ -161,6 +161,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       visitFrequency: visitFrequency as never,
       quoteBasis: quoteBasis as never,
       headerKind: "buyer_request",
+      providerSlug: slug,
     });
     messageBody += `\n\n${formatBuyerContactBlock(buyerContact, lang)}`;
     if (buyerNotes) {

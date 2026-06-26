@@ -9,6 +9,7 @@ import {
   computeHousekeepingQuoteTotals,
   housekeepingAgreedPriceCents,
 } from "@/lib/listing-service-menu";
+import { menuQuoteRequestHeader } from "@/lib/service-quote-vertical";
 
 export const SERVICE_QUOTE_STATUSES = ["none", "pending", "accepted", "declined"] as const;
 export type ServiceQuoteStatus = (typeof SERVICE_QUOTE_STATUSES)[number];
@@ -133,14 +134,13 @@ export function buildMenuQuoteMessage(opts: {
   visitFrequency?: HousekeepingVisitFrequency;
   quoteBasis?: HousekeepingQuoteBasis;
   headerKind?: "provider_quote" | "buyer_request";
+  providerSlug?: string | null;
 }): string {
   const lang = opts.lang ?? "es";
   const formatter = (cents: number) => formatMxn(cents, lang);
   const isRequest = opts.headerKind === "buyer_request";
   const header = isRequest
-    ? lang === "en"
-      ? "Cleaning request (from menu):"
-      : "Solicitud de limpieza (desde menú):"
+    ? menuQuoteRequestHeader(opts.providerSlug, lang)
     : lang === "en"
       ? "📋 Quote from your provider:"
       : "📋 Cotización de tu proveedor:";

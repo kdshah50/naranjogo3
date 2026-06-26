@@ -7,6 +7,7 @@ import {
   housekeepingAgreedPriceCents,
   HOUSEKEEPING_QUICK_QUOTE_GROUPS,
   HOUSEKEEPING_VISIT_FREQUENCIES,
+  sortedServiceMenuItems,
   type HousekeepingQuoteBasis,
   type HousekeepingVisitFrequency,
   type ServiceMenu,
@@ -176,6 +177,11 @@ export default function ServiceMenuQuoteBuilder({
     return computeServiceMenuQuoteCents(menu, resolvedCartLines);
   }, [quoteLayout, housekeepingTotals, quoteBasis, menu, resolvedCartLines]);
 
+  const displayMenuItems = useMemo(
+    () => sortedServiceMenuItems(menu, lang),
+    [menu, lang],
+  );
+
   const menuSkus = useMemo(
     () => new Set((menu?.items ?? []).map((it) => it.sku)),
     [menu],
@@ -273,6 +279,7 @@ export default function ServiceMenuQuoteBuilder({
       visitFrequency: quoteLayout === "housekeeping" ? visitFrequency : undefined,
       quoteBasis: quoteLayout === "housekeeping" ? quoteBasis : undefined,
       headerKind: variant === "buyer" ? "buyer_request" : "provider_quote",
+      providerSlug,
     });
     return {
       totalCents,
@@ -694,7 +701,7 @@ export default function ServiceMenuQuoteBuilder({
       )}
       {!isTransportCustomRequest ? (
       <div className="max-h-44 overflow-y-auto divide-y divide-amber-100">
-        {menu.items.map((it) => {
+        {displayMenuItems.map((it) => {
           const qty = qtyBySku[it.sku] ?? 0;
           const label = (lang === "en" && it.name_en) || it.name_es;
           return (

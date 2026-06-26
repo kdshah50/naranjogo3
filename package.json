@@ -10,6 +10,7 @@
     "test:messaging": "npx --yes tsx scripts/test-messaging.ts",
     "test:messaging:smoke": "npx --yes tsx scripts/test-messaging.ts --smoke",
     "check:booking-notify": "npx --yes tsx scripts/check-booking-buyer-notify.ts",
+    "check:prelaunch-security": "tsx scripts/check-prelaunch-security.ts",
     "test:full-connect": "tsx scripts/test-service-booking-full-connect.ts",
     "test:user-phone-uniqueness": "tsx scripts/test-user-phone-uniqueness.ts",
     "merge:duplicate-users": "tsx scripts/merge-duplicate-users-by-phone.ts",
