@@ -7,6 +7,7 @@ import type {
 import {
   HOUSEKEEPING_VISIT_FREQUENCIES,
   computeHousekeepingQuoteTotals,
+  enrichMenuItemLanguages,
   housekeepingAgreedPriceCents,
   serviceMenuItemLabel,
 } from "@/lib/listing-service-menu";
@@ -108,12 +109,13 @@ export function lineItemsFromCart(menu: ServiceMenu | null | undefined, cartLine
   for (const { sku, qty } of cartLines) {
     const it = bySku.get(sku);
     if (!it || qty <= 0) continue;
+    const enriched = enrichMenuItemLanguages(it);
     out.push({
-      sku,
+      sku: enriched.sku,
       qty,
-      name_es: it.name_es,
-      name_en: it.name_en,
-      price_mxn_cents: it.price_mxn_cents,
+      name_es: enriched.name_es,
+      name_en: enriched.name_en,
+      price_mxn_cents: enriched.price_mxn_cents,
     });
   }
   return out;
