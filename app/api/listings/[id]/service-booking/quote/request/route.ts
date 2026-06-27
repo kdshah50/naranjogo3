@@ -163,7 +163,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       headerKind: "buyer_request",
       providerSlug: slug,
     });
-    messageBody += `\n\n${formatBuyerContactBlock(buyerContact, lang)}`;
+    messageBody += `\n\n${formatBuyerContactBlock(buyerContact, lang, { maskPii: true })}`;
     if (buyerNotes) {
       messageBody += lang === "en" ? `\n\nNotes: ${buyerNotes}` : `\n\nNotas: ${buyerNotes}`;
     }

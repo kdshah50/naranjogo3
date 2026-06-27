@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminSupabase, getUserIdFromRequest, idMatchVariantsForIn } from "@/lib/auth-server";
+import {
+  createAdminSupabase,
+  getTianguisJwtPayloadFromRequest,
+  getUserIdFromRequest,
+  idMatchVariantsForIn,
+} from "@/lib/auth-server";
 import { canonicalBookingRowIdKey, mergeBookingListRowsPreferTruth } from "@/lib/booking-list-merge";
 import { SERVICE_BOOKING_LIST_COLUMNS } from "@/lib/booking-list-select";
-import { expandUserAccountIdPool, poolsOverlap } from "@/lib/user-account-pool";
+import { expandUserAccountIdPool, phoneLookupVariants, poolsOverlap } from "@/lib/user-account-pool";
 import { getSellerAccountBookingCounts } from "@/lib/seller-platform-stats";
 import { normalizeNgTicketQuery } from "@/lib/ng-ticket-normalize";
 import { enrichBookingListRows, loadReviewedBookingIdSet } from "@/lib/api-bookings-enrich";
@@ -46,11 +51,111 @@ function uuidPoolForIn(ids: string[]): string[] {
 /** Same overlap rule as listing-stitched buyer rows (JWT pool vs booking.buyer_id account pool). */
 async function buyerCanSeePaidBookingRow(
   supabase: ReturnType<typeof createAdminSupabase>,
-  buyerPoolVariants: string[],
-  row: BookingRow
+  buyerPool: string[],
+  row: BookingRow,
 ): Promise<boolean> {
   const rowBuyerPool = await expandUserAccountIdPool(supabase, String(row.buyer_id ?? ""));
-  return poolsOverlap(rowBuyerPool, buyerPoolVariants);
+  return poolsOverlap(rowBuyerPool, buyerPool);
+}
+
+/** All user id variants linked by phone to anyone in the buyer pool (covers stale booking.buyer_id). */
+async function buyerIdVariantsWithPhoneLinks(
+  supabase: ReturnType<typeof createAdminSupabase>,
+  buyerPool: string[],
+): Promise<string[]> {
+  const seed = uuidPoolForIn(buyerPool);
+  if (seed.length === 0) return seed;
+
+  const phones = new Set<string>();
+  const { data: rows } = await supabase.from("users").select("id,phone").in("id", seed);
+  for (const r of rows ?? []) {
+    for (const p of phoneLookupVariants(r.phone)) phones.add(p);
+  }
+  if (phones.size === 0) return seed;
+
+  const linkedIds = [...buyerPool];
+  const { data: linked } = await supabase.from("users").select("id").in("phone", [...phones]);
+  for (const row of linked ?? []) linkedIds.push(String(row.id));
+  return uuidPoolForIn(linkedIds);
+}
+
+function ticketHintsFromRequest(req: NextRequest): string[] {
+  const out = new Set<string>();
+  for (const raw of req.nextUrl.searchParams.getAll("ticket")) {
+    const n = normalizeNgTicketQuery(raw);
+    if (n) out.add(n);
+  }
+  const batch = req.nextUrl.searchParams.get("tickets")?.trim();
+  if (batch) {
+    for (const part of batch.split(/[,;\s]+/)) {
+      const n = normalizeNgTicketQuery(part);
+      if (n) out.add(n);
+    }
+  }
+  return [...out];
+}
+
+async function stitchBuyerRowsByTickets(
+  supabase: ReturnType<typeof createAdminSupabase>,
+  mergedBuy: Map<string, BookingRow>,
+  buyerPool: string[],
+  tickets: string[],
+  statusFilter: string | null,
+): Promise<void> {
+  for (const ticketNorm of tickets) {
+    let qTk = supabase
+      .from("service_bookings")
+      .select(SERVICE_BOOKING_LIST_COLUMNS)
+      .ilike("ticket_code", ticketNorm);
+    if (statusFilter === "paid") qTk = qTk.eq("payment_status", "paid");
+    const { data: byTicketRow } = await qTk.maybeSingle();
+    const tr = byTicketRow as BookingRow | null;
+    if (tr?.id == null || !(await buyerCanSeePaidBookingRow(supabase, buyerPool, tr))) continue;
+    const key = canonicalBookingRowIdKey(tr.id);
+    const prevMap = mergedBuy.get(key);
+    if (!prevMap) mergedBuy.set(key, tr);
+    else mergedBuy.set(key, mergeBookingListRowsPreferTruth(prevMap as BookingRow, tr) as BookingRow);
+  }
+}
+
+const BUYER_ACTIVE_PAID_LIFECYCLE = ["pending", "confirmed", "scheduled", "in_progress"] as const;
+const BUYER_ACTIVE_PAID_FETCH_CAP = 200;
+
+/** Open paid jobs must appear even when recency-capped buyer_id query drops them. */
+async function mergeBuyerActivePaidBookings(
+  supabase: ReturnType<typeof createAdminSupabase>,
+  mergedBuy: Map<string, BookingRow>,
+  buyerPool: string[],
+): Promise<void> {
+  if (buyerPool.length === 0) return;
+
+  let qActive = supabase
+    .from("service_bookings")
+    .select(SERVICE_BOOKING_LIST_COLUMNS)
+    .eq("payment_status", "paid")
+    .in("status", [...BUYER_ACTIVE_PAID_LIFECYCLE])
+    .order("paid_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
+    .limit(BUYER_ACTIVE_PAID_FETCH_CAP);
+
+  const { data: activeRows, error } = await qActive;
+  if (error) {
+    console.error("[bookings] buyer active paid fetch", error);
+    return;
+  }
+
+  const rowBuyerCache = new Map<string, string[]>();
+  for (const row of activeRows ?? []) {
+    const bid = String(row.buyer_id ?? "");
+    if (!rowBuyerCache.has(bid)) {
+      rowBuyerCache.set(bid, await expandUserAccountIdPool(supabase, bid));
+    }
+    if (!poolsOverlap(rowBuyerCache.get(bid)!, buyerPool)) continue;
+    const key = canonicalBookingRowIdKey(row.id);
+    const prev = mergedBuy.get(key);
+    if (!prev) mergedBuy.set(key, row as BookingRow);
+    else mergedBuy.set(key, mergeBookingListRowsPreferTruth(prev, row as BookingRow) as BookingRow);
+  }
 }
 
 /** Paid bookings must sort by settlement time — row `created_at` is checkout start and can be much older than `paid_at`. */
@@ -239,8 +344,10 @@ export async function GET(req: NextRequest) {
       }
     }
   } else {
-    const buyerPool = await expandUserAccountIdPool(supabase, userId);
-    const buyerVariants = uuidPoolForIn(buyerPool);
+    const jwtPayload = await getTianguisJwtPayloadFromRequest(req);
+    const authPhone = typeof jwtPayload?.phone === "string" ? jwtPayload.phone : null;
+    const buyerPool = await expandUserAccountIdPool(supabase, userId, { authPhone });
+    const buyerVariants = await buyerIdVariantsWithPhoneLinks(supabase, buyerPool);
 
     let query = supabase.from("service_bookings").select(SERVICE_BOOKING_LIST_COLUMNS).in("buyer_id", buyerVariants);
     if (statusFilter === "paid") {
@@ -295,27 +402,24 @@ export async function GET(req: NextRequest) {
       for (const row of byListingRows ?? []) {
         const key = canonicalBookingRowIdKey(row.id);
         const rowBuyerPool = await poolForBookingBuyer(String(row.buyer_id));
-        if (!poolsOverlap(rowBuyerPool, buyerVariants)) continue;
+        if (!poolsOverlap(rowBuyerPool, buyerPool)) continue;
         const prev = mergedBuy.get(key);
         if (!prev) mergedBuy.set(key, row as BookingRow);
         else mergedBuy.set(key, mergeBookingListRowsPreferTruth(prev, row as BookingRow) as BookingRow);
       }
     }
 
-    /** WhatsApp / payment can succeed while `buyer_id` on the row predates account merge — stitch by NG-ticket (mirrors seller). */
-    const ticketNormBuyer = normalizeNgTicketQuery(req.nextUrl.searchParams.get("ticket"));
-    if (ticketNormBuyer) {
-      let qTk = supabase.from("service_bookings").select(SERVICE_BOOKING_LIST_COLUMNS).ilike("ticket_code", ticketNormBuyer);
-      if (statusFilter === "paid") qTk = qTk.eq("payment_status", "paid");
-      const { data: byTicketRow } = await qTk.maybeSingle();
-      const tr = byTicketRow as BookingRow | null;
-      if (tr?.id != null && (await buyerCanSeePaidBookingRow(supabase, buyerVariants, tr))) {
-        const key = canonicalBookingRowIdKey(tr.id);
-        const prevMap = mergedBuy.get(key);
-        if (!prevMap) mergedBuy.set(key, tr);
-        else mergedBuy.set(key, mergeBookingListRowsPreferTruth(prevMap as BookingRow, tr) as BookingRow);
-      }
+    if (statusFilter === "paid") {
+      await mergeBuyerActivePaidBookings(supabase, mergedBuy, buyerPool);
     }
+
+    await stitchBuyerRowsByTickets(
+      supabase,
+      mergedBuy,
+      buyerPool,
+      ticketHintsFromRequest(req),
+      statusFilter,
+    );
 
     bookingRows = [...mergedBuy.values()].sort((a, b) =>
       statusFilter === "paid"

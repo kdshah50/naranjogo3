@@ -8,6 +8,7 @@ import {
   HOUSEKEEPING_VISIT_FREQUENCIES,
   computeHousekeepingQuoteTotals,
   housekeepingAgreedPriceCents,
+  serviceMenuItemLabel,
 } from "@/lib/listing-service-menu";
 import { menuQuoteRequestHeader } from "@/lib/service-quote-vertical";
 
@@ -146,7 +147,7 @@ export function buildMenuQuoteMessage(opts: {
       : "📋 Cotización de tu proveedor:";
 
   const lines = opts.lineItems.map((it) => {
-    const label = (lang === "en" && it.name_en) || it.name_es;
+    const label = serviceMenuItemLabel(it, lang);
     return `• ${it.qty}× ${label} — ${formatter(it.price_mxn_cents * it.qty)}`;
   });
 

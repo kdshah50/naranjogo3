@@ -23,6 +23,7 @@ import {
   appendChatMessageDeduped,
   type ChatPollMessage,
 } from "@/lib/listing-chat-poll";
+import { redactPiiInChatDisplay } from "@/lib/pii-display";
 
 type Msg = ChatPollMessage;
 type ConvRole = "buyer" | "seller" | null;
@@ -576,7 +577,7 @@ export default function ConversationThread({
                           : "bg-[#F4F0EB] text-[#1C1917]"
                     }`}
                   >
-                    {m.body}
+                    {isSystem ? m.body : redactPiiInChatDisplay(m.body, lang === "en" ? "en" : "es")}
                   </div>
                   {!isSystem ? (
                     <span className="text-[10px] tabular-nums text-[#9CA3AF]">

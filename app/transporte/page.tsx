@@ -1,8 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { taxiRideShareStarterMenu } from "@/lib/listing-service-menu";
+import { cookies } from "next/headers";
+import {
+  localizeServiceMenuForProvider,
+  serviceMenuItemLabel,
+  sortedServiceMenuItems,
+  taxiRideShareStarterMenu,
+} from "@/lib/listing-service-menu";
 import { TRANSPORT_APP_SERVICE } from "@/lib/provider-services";
-import { langFromParam, type Lang } from "@/lib/i18n-lang";
+import { resolveAppLang, intlLocale, type Lang } from "@/lib/i18n-lang";
 
 const COPY: Record<
   Lang,
@@ -184,7 +190,7 @@ export function generateMetadata({
 }: {
   searchParams?: { lang?: string };
 }): Metadata {
-  const lang = langFromParam(searchParams?.lang);
+  const lang = resolveAppLang(searchParams?.lang, cookies().get("naranjo_lang")?.value);
   const t = COPY[lang];
   const title =
     lang === "es"
@@ -206,10 +212,10 @@ export default function TransporteLandingPage({
 }: {
   searchParams?: { lang?: string };
 }) {
-  const lang = langFromParam(searchParams?.lang);
+  const lang = resolveAppLang(searchParams?.lang, cookies().get("naranjo_lang")?.value);
   const t = COPY[lang];
-  const menu = taxiRideShareStarterMenu();
-  const peso = new Intl.NumberFormat("es-MX", {
+  const menu = localizeServiceMenuForProvider(taxiRideShareStarterMenu(), TRANSPORT_APP_SERVICE);
+  const peso = new Intl.NumberFormat(intlLocale(lang), {
     style: "currency",
     currency: "MXN",
     maximumFractionDigits: 0,
@@ -323,10 +329,10 @@ export default function TransporteLandingPage({
             <h2 className="font-serif text-2xl font-bold text-[#78350F] mb-2">{t.menuTitle}</h2>
             <p className="text-sm text-[#92400E] leading-relaxed mb-5">{t.menuSub}</p>
             <ul className="divide-y divide-amber-200">
-              {menu.items.map((it) => (
+              {sortedServiceMenuItems(menu, lang).map((it) => (
                 <li key={it.sku} className="flex items-center justify-between py-2 text-sm">
                   <span className="text-[#1C1917] pr-3 min-w-0">
-                    {(lang === "en" && it.name_en) || it.name_es}
+                    {serviceMenuItemLabel(it, lang)}
                   </span>
                   <span className="text-[#78350F] font-bold tabular-nums shrink-0">
                     {peso.format(it.price_mxn_cents / 100)}

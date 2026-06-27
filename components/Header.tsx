@@ -4,6 +4,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { withLang, persistAppLangClient, type Lang } from "@/lib/i18n-lang";
+import { useAppLang } from "@/hooks/use-app-lang";
 import HeaderWeather from "./HeaderWeather";
 import TianguisWordmark from "./TianguisWordmark";
 
@@ -14,8 +15,7 @@ function LangToggle() {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
-  const urlLang = params.get("lang");
-  const lang = (urlLang === "en" || urlLang === "es" ? urlLang : "es") as Lang;
+  const lang = useAppLang();
   const toggle = (l: string) => {
     persistAppLangClient(l as Lang);
     const p = new URLSearchParams(params.toString());
@@ -39,9 +39,7 @@ function HeaderInner() {
   const [showSell, setShowSell] = useState(false);
   const [user, setUser] = useState<{ phone: string; badge: string } | null>(null);
   const [showMenu, setShowMenu] = useState(false);
-  const params = useSearchParams();
-  const urlLang = params.get("lang");
-  const lang = (urlLang === "en" || urlLang === "es" ? urlLang : "es") as Lang;
+  const lang = useAppLang();
   const router = useRouter();
   const pathname = usePathname();
 

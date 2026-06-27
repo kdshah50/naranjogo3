@@ -71,6 +71,15 @@ const nextConfig = {
       },
     ];
   },
+  async redirects() {
+    return [
+      {
+        source: "/my-booking",
+        destination: "/my-bookings",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 /** Source map upload is off until SENTRY_AUTH_TOKEN is set in CI/Vercel. */

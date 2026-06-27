@@ -8,6 +8,7 @@ import {
   HOUSEKEEPING_QUICK_QUOTE_GROUPS,
   HOUSEKEEPING_VISIT_FREQUENCIES,
   sortedServiceMenuItems,
+  serviceMenuItemLabel,
   type HousekeepingQuoteBasis,
   type HousekeepingVisitFrequency,
   type ServiceMenu,
@@ -108,26 +109,26 @@ export default function ServiceMenuQuoteBuilder({
   const [submitErr, setSubmitErr] = useState("");
   const contactSectionRef = useRef<HTMLDivElement | null>(null);
   const cartPrefillAppliedRef = useRef(false);
+  const contactPrefillAppliedRef = useRef(false);
 
   useEffect(() => {
     cartPrefillAppliedRef.current = false;
+    contactPrefillAppliedRef.current = false;
   }, [menu, variant]);
 
   useEffect(() => {
     if (variant !== "buyer" || !requiresBuyerContact || !initialBuyerContact) return;
-    if (initialBuyerContact.firstName && !contactFirstName) setContactFirstName(initialBuyerContact.firstName);
-    if (initialBuyerContact.lastName && !contactLastName) setContactLastName(initialBuyerContact.lastName);
-    if (initialBuyerContact.contactPhone && !contactPhone) setContactPhone(initialBuyerContact.contactPhone);
-    if (initialBuyerContact.serviceAddress && !serviceAddress) setServiceAddress(initialBuyerContact.serviceAddress);
-  }, [
-    variant,
-    requiresBuyerContact,
-    initialBuyerContact,
-    contactFirstName,
-    contactLastName,
-    contactPhone,
-    serviceAddress,
-  ]);
+    if (contactPrefillAppliedRef.current) return;
+    contactPrefillAppliedRef.current = true;
+    if (initialBuyerContact.firstName) setContactFirstName(initialBuyerContact.firstName);
+    if (initialBuyerContact.lastName) setContactLastName(initialBuyerContact.lastName);
+    if (initialBuyerContact.contactPhone) setContactPhone(initialBuyerContact.contactPhone);
+    if (initialBuyerContact.serviceAddress) setServiceAddress(initialBuyerContact.serviceAddress);
+    if (initialBuyerContact.whatsappPhone) {
+      setWhatsappDifferent(true);
+      setWhatsappPhone(initialBuyerContact.whatsappPhone);
+    }
+  }, [variant, requiresBuyerContact, initialBuyerContact]);
 
   useEffect(() => {
     if (!initialCartLines?.length || cartPrefillAppliedRef.current) return;
@@ -211,6 +212,29 @@ export default function ServiceMenuQuoteBuilder({
     });
   };
 
+  const setQty = (sku: string, raw: string, alsoSetSku?: string) => {
+    if (raw.trim() === "") {
+      setQtyBySku((prev) => {
+        const out = { ...prev };
+        delete out[sku];
+        return out;
+      });
+      return;
+    }
+    const parsed = Math.floor(Number(raw.replace(/,/g, ".")));
+    if (!Number.isFinite(parsed)) return;
+    const nextQty = Math.max(0, Math.min(99, parsed));
+    setQtyBySku((prev) => {
+      const out = { ...prev };
+      if (nextQty === 0) delete out[sku];
+      else {
+        out[sku] = nextQty;
+        if (alsoSetSku && (out[alsoSetSku] ?? 0) === 0) out[alsoSetSku] = 1;
+      }
+      return out;
+    });
+  };
+
   const quickGroups =
     quoteLayout === "housekeeping"
       ? HOUSEKEEPING_QUICK_QUOTE_GROUPS.filter((g) => menuSkus.has(g.sku))
@@ -220,6 +244,9 @@ export default function ServiceMenuQuoteBuilder({
     setQtyBySku({});
     setVisitFrequency("one_time");
     setQuoteBasis("per_visit");
+    if (providerSlug === TRANSPORT_APP_SERVICE && variant === "buyer") {
+      setTransportMode("menu");
+    }
   };
 
   const selectedLines = menu.items
@@ -352,7 +379,7 @@ export default function ServiceMenuQuoteBuilder({
   const insertAsMessage = async () => {
     if (!onInsertAsMessage || selectedLines.length === 0) return;
     const lines = selectedLines.map(({ it, qty }) => {
-      const label = (lang === "en" && it.name_en) || it.name_es;
+      const label = serviceMenuItemLabel(it, lang);
       const lineTotal = formatter.format((it.price_mxn_cents * qty) / 100);
       return `• ${qty}× ${label} — ${lineTotal}`;
     });
@@ -455,6 +482,7 @@ export default function ServiceMenuQuoteBuilder({
                 onChange={(e) => setContactFirstName(e.target.value)}
                 disabled={disabled || busy}
                 maxLength={80}
+                autoComplete="given-name"
                 className="w-full rounded-lg border border-blue-200 bg-white px-2 py-1.5 text-[11px] outline-none focus:border-[#2563EB] disabled:opacity-50"
               />
             </label>
@@ -468,6 +496,7 @@ export default function ServiceMenuQuoteBuilder({
                 onChange={(e) => setContactLastName(e.target.value)}
                 disabled={disabled || busy}
                 maxLength={80}
+                autoComplete="family-name"
                 className="w-full rounded-lg border border-blue-200 bg-white px-2 py-1.5 text-[11px] outline-none focus:border-[#2563EB] disabled:opacity-50"
               />
             </label>
@@ -482,6 +511,7 @@ export default function ServiceMenuQuoteBuilder({
               onChange={(e) => setContactPhone(e.target.value)}
               disabled={disabled || busy}
               placeholder={lang === "en" ? "+52 415 123 4567" : "+52 415 123 4567"}
+              autoComplete="tel"
               className="w-full rounded-lg border border-blue-200 bg-white px-2 py-1.5 text-[11px] outline-none focus:border-[#2563EB] disabled:opacity-50"
             />
           </label>
@@ -607,7 +637,18 @@ export default function ServiceMenuQuoteBuilder({
                   >
                     −
                   </button>
-                  <span className="w-5 text-center font-semibold text-[#78350F]">{qty}</span>
+                  <span className="w-5 text-center font-semibold text-[#78350F]">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={qty === 0 ? "" : String(qty)}
+                      onChange={(e) => setQty(g.sku, e.target.value, g.alsoSetSku)}
+                      disabled={disabled}
+                      aria-label={lang === "en" ? "Quantity" : "Cantidad"}
+                      className="w-5 text-center font-semibold text-[#78350F] bg-transparent border-0 p-0 outline-none focus:ring-1 focus:ring-amber-400 rounded"
+                    />
+                  </span>
                   <button
                     type="button"
                     onClick={() => change(g.sku, +1, g.alsoSetSku)}
@@ -703,7 +744,7 @@ export default function ServiceMenuQuoteBuilder({
       <div className="max-h-44 overflow-y-auto divide-y divide-amber-100">
         {displayMenuItems.map((it) => {
           const qty = qtyBySku[it.sku] ?? 0;
-          const label = (lang === "en" && it.name_en) || it.name_es;
+          const label = serviceMenuItemLabel(it, lang);
           return (
             <div key={it.sku} className="flex items-center gap-2 py-1.5 text-[11px]">
               <span className="min-w-0 flex-1 text-[#1C1917]">{label}</span>
@@ -721,7 +762,16 @@ export default function ServiceMenuQuoteBuilder({
                   −
                 </button>
                 <span className="w-5 text-center font-semibold text-[#78350F]">
-                  {qty}
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={qty === 0 ? "" : String(qty)}
+                    onChange={(e) => setQty(it.sku, e.target.value)}
+                    disabled={disabled}
+                    aria-label={lang === "en" ? "Quantity" : "Cantidad"}
+                    className="w-5 text-center font-semibold text-[#78350F] bg-transparent border-0 p-0 outline-none focus:ring-1 focus:ring-amber-400 rounded"
+                  />
                 </span>
                 <button
                   type="button"

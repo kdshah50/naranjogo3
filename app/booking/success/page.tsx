@@ -8,6 +8,7 @@ import GuaranteeBadge from "@/components/GuaranteeBadge";
 import BuyerRetentionPanel, { withLang } from "@/components/BuyerRetentionPanel";
 import { useAppLang } from "@/hooks/use-app-lang";
 import { formatCurrencyMXN } from "@/lib/locale-format";
+import { rememberBuyerTicket } from "@/lib/buyer-known-tickets";
 import type { Lang } from "@/lib/i18n-lang";
 
 type BookingData = {
@@ -279,6 +280,7 @@ function BookingSuccessContent() {
   useEffect(() => {
     if (!data?.listingId || data.paymentStatus !== "paid" || paidNotifyRef.current) return;
     paidNotifyRef.current = true;
+    if (data.ticketCode) rememberBuyerTicket(data.ticketCode);
     window.dispatchEvent(
       new CustomEvent("tianguis:booking-paid", { detail: { listingId: data.listingId } }),
     );

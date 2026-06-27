@@ -4,6 +4,7 @@ import {
   normalizeAuthPhone,
 } from "@/lib/phone";
 import type { ServiceQuoteMetadata } from "@/lib/service-quote";
+import { maskAddressForDisplay, maskPhoneForDisplay } from "@/lib/pii-display";
 
 export type BuyerQuoteContact = {
   firstName: string;
@@ -154,18 +155,38 @@ function formatPreferredAt(iso: string, lang: "es" | "en"): string {
 }
 
 /** Block appended to cleaning request chat message for provider visibility. */
-export function formatBuyerContactBlock(c: BuyerQuoteContact, lang: "es" | "en" = "es"): string {
+export function formatBuyerContactBlock(
+  c: BuyerQuoteContact,
+  lang: "es" | "en" = "es",
+  options?: { maskPii?: boolean },
+): string {
   const es = lang === "es";
+  const maskPii = options?.maskPii ?? false;
+  const panelHint = es
+    ? "(número y dirección completos en el panel de solicitud en la app)"
+    : "(full number and address in the request panel in the app)";
+
+  const phoneDisplay = maskPii
+    ? `${maskPhoneForDisplay(c.contactPhone)} ${panelHint}`
+    : formatPhoneDisplay(c.contactPhone);
+
   const wa =
     c.whatsappPhone && c.whatsappPhone !== c.contactPhone
-      ? formatPhoneDisplay(c.whatsappPhone)
+      ? maskPii
+        ? maskPhoneForDisplay(c.whatsappPhone)
+        : formatPhoneDisplay(c.whatsappPhone)
       : null;
+
+  const addressDisplay = maskPii
+    ? `${maskAddressForDisplay(c.serviceAddress, lang)} ${panelHint}`
+    : c.serviceAddress;
+
   return [
     es ? "👤 Datos del cliente:" : "👤 Customer details:",
     `${es ? "Nombre" : "Name"}: ${c.firstName} ${c.lastName}`,
-    `${es ? "Teléfono" : "Phone"}: ${formatPhoneDisplay(c.contactPhone)}`,
+    `${es ? "Teléfono" : "Phone"}: ${phoneDisplay}`,
     wa ? `${es ? "WhatsApp" : "WhatsApp"}: ${wa}` : null,
-    `${es ? "Dirección del servicio" : "Service address"}: ${c.serviceAddress}`,
+    `${es ? "Dirección del servicio" : "Service address"}: ${addressDisplay}`,
     `${es ? "Día y hora preferidos" : "Preferred day & time"}: ${formatPreferredAt(c.preferredAt, lang)}`,
   ]
     .filter(Boolean)

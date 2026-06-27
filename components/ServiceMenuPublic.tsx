@@ -2,6 +2,8 @@ import type { ServiceMenu } from "@/lib/listing-service-menu";
 import {
   DEFAULT_INSPECTION_DISCLAIMER_EN,
   DEFAULT_INSPECTION_DISCLAIMER_ES,
+  serviceMenuDisclaimer,
+  serviceMenuItemLabel,
   sortedServiceMenuItems,
 } from "@/lib/listing-service-menu";
 
@@ -34,7 +36,7 @@ export default function ServiceMenuPublic({
       ? "Fixed prices per service. Build a custom quote in chat."
       : "Precios fijos por servicio. Solicita un presupuesto en el chat.";
   const disclaimer =
-    (lang === "en" ? menu.disclaimer_en : menu.disclaimer_es) ??
+    serviceMenuDisclaimer(menu, lang) ||
     (lang === "en" ? DEFAULT_INSPECTION_DISCLAIMER_EN : DEFAULT_INSPECTION_DISCLAIMER_ES);
 
   return (
@@ -46,7 +48,7 @@ export default function ServiceMenuPublic({
 
       <ul className="divide-y divide-[#F2EDE3]">
         {sortedServiceMenuItems(menu, lang).map((item) => {
-          const label = (lang === "en" && item.name_en) || item.name_es;
+          const label = serviceMenuItemLabel(item, lang);
           return (
             <li
               key={item.sku}

@@ -2,6 +2,7 @@
 
 import {
   HOUSEKEEPING_VISIT_FREQUENCIES,
+  serviceMenuItemLabel,
   type ServiceMenu,
 } from "@/lib/listing-service-menu";
 import {
@@ -73,6 +74,11 @@ export default function ServiceQuoteSellerRequestPanel({
       {contact ? (
         <div className="rounded-lg border border-emerald-200 bg-white/80 px-2 py-2 space-y-1 text-[11px] text-[#065F46]">
           <p className="font-semibold text-[#047857]">{es ? "Datos del cliente" : "Customer details"}</p>
+          <p className="text-[10px] text-[#059669] italic">
+            {es
+              ? "Confidencial — solo visible para ti como proveedor en la app."
+              : "Confidential — only visible to you as the provider in the app."}
+          </p>
           <p>
             {es ? "Nombre" : "Name"}: {contact.firstName} {contact.lastName}
           </p>
@@ -102,7 +108,7 @@ export default function ServiceQuoteSellerRequestPanel({
       ) : null}
       <ul className="text-[11px] text-[#065F46] space-y-1">
         {lineItems.map((it) => {
-          const label = (lang === "en" && it.name_en) || it.name_es;
+          const label = serviceMenuItemLabel(it, lang);
           return (
             <li key={it.sku}>
               • {it.qty}× {label} — {formatMxn(it.price_mxn_cents * it.qty, lang)}

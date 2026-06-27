@@ -12,6 +12,7 @@ import { providerServiceSupportsSupplementPayments } from "@/lib/provider-servic
 import { useAppLang, useAppLangActions } from "@/hooks/use-app-lang";
 import { mergeBookingsListWithDetailTruth } from "@/lib/booking-client-detail-truth";
 import { mergeBookingListAvoidStatusRegression } from "@/lib/booking-list-merge";
+import { rememberBuyerTicket, ticketsForApiQuery } from "@/lib/buyer-known-tickets";
 import { normalizeNgTicketQuery } from "@/lib/ng-ticket-normalize";
 
 type Booking = {
@@ -211,8 +212,9 @@ function MyBookingsPageInner() {
 
   const loadData = useCallback(() => {
     const qp = new URLSearchParams({ status: "paid" });
-    const tk = normalizeNgTicketQuery(ticketHint) ?? undefined;
-    if (tk) qp.set("ticket", tk);
+    const urlTicket = normalizeNgTicketQuery(ticketHint);
+    if (urlTicket) rememberBuyerTicket(urlTicket);
+    for (const tk of ticketsForApiQuery(urlTicket)) qp.append("ticket", tk);
     Promise.all([
       fetch(`/api/bookings?${qp}`, {
         credentials: "same-origin",
@@ -250,6 +252,9 @@ function MyBookingsPageInner() {
       .then(async ([bData, rData]) => {
         setBookingsLoadError(bData._loadError ?? null);
         const list = await mergeBookingsListWithDetailTruth([], bData.bookings);
+        for (const x of list as Booking[]) {
+          if (x.ticket_code) rememberBuyerTicket(x.ticket_code);
+        }
         setBookings((prev) => mergeBookingListAvoidStatusRegression(prev, list));
         const initCancel: Record<string, string> = {};
         for (const x of list as Booking[]) {
@@ -330,6 +335,19 @@ function MyBookingsPageInner() {
   }, [loadData]);
 
   const reviewFromWa = searchParams.get("review")?.trim() ?? "";
+  const ticketFromUrl = normalizeNgTicketQuery(ticketHint);
+  /** WhatsApp / payment success links include ?ticket= — refresh quickly until the row appears. */
+  useEffect(() => {
+    if (!ticketFromUrl) return;
+    void loadData();
+    const fast = window.setInterval(() => void loadData(), 2500);
+    const stop = window.setTimeout(() => window.clearInterval(fast), 90_000);
+    return () => {
+      window.clearInterval(fast);
+      window.clearTimeout(stop);
+    };
+  }, [ticketFromUrl, loadData]);
+
   /** Buyer opens `/my-bookings?review=…` from the completed-job WhatsApp — don’t wait for the 8s poll to see “completed”. */
   useEffect(() => {
     if (!reviewFromWa) return;

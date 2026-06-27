@@ -24,6 +24,7 @@ import {
   type ChatPollMessage,
 } from "@/lib/listing-chat-poll";
 import { listingChatCopy, formatListingChatSystemBody } from "@/lib/listing-chat-copy";
+import { redactPiiInChatDisplay } from "@/lib/pii-display";
 import { withLang } from "@/lib/i18n-lang";
 import {
   conversationDayKey,
@@ -1326,7 +1327,9 @@ export default function ListingChat({
             (myUserId && senderNorm === myUserId.trim().toLowerCase()) ||
             (myAccountPool.length > 0 && myAccountPool.includes(senderNorm));
           const isSystem = m.body.startsWith("[Naranjogo]");
-          const displayBody = isSystem ? formatListingChatSystemBody(m.body, role, lang) : m.body;
+          const displayBody = isSystem
+            ? formatListingChatSystemBody(m.body, role, lang)
+            : redactPiiInChatDisplay(m.body, lang === "en" ? "en" : "es");
           const dayKey = conversationDayKey(m.created_at);
           const prevDayKey = idx > 0 ? conversationDayKey(messages[idx - 1].created_at) : null;
           const showDay = dayKey !== prevDayKey;

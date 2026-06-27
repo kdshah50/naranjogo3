@@ -82,11 +82,101 @@ export function sortedServiceMenuItems(
   if (!menu?.items?.length) return [];
   const locale = lang === "en" ? "en" : "es";
   return [...menu.items].sort((a, b) => {
-    const la = ((lang === "en" && a.name_en) || a.name_es).trim();
-    const lb = ((lang === "en" && b.name_en) || b.name_es).trim();
+    const la = serviceMenuItemLabel(a, lang);
+    const lb = serviceMenuItemLabel(b, lang);
     const cmp = la.localeCompare(lb, locale, { sensitivity: "base" });
     return cmp !== 0 ? cmp : a.sku.localeCompare(b.sku);
   });
+}
+
+/** Localized line-item label for public UI, quotes, and chat. */
+export function serviceMenuItemLabel(item: ServiceMenuItem, lang: "es" | "en"): string {
+  const es = String(item.name_es ?? "").trim();
+  const en = String(item.name_en ?? "").trim();
+  if (lang === "en") return en || es;
+  return es || en;
+}
+
+export function serviceMenuDisclaimer(menu: ServiceMenu, lang: "es" | "en"): string {
+  const raw = lang === "en" ? menu.disclaimer_en : menu.disclaimer_es;
+  if (typeof raw === "string" && raw.trim()) return raw.trim();
+  return lang === "en" ? DEFAULT_INSPECTION_DISCLAIMER_EN : DEFAULT_INSPECTION_DISCLAIMER_ES;
+}
+
+/** Union of every provider starter template — used to backfill ES/EN on any menu row by SKU. */
+function allStarterItemsBySku(): Map<string, ServiceMenuItem> {
+  const slugs = [
+    "arreglos_de_ropa",
+    "veterinaria",
+    "limpieza",
+    "paseador",
+    "pet_sitting",
+    "estetica_canina",
+    "transporte_app",
+  ] as const;
+  const map = new Map<string, ServiceMenuItem>();
+  for (const slug of slugs) {
+    const starter = starterMenuForProviderSlug(slug);
+    for (const it of starter?.items ?? []) {
+      map.set(it.sku, it);
+    }
+  }
+  return map;
+}
+
+/** Backfill missing ES/EN from provider starter template (by SKU). Fixes English-only rows in DB. */
+export function enrichMenuItemLanguages(
+  item: ServiceMenuItem,
+  starterBySku: Map<string, ServiceMenuItem>,
+): ServiceMenuItem {
+  const starter = starterBySku.get(item.sku);
+  if (!starter) return item;
+
+  let name_es = String(item.name_es ?? "").trim();
+  let name_en = String(item.name_en ?? "").trim();
+  const starterEs = String(starter.name_es ?? "").trim();
+  const starterEn = String(starter.name_en ?? "").trim();
+
+  if (!name_es && starterEs) name_es = starterEs;
+  if (!name_en && starterEn) name_en = starterEn;
+
+  const keyEs = normalizeMenuNameKey(name_es);
+  const keyEn = normalizeMenuNameKey(name_en);
+  const keyStarterEs = normalizeMenuNameKey(starterEs);
+  const keyStarterEn = normalizeMenuNameKey(starterEn);
+
+  // Row saved with English in both columns (or only in name_es) — restore Spanish from template.
+  if (starterEs && keyStarterEs !== keyStarterEn) {
+    if (keyEs === keyStarterEn && keyEs !== keyStarterEs) {
+      name_es = starterEs;
+      if (!name_en) name_en = starterEn;
+    } else if (!name_en && keyEs === keyStarterEn) {
+      name_es = starterEs;
+      name_en = starterEn;
+    }
+  }
+
+  return {
+    ...item,
+    name_es: name_es || starterEs,
+    name_en: name_en || starterEn || null,
+  };
+}
+
+/** Apply starter-template language backfill to every menu row. */
+export function localizeServiceMenuForProvider(
+  menu: ServiceMenu,
+  providerSlug: string | null | undefined,
+): ServiceMenu {
+  const bySku = allStarterItemsBySku();
+  if (bySku.size === 0) return menu;
+  const disclaimers = menuDisclaimersForProviderSlug(providerSlug);
+  return {
+    ...menu,
+    items: menu.items.map((it) => enrichMenuItemLanguages(it, bySku)),
+    disclaimer_es: menu.disclaimer_es?.trim() || disclaimers.disclaimer_es,
+    disclaimer_en: menu.disclaimer_en?.trim() || disclaimers.disclaimer_en,
+  };
 }
 
 export type ParsedServiceMenu =
@@ -244,10 +334,12 @@ export function effectiveServiceMenuForListing(
 ): ServiceMenu | null {
   // Column explicitly set (including empty items: []) — honor DB; do not resurrect starter.
   if (menu !== null && menu !== undefined) {
-    return hasServiceMenu(menu) ? menu : null;
+    if (!hasServiceMenu(menu)) return null;
+    return localizeServiceMenuForProvider(menu, providerSlug);
   }
   const starter = starterMenuForProviderSlug(providerSlug);
-  return hasServiceMenu(starter) ? starter : null;
+  if (!hasServiceMenu(starter)) return null;
+  return localizeServiceMenuForProvider(starter, providerSlug);
 }
 
 /** Parse listing menu jsonb or fall back to provider starter template (quote-gated slugs). */
@@ -257,12 +349,14 @@ export function resolveListingServiceMenu(
 ): ParsedServiceMenu {
   if (raw === null || raw === undefined) {
     const starter = starterMenuForProviderSlug(providerSlug);
-    if (hasServiceMenu(starter)) return { ok: true, menu: starter };
+    if (hasServiceMenu(starter)) {
+      return { ok: true, menu: localizeServiceMenuForProvider(starter, providerSlug) };
+    }
     return { ok: true, menu: emptyMenu() };
   }
   const parsed = parseServiceMenu(raw);
   if (!parsed.ok) return parsed;
-  return parsed;
+  return { ok: true, menu: localizeServiceMenuForProvider(parsed.menu, providerSlug) };
 }
 
 export type ServiceMenuFormRow = { name_es: string; name_en: string; pesos: string };
@@ -297,8 +391,9 @@ export function enrichFormRowsFromStarter(
   }
 
   return rows.map((row) => {
-    if (row.name_en.trim()) return row;
-    const nameKey = normalizeMenuNameKey(row.name_es);
+    let name_es = row.name_es.trim();
+    let name_en = row.name_en.trim();
+    const nameKey = normalizeMenuNameKey(name_es);
     let match = byNameEs.get(nameKey);
     if (!match) {
       const pesos = Number(String(row.pesos).trim().replace(/,/g, "."));
@@ -310,10 +405,20 @@ export function enrichFormRowsFromStarter(
           (candidates.length === 1 ? candidates[0] : undefined);
       }
     }
-    if (match?.name_en) {
-      return { ...row, name_en: match.name_en };
+    if (match) {
+      if (!name_en && match.name_en) name_en = match.name_en;
+      if (
+        match.name_es &&
+        (!name_es ||
+          (name_en &&
+            normalizeMenuNameKey(name_es) === normalizeMenuNameKey(name_en) &&
+            normalizeMenuNameKey(name_es) === normalizeMenuNameKey(match.name_en ?? "") &&
+            normalizeMenuNameKey(match.name_es) !== normalizeMenuNameKey(match.name_en ?? "")))
+      ) {
+        name_es = match.name_es;
+      }
     }
-    return row;
+    return { ...row, name_es, name_en };
   });
 }
 
