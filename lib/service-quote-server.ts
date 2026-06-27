@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { idMatchVariantsForIn } from "@/lib/auth-server";
+import { insertListingMessage, type ListingMessageSource } from "@/lib/listing-messages-server";
 import { normalizeQuoteStatus, parseQuoteLineItems, parseQuoteMetadata } from "@/lib/service-quote";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 
@@ -153,21 +154,9 @@ export async function insertListingChatMessage(
   conversationId: string,
   senderId: string,
   body: string,
+  source: ListingMessageSource = "system",
 ): Promise<{ id: string; sender_id: string; body: string; created_at: string } | null> {
-  const { data, error } = await supabase
-    .from("listing_messages")
-    .insert({
-      conversation_id: conversationId,
-      sender_id: senderId,
-      body,
-    })
-    .select("id,sender_id,body,created_at")
-    .single();
-  if (error || !data) {
-    console.error("[service-quote] insert message", error);
-    return null;
-  }
-  return data as { id: string; sender_id: string; body: string; created_at: string };
+  return insertListingMessage(supabase, { conversationId, senderId, body, source });
 }
 
 export async function resolveConversationForBuyer(

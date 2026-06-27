@@ -10,6 +10,7 @@ import { e164DigitsForWhatsAppRecipient } from "@/lib/phone";
 import { sendWhatsAppToE164Digits } from "@/lib/twilio";
 import { getPublicAppUrl } from "@/lib/app-url";
 import { buyerPaidContactFeeForListing } from "@/lib/contact-gate";
+import { insertListingMessage, touchConversationUpdatedAt } from "@/lib/listing-messages-server";
 
 export const dynamic = "force-dynamic";
 
@@ -79,18 +80,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       }
     }
 
-    const { data: inserted, error: insErr } = await supabase
-      .from("listing_messages")
-      .insert({ conversation_id: convRowId, sender_id: userId, body })
-      .select("id,sender_id,body,created_at")
-      .single();
+    const inserted = await insertListingMessage(supabase, {
+      conversationId: convRowId,
+      senderId: userId,
+      body,
+      source: "user",
+    });
 
-    if (insErr) {
-      console.error("[conversations/:id/messages] insert", insErr);
+    if (!inserted) {
       return NextResponse.json({ error: "No se pudo enviar" }, { status: 500 });
     }
 
-    await supabase.from("listing_conversations").update({ updated_at: new Date().toISOString() }).eq("id", convRowId);
+    await touchConversationUpdatedAt(supabase, convRowId);
 
     if (poolsOverlap(myPool, buyerPool)) {
       const now = new Date().toISOString();

@@ -168,7 +168,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       messageBody += lang === "en" ? `\n\nNotes: ${buyerNotes}` : `\n\nNotas: ${buyerNotes}`;
     }
 
-    const inserted = await insertListingChatMessage(supabase, conv.id, buyerUserId, messageBody);
+    const inserted = await insertListingChatMessage(supabase, conv.id, buyerUserId, messageBody, "quote_request");
     if (!inserted) {
       return NextResponse.json({ error: "No se pudo enviar la solicitud" }, { status: 500 });
     }

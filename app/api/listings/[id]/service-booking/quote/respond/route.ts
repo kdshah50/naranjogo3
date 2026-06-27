@@ -97,7 +97,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
           ? `❌ I decline this quote.${note ? ` Note: ${note}` : ""}`
           : `❌ Rechazo esta cotización.${note ? ` Nota: ${note}` : ""}`;
 
-    const inserted = await insertListingChatMessage(supabase, conv.id, buyerUserId, messageBody);
+    const inserted = await insertListingChatMessage(supabase, conv.id, buyerUserId, messageBody, "quote_respond");
 
     if (action === "accept") {
       await appendListingChatQuoteAcceptNotice(supabase, {

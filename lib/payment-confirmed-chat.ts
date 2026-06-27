@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { idMatchVariantsForIn } from "@/lib/user-id-variants";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
+import { insertListingMessage, touchConversationUpdatedAt } from "@/lib/listing-messages-server";
 
 /**
  * After Stripe marks a booking paid, append a short line to the listing chat thread
@@ -45,20 +46,15 @@ export async function appendListingChatPaymentNotice(
 
   if (dup?.length) return;
 
-  const { error: insErr } = await supabase.from("listing_messages").insert({
-    conversation_id: conv.id,
-    sender_id: String(conv.buyer_id),
+  const inserted = await insertListingMessage(supabase, {
+    conversationId: String(conv.id),
+    senderId: String(conv.buyer_id),
     body,
+    source: "payment",
   });
-  if (insErr) {
-    console.error("[payment-confirmed-chat] insert", insErr);
-    return;
-  }
+  if (!inserted) return;
 
-  await supabase
-    .from("listing_conversations")
-    .update({ updated_at: new Date().toISOString() })
-    .eq("id", conv.id);
+  await touchConversationUpdatedAt(supabase, String(conv.id));
 }
 
 /** Load paid booking row and append chat notice (idempotent). Safe to call from webhook + verify-session. */
@@ -103,18 +99,13 @@ export async function appendListingChatQuoteAcceptNotice(
     .limit(1);
   if (dup?.length) return;
 
-  const { error: insErr } = await supabase.from("listing_messages").insert({
-    conversation_id: opts.conversationId,
-    sender_id: String(opts.buyerId),
+  const inserted = await insertListingMessage(supabase, {
+    conversationId: opts.conversationId,
+    senderId: String(opts.buyerId),
     body,
+    source: "payment",
   });
-  if (insErr) {
-    console.error("[payment-confirmed-chat] quote-accept insert", insErr);
-    return;
-  }
+  if (!inserted) return;
 
-  await supabase
-    .from("listing_conversations")
-    .update({ updated_at: new Date().toISOString() })
-    .eq("id", opts.conversationId);
+  await touchConversationUpdatedAt(supabase, opts.conversationId);
 }

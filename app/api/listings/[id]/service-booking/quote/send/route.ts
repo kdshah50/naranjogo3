@@ -136,7 +136,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       }
     }
 
-    const inserted = await insertListingChatMessage(supabase, conv.id, sellerUserId, messageBody);
+    const inserted = await insertListingChatMessage(supabase, conv.id, sellerUserId, messageBody, "quote_send");
     if (!inserted) {
       return NextResponse.json({ error: "Cotización guardada pero no se pudo publicar en el chat" }, { status: 500 });
     }

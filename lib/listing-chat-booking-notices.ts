@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getPublicAppUrl } from "@/lib/app-url";
 import { idMatchVariantsForIn } from "@/lib/user-id-variants";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
+import { insertListingMessage, touchConversationUpdatedAt } from "@/lib/listing-messages-server";
 
 export type BookingChatLifecyclePhase = "scheduled" | "in_progress" | "completed";
 
@@ -97,18 +98,13 @@ export async function appendListingChatBookingLifecycleNotice(
     .filter(Boolean)
     .join(" ");
 
-  const { error: insErr } = await supabase.from("listing_messages").insert({
-    conversation_id: conv.id,
-    sender_id: String(conv.buyer_id),
+  const inserted = await insertListingMessage(supabase, {
+    conversationId: String(conv.id),
+    senderId: String(conv.buyer_id),
     body,
+    source: "booking_lifecycle",
   });
-  if (insErr) {
-    console.error("[listing-chat-booking-notices] insert", insErr);
-    return;
-  }
+  if (!inserted) return;
 
-  await supabase
-    .from("listing_conversations")
-    .update({ updated_at: new Date().toISOString() })
-    .eq("id", conv.id);
+  await touchConversationUpdatedAt(supabase, String(conv.id));
 }
