@@ -323,6 +323,12 @@ export default function ListingChat({
     [listingId, c.loadErr, c.networkErr],
   );
 
+  const loadQuoteStateRef = useRef<(opts?: { silent?: boolean }) => Promise<void>>(async () => {});
+  const roleRef = useRef(role);
+  roleRef.current = role;
+  const requiresQuoteAcceptRef = useRef(requiresQuoteAccept);
+  requiresQuoteAcceptRef.current = requiresQuoteAccept;
+
   /** Lightweight message sync — avoids clearing seller state on thread activity bumps. */
   const syncConversationMessages = useCallback(async (conversationId: string) => {
     const normId = normalizeConversationId(conversationId);
@@ -339,7 +345,17 @@ export default function ListingChat({
       const data = await res.json();
       if (selectedIdRef.current && normalizeConversationId(selectedIdRef.current) !== normId) return;
       const fresh = (data.messages ?? []) as Msg[];
-      setMessages((prev) => applyChatPollUpdate(prev, fresh));
+      setMessages((prev) => {
+        const next = applyChatPollUpdate(prev, fresh);
+        if (
+          roleRef.current === "seller" &&
+          requiresQuoteAcceptRef.current &&
+          next.length > prev.length
+        ) {
+          queueMicrotask(() => void loadQuoteStateRef.current({ silent: true }));
+        }
+        return next;
+      });
       const lastMsg = fresh[fresh.length - 1];
       if (lastMsg) {
         lastThreadActivityRef.current = threadActivitySig(lastMsg.created_at, lastMsg.body);
@@ -568,6 +584,7 @@ export default function ListingChat({
       if (!opts?.silent) setQuoteLoading(false);
     }
   }, [requiresQuoteAccept, role, agreedPriceBuyerId, listingId]);
+  loadQuoteStateRef.current = loadQuoteState;
 
   useEffect(() => {
     void loadQuoteState();
@@ -611,7 +628,7 @@ export default function ListingChat({
   useEffect(() => {
     if (role !== "seller" || !requiresQuoteAccept) return;
     if (!selectedId && !agreedPriceBuyerId) return;
-    const t = setInterval(() => void loadQuoteState(), 6000);
+    const t = setInterval(() => void loadQuoteState({ silent: true }), 2000);
     return () => clearInterval(t);
   }, [role, requiresQuoteAccept, selectedId, agreedPriceBuyerId, loadQuoteState]);
 
@@ -843,6 +860,7 @@ export default function ListingChat({
           if (sig && sig !== lastThreadActivityRef.current) {
             lastThreadActivityRef.current = sig;
             void syncConversationMessages(selectedId);
+            void loadQuoteState({ silent: true });
           }
         }
         setThreads(newThreads);

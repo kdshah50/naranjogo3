@@ -1,6 +1,9 @@
 -- Reset open tailoring quote/chat state for production E2E testing.
 -- Run in Supabase SQL Editor. Review SELECT previews first.
 -- Audit log (listing_message_audit_log) keeps historical message copies.
+--
+-- If you see "listing_messages body and metadata are immutable":
+--   run supabase/scripts/repair_listing_message_audit_migration.sql first.
 
 -- 1) Preview tailoring listings
 SELECT id, title_es, status, created_at
@@ -39,7 +42,10 @@ WHERE g.listing_id = l.id
   );
   -- AND l.title_es ILIKE '%Centro Histórico%'
 
--- 4) DELETE in-app chat messages (threads remain; audit log unchanged)
+-- 4) Optional: clear in-app chat (DELETE is allowed; immutability applies to UPDATE only).
+--    Skip this step if you only need a fresh quote flow — step 3 is enough.
+--    Old messages stay visible in chat but do not block a new request.
+/*
 DELETE FROM public.listing_messages m
 USING public.listing_conversations c
 JOIN public.listings l ON l.id = c.listing_id
@@ -49,6 +55,7 @@ WHERE m.conversation_id = c.id
     OR l.title_es LIKE 'Clothing Alterations / Tailoring —%'
   );
   -- AND l.title_es ILIKE '%Centro Histórico%'
+*/
 
 -- 5) Cancel open bookings that block a new checkout
 UPDATE public.service_bookings b

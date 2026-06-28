@@ -28,6 +28,7 @@ import {
   replicateServiceQuoteGateToBuyerPool,
   resolveConversationForBuyer,
 } from "@/lib/service-quote-server";
+import { touchConversationUpdatedAt } from "@/lib/listing-messages-server";
 import { notifySellerBuyerServiceRequest, notifyBuyerServiceRequestSent } from "@/lib/service-quote-notify";
 import { quoteLayoutForSlug } from "@/lib/service-quote-vertical";
 import { expandUserAccountIdPool, userIsListingSellerAccount } from "@/lib/user-account-pool";
@@ -174,8 +175,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       return NextResponse.json({ error: "No se pudo enviar la solicitud" }, { status: 500 });
     }
 
+    await touchConversationUpdatedAt(supabase, conv.id);
+
     const now = new Date().toISOString();
-    await supabase.from("listing_service_contact_gate").upsert(
+    const { error: gateErr } = await supabase.from("listing_service_contact_gate").upsert(
       {
         listing_id: listingId,
         buyer_id: conv.buyer_id,
@@ -190,6 +193,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       },
       { onConflict: "listing_id,buyer_id" },
     );
+    if (gateErr) {
+      console.error("[service-quote/request] gate upsert", gateErr);
+      return NextResponse.json({ error: "No se pudo guardar la solicitud" }, { status: 500 });
+    }
 
     const savedGate = await loadServiceQuoteGate(supabase, listingId, conv.buyer_id);
     if (savedGate) {

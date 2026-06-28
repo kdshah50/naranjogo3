@@ -1,5 +1,13 @@
--- Append-only audit trail for in-app listing chat messages (compliance / disputes).
--- Every row in listing_messages is mirrored on INSERT via trigger; audit rows are never updated or deleted.
+/*
+  Full apply / repair for listing message audit (migration 20260626120000).
+  Run this entire file in Supabase SQL Editor if:
+    - message_source column is missing, OR
+    - you hit "listing_messages body and metadata are immutable"
+
+  Safe to re-run (idempotent).
+*/
+
+DROP TRIGGER IF EXISTS trg_listing_messages_no_update ON public.listing_messages;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
@@ -56,7 +64,6 @@ CREATE INDEX IF NOT EXISTS idx_listing_message_audit_conversation
 COMMENT ON TABLE public.listing_message_audit_log IS
   'Immutable archive of listing chat messages. Service role only; export via /api/admin/message-audit.';
 
--- Infer source for legacy rows (before message_source column was populated).
 CREATE OR REPLACE FUNCTION public.infer_listing_message_source(p_body TEXT)
 RETURNS TEXT
 LANGUAGE sql
@@ -130,7 +137,6 @@ CREATE TRIGGER trg_audit_listing_message_insert
   FOR EACH ROW
   EXECUTE FUNCTION public.audit_listing_message_insert();
 
--- Backfill message_source before immutability trigger (UPDATE would otherwise fail).
 UPDATE public.listing_messages m
 SET message_source = public.infer_listing_message_source(m.body)
 WHERE m.message_source = 'user'
@@ -158,7 +164,6 @@ CREATE TRIGGER trg_listing_message_audit_no_delete
   FOR EACH ROW
   EXECUTE FUNCTION public.deny_listing_message_audit_mutation();
 
--- Live message bodies are immutable; conversation/sender may be repointed on account merge.
 CREATE OR REPLACE FUNCTION public.deny_listing_message_body_update()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -176,7 +181,6 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS trg_listing_messages_no_update ON public.listing_messages;
 DROP TRIGGER IF EXISTS trg_listing_messages_no_delete ON public.listing_messages;
 
 CREATE TRIGGER trg_listing_messages_no_update
@@ -186,7 +190,6 @@ CREATE TRIGGER trg_listing_messages_no_update
 
 ALTER TABLE public.listing_message_audit_log ENABLE ROW LEVEL SECURITY;
 
--- Backfill audit rows for messages created before this migration.
 INSERT INTO public.listing_message_audit_log (
   message_id,
   conversation_id,

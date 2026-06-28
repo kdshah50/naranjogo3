@@ -25,7 +25,10 @@ export async function notifyBuyerServiceQuoteSent(opts: {
   lang?: "es" | "en";
   providerSlug?: string | null;
 }): Promise<void> {
-  if (!isTwilioWhatsAppConfigured()) return;
+  if (!isTwilioWhatsAppConfigured()) {
+    console.warn("[service-quote-notify] buyer quote WhatsApp skipped — Twilio not configured");
+    return;
+  }
   const digits = await loadUserPhone(opts.supabase, opts.buyerId);
   if (!digits) return;
 
@@ -77,7 +80,10 @@ export async function notifySellerBuyerServiceRequest(opts: {
   lang?: "es" | "en";
   providerSlug?: string | null;
 }): Promise<void> {
-  if (!isTwilioWhatsAppConfigured()) return;
+  if (!isTwilioWhatsAppConfigured()) {
+    console.warn("[service-quote-notify] seller request WhatsApp skipped — Twilio not configured");
+    return;
+  }
   const digits = await loadUserPhone(opts.supabase, opts.sellerId);
   if (!digits) return;
 
@@ -131,7 +137,10 @@ export async function notifyBuyerServiceRequestSent(opts: {
   lang?: "es" | "en";
   providerSlug?: string | null;
 }): Promise<void> {
-  if (!isTwilioWhatsAppConfigured()) return;
+  if (!isTwilioWhatsAppConfigured()) {
+    console.warn("[service-quote-notify] buyer request confirmation WhatsApp skipped — Twilio not configured");
+    return;
+  }
   const digits = await loadUserPhone(opts.supabase, opts.buyerId);
   if (!digits) return;
 

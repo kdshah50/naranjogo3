@@ -9,6 +9,7 @@ import {
 } from "@/lib/listing-service-menu";
 import ServiceMenuQuoteBuilder, { type QuoteBuilderPayload } from "@/components/ServiceMenuQuoteBuilder";
 import ServiceQuoteBuyerPanel from "@/components/ServiceQuoteBuyerPanel";
+import ServiceQuoteSellerRequestPanel from "@/components/ServiceQuoteSellerRequestPanel";
 import {
   buyerFacingQuoteStatus,
   type ServiceQuoteLineItem,
@@ -102,6 +103,7 @@ export default function ConversationThread({
   const [agreedErr, setAgreedErr] = useState("");
   const [requiresQuoteAccept, setRequiresQuoteAccept] = useState(false);
   const [quoteLayout, setQuoteLayout] = useState<ServiceQuoteLayout>("default");
+  const [providerSlug, setProviderSlug] = useState<string | null>(null);
   const [quoteStatus, setQuoteStatus] = useState<ServiceQuoteStatus>("none");
   const [quoteAgreedCents, setQuoteAgreedCents] = useState<number | null>(null);
   const [quoteSentAt, setQuoteSentAt] = useState<string | null>(null);
@@ -110,6 +112,7 @@ export default function ConversationThread({
   const messagesScrollRef = useRef<HTMLDivElement | null>(null);
   const initialMessagesLoadedRef = useRef(false);
   const [myAccountPool, setMyAccountPool] = useState<string[]>([]);
+  const loadQuoteStateRef = useRef<(opts?: { silent?: boolean }) => Promise<void>>(async () => {});
 
   const syncMessages = useCallback(async () => {
     try {
@@ -120,11 +123,17 @@ export default function ConversationThread({
       if (!res.ok) return;
       const data = await res.json();
       const fresh: Msg[] = data.messages ?? [];
-      setMessages((prev) => applyChatPollUpdate(prev, fresh));
+      setMessages((prev) => {
+        const next = applyChatPollUpdate(prev, fresh);
+        if (role === "seller" && requiresQuoteAccept && next.length > prev.length) {
+          queueMicrotask(() => void loadQuoteStateRef.current());
+        }
+        return next;
+      });
     } catch {
       /* silent */
     }
-  }, [conversationId]);
+  }, [conversationId, role, requiresQuoteAccept]);
 
   const loadQuoteState = useCallback(async () => {
     if (!listingId) return;
@@ -138,6 +147,7 @@ export default function ConversationThread({
       const d = await r.json().catch(() => ({}));
       if (!r.ok) return;
       setRequiresQuoteAccept(Boolean((d as { requiresQuoteAccept?: boolean }).requiresQuoteAccept));
+      setProviderSlug((d as { providerSlug?: string | null }).providerSlug ?? null);
       const layout = (d as { quoteLayout?: ServiceQuoteLayout }).quoteLayout;
       if (layout === "housekeeping" || layout === "default") setQuoteLayout(layout);
       setQuoteStatus(
@@ -156,6 +166,7 @@ export default function ConversationThread({
       /* silent */
     }
   }, [listingId, role, buyerId]);
+  loadQuoteStateRef.current = loadQuoteState;
 
   const load = useCallback(async () => {
     const strings = UI[lang];
@@ -477,11 +488,24 @@ export default function ConversationThread({
       {showQuoteSection && requiresQuoteAccept && showQuoteBuilder ? (
         <div className="px-4 py-3 border-b border-[#E5E0D8] bg-[#FFFBEB] text-xs space-y-2">
           {agreedErr ? <p className="text-red-600">{agreedErr}</p> : null}
+          {quoteStatus === "none" &&
+          quoteLineItems != null &&
+          quoteLineItems.length > 0 ? (
+            <ServiceQuoteSellerRequestPanel
+              lineItems={quoteLineItems}
+              metadata={quoteMetadata}
+              menu={serviceMenu}
+              lang={lang === "en" ? "en" : "es"}
+              quoteLayout={quoteLayout}
+              providerSlug={providerSlug}
+            />
+          ) : null}
           <ServiceMenuQuoteBuilder
             menu={serviceMenu}
             lang={lang === "en" ? "en" : "es"}
             quoteLayout={quoteLayout}
             requiresBuyerContact
+            providerSlug={providerSlug}
             variant="seller"
             disabled={agreedSaving || agreedLoading}
             initialCartLines={quoteLineItems?.map((x) => ({ sku: x.sku, qty: x.qty }))}
