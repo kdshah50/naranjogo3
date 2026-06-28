@@ -134,7 +134,7 @@ Open a specific thread on the listing page: `/listing/{id}?chat={conversationId}
 
 ## Related docs
 
-- `docs/MARKETPLACE_ROLLOUT.md` — **production defaults**: CP 37700, Services-only category tabs (`browseEnabled`)
+- `docs/MARKETPLACE_ROLLOUT.md` — **production defaults**: CP 37700, Services-only category tabs, hero chip/colonia layout
 - `docs/SECURITY.md` — **security posture**: layered controls, informal score, gaps, key file references
 - `docs/SERVICE_ROLE.md` — **rules for `SUPABASE_SERVICE_ROLE_KEY`** (service role / `createAdminSupabase`)
 - `docs/ARCHITECTURE_DATABASE.md` — broader database / listings architecture

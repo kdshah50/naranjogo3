@@ -43,26 +43,36 @@ The home page category bar is controlled by **`browseEnabled`** in `lib/marketpl
 
 Constants: `lib/provider-services.ts` (`BILINGUAL_ERRANDS_SERVICE`, `TAILORING_SERVICE`, etc.).
 
-## Hero service shortcuts (landing page)
+## Hero layout (landing page)
 
-Chips under the search bar in `components/Hero.tsx`:
+All in `components/Hero.tsx` (top → bottom): search bar → price sliders → **service shortcut chips** → Near me → **colonia chips**.
 
-| Chip | Route | Notes |
-|------|-------|--------|
-| Home cleaning | `/limpieza-del-hogar` | Primary vertical (gold chip); buyers search via hero search bar or landing CTA |
-| Veterinary | `/veterinaria` | |
-| Pet care | `/cuidado-mascotas` | |
-| Taxi / rides | `/transporte` | Rides off prod until `RIDES_ENABLED=true` |
-| Tailoring | `/arreglos-de-ropa` | |
-| Bilingual errands | `/mandados-bilingue` | |
+There is **no second service tab row** on the home page. `ServiceVerticalTabs.tsx` was removed; vertical links live only in the hero chip row below the sliders.
+
+### Service shortcut chips
+
+Six verticals in `HERO_SERVICE_CHIPS`. Display order is **A→Z by translated label** at runtime (`localeCompare` for `es` / `en`). Home cleaning stays **gold** (`featured: true`); the other five use translucent white styling.
+
+| Chip (ES label order) | Route | Notes |
+|-----------------------|-------|--------|
+| Arreglos de ropa | `/arreglos-de-ropa` | |
+| Cuidado de mascotas | `/cuidado-mascotas` | |
+| Limpieza del hogar | `/limpieza-del-hogar` | Gold chip; primary vertical |
+| Mandados bilingüe | `/mandados-bilingue` | |
+| Taxi / transporte | `/transporte` | Rides off prod until `RIDES_ENABLED=true` |
+| Veterinaria | `/veterinaria` | |
 
 Footer cross-links: `components/TrustBar.tsx` (cleaning, tailoring, bilingual errands).
 
-**Hero service chips:** below the price sliders in `components/Hero.tsx` — six verticals, sorted alphabetically by label (`sortedColoniaKeys` for colonia chips).
+To add a chip: extend `T` label keys, add an entry to `HERO_SERVICE_CHIPS`, and add a landing page under `app/<slug>/page.tsx` following the other verticals.
 
-**Tianguis hover story:** `components/TianguisWordmark.tsx` — brand paragraph on header hover (desktop).
+### Colonia chips
 
-To add a chip: extend the `T` translations and a `Link` in the Hero shortcuts block; add a landing page under `app/<slug>/page.tsx` following the other verticals.
+Below “Near me”. Keys come from `lib/colonias.ts` and render in **A→Z order** via `sortedColoniaKeys(lang)`.
+
+### Tianguis hover story
+
+`components/TianguisWordmark.tsx` — bilingual brand paragraph on header wordmark hover (desktop).
 
 ## Saldo Naranjo (wallet) for services
 
