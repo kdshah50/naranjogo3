@@ -15,6 +15,7 @@ import {
   parseQuoteMetadata,
   type ServiceQuoteLineItem,
 } from "@/lib/service-quote";
+import { encryptQuoteMetadataForStorage } from "@/lib/quote-metadata-pii";
 import {
   formatBuyerContactBlock,
   metadataFromBuyerContact,
@@ -179,7 +180,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         listing_id: listingId,
         buyer_id: conv.buyer_id,
         contacted_in_app: true,
-        quote_metadata: quoteMetadata,
+        quote_metadata: encryptQuoteMetadataForStorage(quoteMetadata),
         quote_line_items: lineItems,
         quote_status: "none",
         agreed_subtotal_mxn_cents: null,

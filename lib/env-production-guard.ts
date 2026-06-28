@@ -42,4 +42,16 @@ export function assertProductionSecrets(): void {
   if (jwt.length < 32) {
     throw new Error("JWT_SECRET must be at least 32 characters in production");
   }
+
+  const piiKey = process.env.PII_ENCRYPTION_KEY?.trim() ?? "";
+  if (!piiKey) {
+    throw new Error("PII_ENCRYPTION_KEY is required in production (generate: openssl rand -base64 32)");
+  }
+  try {
+    if (Buffer.from(piiKey, "base64").length !== 32) {
+      throw new Error("invalid length");
+    }
+  } catch {
+    throw new Error("PII_ENCRYPTION_KEY must be 32 bytes base64-encoded (openssl rand -base64 32)");
+  }
 }

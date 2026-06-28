@@ -3,6 +3,7 @@ import {
   HOUSEKEEPING_SERVICE,
   PET_SITTING_SERVICE,
   PET_WALKING_SERVICE,
+  TAILORING_SERVICE,
   TRANSPORT_APP_SERVICE,
   VETERINARY_SERVICE,
 } from "@/lib/provider-services";
@@ -22,6 +23,9 @@ export function isPetCareSlug(slug: string | null | undefined): boolean {
 }
 
 export function buyerMenuPickerTitle(slug: string | null | undefined, lang: "es" | "en"): string {
+  if (slug === TAILORING_SERVICE) {
+    return lang === "en" ? "What alterations do you need?" : "¿Qué arreglos necesitas?";
+  }
   if (slug === HOUSEKEEPING_SERVICE) {
     return lang === "en" ? "What cleaning do you need?" : "¿Qué limpieza necesitas?";
   }
@@ -44,6 +48,9 @@ export function buyerMenuPickerTitle(slug: string | null | undefined, lang: "es"
 }
 
 export function preferredDatetimeLabel(slug: string | null | undefined, lang: "es" | "en"): string {
+  if (slug === TAILORING_SERVICE) {
+    return lang === "en" ? "Preferred pickup day & time" : "Día y hora preferidos de recogida";
+  }
   if (slug === VETERINARY_SERVICE) {
     return lang === "en" ? "Preferred appointment day & time" : "Día y hora preferidos de la cita";
   }
@@ -57,6 +64,9 @@ export function preferredDatetimeLabel(slug: string | null | undefined, lang: "e
 }
 
 export function serviceAddressLabel(slug: string | null | undefined, lang: "es" | "en"): string {
+  if (slug === TAILORING_SERVICE) {
+    return lang === "en" ? "Pickup / service address" : "Dirección de recogida o taller";
+  }
   if (slug === VETERINARY_SERVICE) {
     return lang === "en" ? "Visit / clinic address" : "Dirección de visita o clínica";
   }
@@ -78,6 +88,9 @@ export function dropoffAddressLabel(slug: string | null | undefined, lang: "es" 
 
 /** In-app chat header when buyer submits a menu-based service request. */
 export function menuQuoteRequestHeader(slug: string | null | undefined, lang: "es" | "en"): string {
+  if (slug === TAILORING_SERVICE) {
+    return lang === "en" ? "Tailoring request (from menu):" : "Solicitud de arreglos (desde menú):";
+  }
   if (slug === HOUSEKEEPING_SERVICE) {
     return lang === "en" ? "Cleaning request (from menu):" : "Solicitud de limpieza (desde menú):";
   }
@@ -102,6 +115,9 @@ export function menuQuoteRequestHeader(slug: string | null | undefined, lang: "e
 }
 
 export function serviceRequestNoun(slug: string | null | undefined, lang: "es" | "en"): string {
+  if (slug === TAILORING_SERVICE) {
+    return lang === "en" ? "tailoring request" : "solicitud de arreglos";
+  }
   if (slug === HOUSEKEEPING_SERVICE) {
     return lang === "en" ? "cleaning request" : "solicitud de limpieza";
   }
@@ -124,6 +140,11 @@ export function serviceRequestNoun(slug: string | null | undefined, lang: "es" |
 }
 
 export function serviceDepositConfirmLine(slug: string | null | undefined, lang: "es" | "en"): string {
+  if (slug === TAILORING_SERVICE) {
+    return lang === "en"
+      ? "Pay the deposit (platform fee) below to confirm your tailoring order."
+      : "Paga el depósito (tarifa de plataforma) abajo para confirmar tu pedido de arreglos.";
+  }
   if (slug === HOUSEKEEPING_SERVICE) {
     return lang === "en"
       ? "Pay the deposit (platform fee) below to confirm your cleaning service."
@@ -172,6 +193,7 @@ export function sellerRequestPanelTitle(slug: string | null | undefined, lang: "
 }
 
 export function sellerRequestPanelEmoji(slug: string | null | undefined): string {
+  if (slug === TAILORING_SERVICE) return "🪡";
   if (slug === HOUSEKEEPING_SERVICE) return "🧹";
   if (slug === VETERINARY_SERVICE) return "🐾";
   if (isPetCareSlug(slug)) return "🐕";
@@ -180,6 +202,9 @@ export function sellerRequestPanelEmoji(slug: string | null | undefined): string
 }
 
 export function notifyQuoteSentTitle(slug: string | null | undefined, lang: "es" | "en"): string {
+  if (slug === TAILORING_SERVICE) {
+    return lang === "en" ? "📋 *New tailoring quote — Naranjogo*" : "📋 *Nueva cotización de arreglos — Naranjogo*";
+  }
   if (slug === HOUSEKEEPING_SERVICE) {
     return lang === "en" ? "📋 *New cleaning quote — Naranjogo*" : "📋 *Nueva cotización de limpieza — Naranjogo*";
   }
@@ -196,6 +221,9 @@ export function notifyQuoteSentTitle(slug: string | null | undefined, lang: "es"
 }
 
 export function notifyBuyerRequestTitle(slug: string | null | undefined, lang: "es" | "en"): string {
+  if (slug === TAILORING_SERVICE) {
+    return lang === "en" ? "🪡 *New tailoring request — Naranjogo*" : "🪡 *Nueva solicitud de arreglos — Naranjogo*";
+  }
   if (slug === HOUSEKEEPING_SERVICE) {
     return lang === "en" ? "🧹 *New cleaning request — Naranjogo*" : "🧹 *Nueva solicitud de limpieza — Naranjogo*";
   }
@@ -216,6 +244,9 @@ export function notifyBuyerRequestConfirmationTitle(
   slug: string | null | undefined,
   lang: "es" | "en",
 ): string {
+  if (slug === TAILORING_SERVICE) {
+    return lang === "en" ? "✅ *Tailoring request sent — Naranjogo*" : "✅ *Solicitud de arreglos enviada — Naranjogo*";
+  }
   if (slug === DOG_GROOMING_SERVICE) {
     return lang === "en" ? "✅ *Grooming request sent — Naranjogo*" : "✅ *Solicitud de estética enviada — Naranjogo*";
   }
@@ -241,6 +272,11 @@ export function notifyBuyerRequestConfirmationLine(
   slug: string | null | undefined,
   lang: "es" | "en",
 ): string {
+  if (slug === TAILORING_SERVICE) {
+    return lang === "en"
+      ? "We notified your tailor. We'll WhatsApp you when they send a quote."
+      : "Avisamos a tu costurera o sastre. Te escribiremos por WhatsApp cuando envíe la cotización.";
+  }
   if (slug === DOG_GROOMING_SERVICE) {
     return lang === "en"
       ? "We notified your groomer. We'll WhatsApp you when they send a quote."

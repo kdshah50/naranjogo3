@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminSupabase, getUserIdFromRequest, idMatchVariantsForIn, isSameUserId } from "@/lib/auth-server";
 import { expandUserAccountIdPool, poolsOverlap } from "@/lib/user-account-pool";
 import { latestTicketForListingBuyer, MAX_INBOX_THREADS } from "@/lib/conversation-ticket";
+import { decryptListingMessageRow } from "@/lib/listing-messages-server";
 
 export const dynamic = "force-dynamic";
 
@@ -153,7 +154,7 @@ export async function GET(req: NextRequest) {
           role: isBuyer ? ("buyer" as const) : ("seller" as const),
           other_user_id: otherId,
           other_name: labelUser(userById(otherId)),
-          last_body: last?.body ?? "",
+          last_body: last ? decryptListingMessageRow(last).body ?? "" : "",
           last_at: last?.created_at ?? r.updated_at,
         };
       })

@@ -6,7 +6,7 @@ import {
   userIsListingSellerAccount,
 } from "@/lib/user-account-pool";
 import { latestTicketsForListingBuyers, MAX_INBOX_THREADS, latestTicketForListingBuyer } from "@/lib/conversation-ticket";
-import { listConversationMessages } from "@/lib/listing-messages-server";
+import { listConversationMessages, decryptListingMessageRow, decryptListingMessageRows } from "@/lib/listing-messages-server";
 
 export const dynamic = "force-dynamic";
 
@@ -93,6 +93,7 @@ export async function GET(req: NextRequest) {
             .order("created_at", { ascending: false })
             .limit(1)
             .maybeSingle();
+          const lastDecrypted = last ? decryptListingMessageRow(last) : null;
           const b = buyerMap[c.buyer_id.trim().toLowerCase()];
           const buyerLabel =
             b?.display_name?.trim() || (b?.phone ? `…${b.phone.replace(/\D/g, "").slice(-4)}` : "Comprador");
@@ -100,7 +101,7 @@ export async function GET(req: NextRequest) {
             conversationId: c.id,
             buyer_id: c.buyer_id,
             buyer_name: buyerLabel,
-            last_body: last?.body ?? "",
+            last_body: lastDecrypted?.body ?? "",
             last_at: last?.created_at ?? c.updated_at,
             ticket_code: ticketMap.get(c.buyer_id.trim().toLowerCase()) ?? null,
           };
@@ -197,7 +198,7 @@ export async function GET(req: NextRequest) {
       role: "buyer",
       listing: { id: listing.id, title_es: listing.title_es },
       conversation: { id: conv.id },
-      messages: messages ?? [],
+      messages: decryptListingMessageRows(messages ?? []),
       ticket_code: ticketCode,
     });
   } catch (e) {

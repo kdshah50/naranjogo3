@@ -1,6 +1,6 @@
 /**
  * Mask / redact personally identifiable information for chat bubbles and outbound copy.
- * Full values remain in authenticated quote metadata (seller request panel only).
+ * At rest, PII is AES-256-GCM encrypted in quote_metadata and chat message bodies (see lib/pii-crypto.ts).
  */
 
 /** Mask phone for display — keeps country hint + last 4 digits. */

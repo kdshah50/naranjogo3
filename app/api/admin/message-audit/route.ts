@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminSupabase } from "@/lib/auth-server";
 import { getAdminPin, isAdminPinConfigured } from "@/lib/admin-pin";
+import { decryptPiiInChatBody } from "@/lib/pii-crypto";
 
 export const dynamic = "force-dynamic";
 
@@ -123,7 +124,10 @@ export async function GET(req: NextRequest) {
 
   const all = (data ?? []) as ListingMessageAuditRow[];
   const hasMore = all.length > limit;
-  const rows = hasMore ? all.slice(0, limit) : all;
+  const rows = (hasMore ? all.slice(0, limit) : all).map((row) => ({
+    ...row,
+    body: decryptPiiInChatBody(String(row.body ?? "")),
+  }));
   const nextCursor = hasMore && rows.length > 0 ? rows[rows.length - 1]!.id : null;
 
   if (format === "csv") {

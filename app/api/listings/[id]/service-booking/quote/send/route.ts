@@ -13,6 +13,7 @@ import {
   parseQuoteMetadata,
   type ServiceQuoteLineItem,
 } from "@/lib/service-quote";
+import { encryptQuoteMetadataForStorage } from "@/lib/quote-metadata-pii";
 import {
   insertListingChatMessage,
   loadServiceQuoteGate,
@@ -115,7 +116,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         seller_set_agreed_price_at: now,
         quote_status: "pending",
         quote_line_items: quoteLineItems.length > 0 ? quoteLineItems : null,
-        quote_metadata: quoteMetadata,
+        quote_metadata: encryptQuoteMetadataForStorage(quoteMetadata),
         quote_sent_at: now,
         quote_responded_at: null,
         updated_at: now,

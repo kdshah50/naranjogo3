@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { idMatchVariantsForIn } from "@/lib/auth-server";
 import { insertListingMessage, type ListingMessageSource } from "@/lib/listing-messages-server";
+import { encryptQuoteMetadataForStorage } from "@/lib/quote-metadata-pii";
 import { normalizeQuoteStatus, parseQuoteLineItems, parseQuoteMetadata } from "@/lib/service-quote";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 
@@ -243,7 +244,7 @@ export async function prepareQuoteGateForRebook(
         contacted_in_app: true,
         quote_status: "none",
         quote_line_items: null,
-        quote_metadata: metadata,
+        quote_metadata: encryptQuoteMetadataForStorage(metadata),
         agreed_subtotal_mxn_cents: null,
         quote_sent_at: null,
         quote_responded_at: null,
@@ -286,7 +287,7 @@ export async function replicateServiceQuoteGateToBuyerPool(
         contacted_in_app: true,
         quote_status: gate.quoteStatus,
         quote_line_items: gate.quoteLineItems ?? null,
-        quote_metadata: gate.quoteMetadata ?? null,
+        quote_metadata: encryptQuoteMetadataForStorage(gate.quoteMetadata),
         agreed_subtotal_mxn_cents: gate.agreedSubtotalMxnCents,
         seller_set_agreed_price_at: gate.sellerSetAgreedPriceAt,
         quote_sent_at: gate.quoteSentAt,

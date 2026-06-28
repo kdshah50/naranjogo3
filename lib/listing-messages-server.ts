@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { idMatchVariantsForIn } from "@/lib/auth-server";
+import { decryptPiiInChatBody, encryptPiiInChatBody } from "@/lib/pii-crypto";
 
 export type ListingMessageRow = {
   id: string;
@@ -33,7 +34,10 @@ export async function listConversationMessages(
     console.error("[listing-messages] list", error);
     return [];
   }
-  return (data ?? []) as ListingMessageRow[];
+  return (data ?? []).map((row) => ({
+    ...(row as ListingMessageRow),
+    body: decryptPiiInChatBody(String((row as ListingMessageRow).body ?? "")),
+  }));
 }
 
 /** Single insert path for listing chat — DB trigger writes append-only audit row. */
@@ -47,12 +51,13 @@ export async function insertListingMessage(
   },
 ): Promise<ListingMessageRow | null> {
   const source = opts.source ?? "user";
+  const storedBody = encryptPiiInChatBody(opts.body);
   const { data, error } = await supabase
     .from("listing_messages")
     .insert({
       conversation_id: opts.conversationId,
       sender_id: opts.senderId,
-      body: opts.body,
+      body: storedBody,
       message_source: source,
     })
     .select("id,sender_id,body,created_at")
@@ -71,7 +76,20 @@ export async function insertListingMessage(
     bodyChars: opts.body.length,
   });
 
-  return data as ListingMessageRow;
+  return {
+    ...(data as ListingMessageRow),
+    body: decryptPiiInChatBody(String(data.body ?? "")),
+  };
+}
+
+/** Decrypt message body from DB row (for routes that query listing_messages directly). */
+export function decryptListingMessageRow<T extends { body?: string | null }>(row: T): T {
+  if (!row?.body) return row;
+  return { ...row, body: decryptPiiInChatBody(String(row.body)) };
+}
+
+export function decryptListingMessageRows<T extends { body?: string | null }>(rows: T[]): T[] {
+  return rows.map((row) => decryptListingMessageRow(row));
 }
 
 export async function touchConversationUpdatedAt(

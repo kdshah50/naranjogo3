@@ -130,6 +130,7 @@ export function providerServiceSupportsMenu(slug: string | null | undefined): bo
 
 /** Services where checkout requires buyer accept on provider quote before deposit (Phase H4+). */
 export const PROVIDER_SERVICES_WITH_QUOTE_ACCEPT = new Set<string>([
+  TAILORING_SERVICE,
   HOUSEKEEPING_SERVICE,
   VETERINARY_SERVICE,
   PET_WALKING_SERVICE,
