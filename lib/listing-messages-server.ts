@@ -64,7 +64,13 @@ export async function insertListingMessage(
     .single();
 
   if (error || !data) {
-    console.error("[listing-messages] insert", { source, error });
+    console.error("[listing-messages] insert", {
+      source,
+      code: error?.code,
+      message: error?.message,
+      details: error?.details,
+      hint: error?.hint,
+    });
     return null;
   }
 

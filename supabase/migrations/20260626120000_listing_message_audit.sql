@@ -1,7 +1,7 @@
 -- Append-only audit trail for in-app listing chat messages (compliance / disputes).
 -- Every row in listing_messages is mirrored on INSERT via trigger; audit rows are never updated or deleted.
 
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
 
 ALTER TABLE public.listing_messages
   ADD COLUMN IF NOT EXISTS message_source TEXT NOT NULL DEFAULT 'user';
@@ -75,7 +75,8 @@ CREATE OR REPLACE FUNCTION public.audit_listing_message_insert()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
+SET row_security = off
 AS $$
 DECLARE
   v_listing_id TEXT;
@@ -113,7 +114,7 @@ BEGIN
     v_seller_id,
     NEW.sender_id,
     NEW.body,
-    encode(digest(NEW.body, 'sha256'), 'hex'),
+    encode(extensions.digest(NEW.body, 'sha256'::text), 'hex'),
     v_source,
     NEW.created_at
   )
@@ -186,6 +187,15 @@ CREATE TRIGGER trg_listing_messages_no_update
 
 ALTER TABLE public.listing_message_audit_log ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS listing_message_audit_service_role ON public.listing_message_audit_log;
+
+CREATE POLICY listing_message_audit_service_role
+  ON public.listing_message_audit_log
+  FOR ALL
+  TO service_role
+  USING (true)
+  WITH CHECK (true);
+
 -- Backfill audit rows for messages created before this migration.
 INSERT INTO public.listing_message_audit_log (
   message_id,
@@ -208,7 +218,7 @@ SELECT
   c.seller_id,
   m.sender_id,
   m.body,
-  encode(digest(m.body, 'sha256'), 'hex'),
+  encode(extensions.digest(m.body, 'sha256'::text), 'hex'),
   COALESCE(NULLIF(TRIM(m.message_source), ''), public.infer_listing_message_source(m.body)),
   m.created_at,
   NOW()
