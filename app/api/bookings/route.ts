@@ -53,9 +53,22 @@ async function buyerCanSeePaidBookingRow(
   supabase: ReturnType<typeof createAdminSupabase>,
   buyerPool: string[],
   row: BookingRow,
+  authPhone?: string | null,
 ): Promise<boolean> {
   const rowBuyerPool = await expandUserAccountIdPool(supabase, String(row.buyer_id ?? ""));
-  return poolsOverlap(rowBuyerPool, buyerPool);
+  if (poolsOverlap(rowBuyerPool, buyerPool)) return true;
+
+  const phone = authPhone?.trim();
+  if (!phone) return false;
+
+  const authVariants = new Set(phoneLookupVariants(phone));
+  const { data: buyerUsers } = await supabase.from("users").select("phone").in("id", rowBuyerPool.slice(0, 32));
+  for (const u of buyerUsers ?? []) {
+    for (const pv of phoneLookupVariants(u.phone)) {
+      if (authVariants.has(pv)) return true;
+    }
+  }
+  return false;
 }
 
 /** All user id variants linked by phone to anyone in the buyer pool (covers stale booking.buyer_id). */
@@ -101,6 +114,7 @@ async function stitchBuyerRowsByTickets(
   buyerPool: string[],
   tickets: string[],
   statusFilter: string | null,
+  authPhone?: string | null,
 ): Promise<void> {
   for (const ticketNorm of tickets) {
     let qTk = supabase
@@ -110,7 +124,7 @@ async function stitchBuyerRowsByTickets(
     if (statusFilter === "paid") qTk = qTk.eq("payment_status", "paid");
     const { data: byTicketRow } = await qTk.maybeSingle();
     const tr = byTicketRow as BookingRow | null;
-    if (tr?.id == null || !(await buyerCanSeePaidBookingRow(supabase, buyerPool, tr))) continue;
+    if (tr?.id == null || !(await buyerCanSeePaidBookingRow(supabase, buyerPool, tr, authPhone))) continue;
     const key = canonicalBookingRowIdKey(tr.id);
     const prevMap = mergedBuy.get(key);
     if (!prevMap) mergedBuy.set(key, tr);
@@ -126,14 +140,16 @@ async function mergeBuyerActivePaidBookings(
   supabase: ReturnType<typeof createAdminSupabase>,
   mergedBuy: Map<string, BookingRow>,
   buyerPool: string[],
+  buyerVariants: string[],
 ): Promise<void> {
-  if (buyerPool.length === 0) return;
+  if (buyerPool.length === 0 || buyerVariants.length === 0) return;
 
   let qActive = supabase
     .from("service_bookings")
     .select(SERVICE_BOOKING_LIST_COLUMNS)
     .eq("payment_status", "paid")
     .in("status", [...BUYER_ACTIVE_PAID_LIFECYCLE])
+    .in("buyer_id", buyerVariants)
     .order("paid_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false })
     .limit(BUYER_ACTIVE_PAID_FETCH_CAP);
@@ -410,7 +426,7 @@ export async function GET(req: NextRequest) {
     }
 
     if (statusFilter === "paid") {
-      await mergeBuyerActivePaidBookings(supabase, mergedBuy, buyerPool);
+      await mergeBuyerActivePaidBookings(supabase, mergedBuy, buyerPool, buyerVariants);
     }
 
     await stitchBuyerRowsByTickets(
@@ -419,6 +435,7 @@ export async function GET(req: NextRequest) {
       buyerPool,
       ticketHintsFromRequest(req),
       statusFilter,
+      authPhone,
     );
 
     bookingRows = [...mergedBuy.values()].sort((a, b) =>

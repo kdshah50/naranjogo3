@@ -221,7 +221,11 @@ function MyBookingsPageInner() {
         cache: "no-store",
       }).then(async (r) => {
         if (r.status === 401) {
-          router.push("/auth/login?returnTo=/my-bookings");
+          const returnPath =
+            typeof window !== "undefined"
+              ? `${window.location.pathname}${window.location.search}`
+              : "/my-bookings";
+          router.push(`/auth/login?returnTo=${encodeURIComponent(returnPath)}`);
           return { bookings: [], _loadError: null };
         }
         if (!r.ok) {
@@ -385,6 +389,8 @@ function MyBookingsPageInner() {
           title: "Mis reservas",
           subtitle: "Historial de servicios, reseñas y recordatorios. Vuelve a reservar en un clic.",
           emptyTitle: "Aún no tienes reservas completadas.",
+          emptyTicketHint:
+            "Si abriste el enlace de WhatsApp en otra app, inicia sesión con el mismo número y abre Mis reservas desde ese enlace (incluye ?ticket=).",
           explore: "Explorar servicios →",
           rebook: "Volver a reservar →",
           remindSection: "Recordatorios",
@@ -450,6 +456,8 @@ function MyBookingsPageInner() {
           title: "My bookings",
           subtitle: "Service history, reviews, and reminders. Rebook in one tap.",
           emptyTitle: "You don’t have completed bookings yet.",
+          emptyTicketHint:
+            "If you opened the WhatsApp link in another app, sign in with the same phone and use the My bookings link from that message (includes ?ticket=).",
           explore: "Browse services →",
           rebook: "Book again →",
           remindSection: "Reminders",
@@ -771,6 +779,12 @@ function MyBookingsPageInner() {
           <div className="bg-white rounded-2xl border border-[#E5E0D8] p-8 text-center shadow-sm">
             <p className="text-4xl mb-3">📋</p>
             <p className="text-sm text-[#6B7280] mb-4">{t.emptyTitle}</p>
+            {ticketFromUrl ? (
+              <p className="text-xs text-[#92400E] bg-[#FFFBEB] border border-amber-200 rounded-lg px-3 py-2 mb-4 mx-auto max-w-md">
+                {t.emptyTicketHint}
+                <span className="block font-mono font-semibold mt-2 text-[#78350F]">{ticketFromUrl}</span>
+              </p>
+            ) : null}
             <Link
               href="/"
               className="inline-block text-sm font-semibold px-5 py-2.5 rounded-xl bg-[#1B4332] text-white hover:bg-[#2D6A4F] transition-colors"

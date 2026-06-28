@@ -146,7 +146,7 @@ export async function notifyBuyerBookingCommissionPaid(supabase: SupabaseClient,
       ``,
       `Seguimiento (ticket + estado): ${myBookingsUrl}`,
       ``,
-      `¿Dudas? Abre tu reserva: ${bookingUrl}`,
+      `Detalle de pago: ${bookingUrl}`,
     ].join("\n");
 
     const ok = await sendWhatsAppToE164Digits(buyerDigits, msg);

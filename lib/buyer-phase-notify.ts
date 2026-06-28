@@ -69,10 +69,10 @@ export async function notifyBuyerLifecyclePhase(
   const appUrl = getPublicAppUrl();
   const ticket = booking.ticket_code ? String(booking.ticket_code) : null;
   const ticketLine = ticket ? `Ticket: *${ticket}*` : `Reserva: \`${booking.id.slice(0, 8)}…\``;
-  const bookingDetailUrl = `${appUrl}/booking/success?id=${encodeURIComponent(String(booking.id))}`;
   const bookingsUrl = ticket
     ? `${appUrl}/my-bookings?ticket=${encodeURIComponent(ticket)}`
     : `${appUrl}/my-bookings`;
+  const bookingDetailUrl = `${appUrl}/booking/success?id=${encodeURIComponent(String(booking.id))}`;
   const appt = formatAppointmentEs(booking.appointment_at);
 
   const body =
@@ -85,11 +85,11 @@ export async function notifyBuyerLifecyclePhase(
           `*${title}*`,
           ticketLine,
           ``,
-          `Abre tu reserva:`,
-          bookingDetailUrl,
-          ``,
-          `Mis reservas:`,
+          `Mis reservas (estado + ticket):`,
           bookingsUrl,
+          ``,
+          `Detalle de pago:`,
+          bookingDetailUrl,
         ]
           .filter(Boolean)
           .join("\n")
@@ -100,11 +100,11 @@ export async function notifyBuyerLifecyclePhase(
           `*${title}*`,
           ticketLine,
           ``,
-          `Abre tu reserva:`,
-          bookingDetailUrl,
-          ``,
-          `Mis reservas:`,
+          `Mis reservas (estado + ticket):`,
           bookingsUrl,
+          ``,
+          `Detalle de pago:`,
+          bookingDetailUrl,
         ].join("\n");
 
   const ok = await sendWhatsAppToE164Digits(buyerDigits, body);
