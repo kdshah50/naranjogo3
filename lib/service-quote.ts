@@ -12,7 +12,6 @@ import {
   serviceMenuItemLabel,
 } from "@/lib/listing-service-menu";
 import { menuQuoteRequestHeader } from "@/lib/service-quote-vertical";
-import { decryptQuoteMetadataPii } from "@/lib/quote-metadata-pii";
 
 export const SERVICE_QUOTE_STATUSES = ["none", "pending", "accepted", "declined"] as const;
 export type ServiceQuoteStatus = (typeof SERVICE_QUOTE_STATUSES)[number];
@@ -98,7 +97,7 @@ export function parseQuoteMetadata(raw: unknown): ServiceQuoteMetadata | null {
   if (typeof o.preferredAt === "string") meta.preferredAt = o.preferredAt.trim();
   const prefill = parseQuoteLineItems(o.rebookPrefillLineItems);
   if (prefill?.length) meta.rebookPrefillLineItems = prefill;
-  return decryptQuoteMetadataPii(Object.keys(meta).length > 0 ? meta : null);
+  return Object.keys(meta).length > 0 ? meta : null;
 }
 
 type CartLine = { sku: string; qty: number };

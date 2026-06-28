@@ -1,8 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { idMatchVariantsForIn } from "@/lib/auth-server";
 import { insertListingMessage, type ListingMessageSource } from "@/lib/listing-messages-server";
-import { encryptQuoteMetadataForStorage } from "@/lib/quote-metadata-pii";
-import { normalizeQuoteStatus, parseQuoteLineItems, parseQuoteMetadata } from "@/lib/service-quote";
+import { encryptQuoteMetadataForStorage, parseQuoteMetadataFromDb } from "@/lib/quote-metadata-pii";
+import { normalizeQuoteStatus, parseQuoteLineItems } from "@/lib/service-quote";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 
 export type ServiceQuoteGateRow = {
@@ -10,7 +10,7 @@ export type ServiceQuoteGateRow = {
   agreedSubtotalMxnCents: number | null;
   sellerSetAgreedPriceAt: string | null;
   quoteLineItems: ReturnType<typeof parseQuoteLineItems>;
-  quoteMetadata: ReturnType<typeof parseQuoteMetadata>;
+  quoteMetadata: ReturnType<typeof parseQuoteMetadataFromDb>;
   quoteSentAt: string | null;
   quoteRespondedAt: string | null;
 };
@@ -48,7 +48,7 @@ export async function loadServiceQuoteGate(
   let quoteStatus = normalizeQuoteStatus(gate.quote_status);
   const quoteSentAt = gate.quote_sent_at ?? null;
   const quoteRespondedAt = gate.quote_responded_at ?? null;
-  const quoteMetadata = parseQuoteMetadata(gate.quote_metadata);
+  const quoteMetadata = parseQuoteMetadataFromDb(gate.quote_metadata);
 
   // Sent timestamp is source of truth when status column lagged or legacy rows omit pending.
   if (
