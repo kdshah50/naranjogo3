@@ -132,6 +132,30 @@ async function stitchBuyerRowsByTickets(
   }
 }
 
+/** WhatsApp payment links carry ?ticket= — stitch rows seller_id/listing queries missed (account drift). */
+async function stitchSellerRowsByTickets(
+  supabase: ReturnType<typeof createAdminSupabase>,
+  merged: Map<string, BookingRow>,
+  sellerPoolVariants: string[],
+  tickets: string[],
+  statusFilter: string | null,
+): Promise<void> {
+  for (const ticketNorm of tickets) {
+    let qTk = supabase
+      .from("service_bookings")
+      .select(SERVICE_BOOKING_LIST_COLUMNS)
+      .ilike("ticket_code", ticketNorm);
+    if (statusFilter === "paid") qTk = qTk.eq("payment_status", "paid");
+    const { data: byTicketRow } = await qTk.maybeSingle();
+    const tr = byTicketRow as BookingRow | null;
+    if (tr?.id == null || !(await sellerCanManagePaidBookingRow(supabase, sellerPoolVariants, tr))) continue;
+    const key = canonicalBookingRowIdKey(tr.id);
+    const prevMap = merged.get(key);
+    if (!prevMap) merged.set(key, tr);
+    else merged.set(key, mergeBookingListRowsPreferTruth(prevMap as BookingRow, tr) as BookingRow);
+  }
+}
+
 const BUYER_ACTIVE_PAID_LIFECYCLE = ["pending", "confirmed", "scheduled", "in_progress"] as const;
 const BUYER_ACTIVE_PAID_FETCH_CAP = 200;
 
@@ -235,6 +259,8 @@ export async function GET(req: NextRequest) {
   const sellerMode = req.nextUrl.searchParams.get("seller") === "1" || req.nextUrl.searchParams.get("seller") === "true";
 
   const supabase = createAdminSupabase();
+  const jwtPayload = await getTianguisJwtPayloadFromRequest(req);
+  const authPhone = typeof jwtPayload?.phone === "string" ? jwtPayload.phone : null;
 
   let bookingRows: BookingRow[] = [];
   let sellerStrikeCount: number | undefined;
@@ -247,7 +273,7 @@ export async function GET(req: NextRequest) {
     | undefined;
 
   if (sellerMode) {
-    const pool = await expandUserAccountIdPool(supabase, userId);
+    const pool = await expandUserAccountIdPool(supabase, userId, { authPhone });
     const poolVariants = uuidPoolForIn(pool);
 
     const { data: strikeRow } = await supabase
@@ -336,32 +362,19 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    await stitchSellerRowsByTickets(
+      supabase,
+      merged,
+      poolVariants,
+      ticketHintsFromRequest(req),
+      statusFilter,
+    );
+
     bookingRows = sortSellerMergedRows([...merged.values()], statusFilter);
     if (bookingRows.length > SELLER_PAID_RESPONSE_CAP) {
       bookingRows = bookingRows.slice(0, SELLER_PAID_RESPONSE_CAP);
     }
-
-    /** If seller_id drifted vs listing.owner or UUID casing mismatched joins, WhatsApp still fires — stitch row by NG-ticket lookup */
-    const ticketNorm = normalizeNgTicketQuery(req.nextUrl.searchParams.get("ticket"));
-    if (ticketNorm) {
-      let qTk = supabase.from("service_bookings").select(SERVICE_BOOKING_LIST_COLUMNS).ilike("ticket_code", ticketNorm);
-      if (statusFilter === "paid") qTk = qTk.eq("payment_status", "paid");
-      const { data: byTicketRow } = await qTk.maybeSingle();
-      const tr = byTicketRow as BookingRow | null;
-      if (tr?.id != null && (await sellerCanManagePaidBookingRow(supabase, poolVariants, tr))) {
-        const key = canonicalBookingRowIdKey(tr.id);
-        const prevMap = merged.get(key);
-        if (!prevMap) merged.set(key, tr);
-        else merged.set(key, mergeBookingListRowsPreferTruth(prevMap as BookingRow, tr) as BookingRow);
-        bookingRows = sortSellerMergedRows([...merged.values()], statusFilter);
-        if (bookingRows.length > SELLER_PAID_RESPONSE_CAP) {
-          bookingRows = bookingRows.slice(0, SELLER_PAID_RESPONSE_CAP);
-        }
-      }
-    }
   } else {
-    const jwtPayload = await getTianguisJwtPayloadFromRequest(req);
-    const authPhone = typeof jwtPayload?.phone === "string" ? jwtPayload.phone : null;
     const buyerPool = await expandUserAccountIdPool(supabase, userId, { authPhone });
     const buyerVariants = await buyerIdVariantsWithPhoneLinks(supabase, buyerPool);
 

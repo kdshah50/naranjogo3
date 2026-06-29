@@ -8,6 +8,7 @@ import { formatCurrencyMXN } from "@/lib/locale-format";
 import { canonicalBookingRowIdKey, mergeBookingListAvoidStatusRegression } from "@/lib/booking-list-merge";
 import { mergeBookingsListWithDetailTruth, sellerStatsFromTruthList } from "@/lib/booking-client-detail-truth";
 import { normalizeNgTicketQuery } from "@/lib/ng-ticket-normalize";
+import { rememberSellerTicket, ticketsForSellerApiQuery } from "@/lib/seller-known-tickets";
 import type { Lang } from "@/lib/i18n-lang";
 
 type SellerBooking = {
@@ -204,8 +205,9 @@ function SellerBookingsInner() {
   const load = useCallback(async (opts?: { cacheBust?: boolean }) => {
     const q = new URLSearchParams({ seller: "1", status: "paid" });
     q.set("_cb", String(Date.now()));
-    const tk = normalizeNgTicketQuery(ticketHint) ?? undefined;
-    if (tk) q.set("ticket", tk);
+    const urlTicket = normalizeNgTicketQuery(ticketHint);
+    if (urlTicket) rememberSellerTicket(urlTicket);
+    for (const tk of ticketsForSellerApiQuery(urlTicket)) q.append("ticket", tk);
     const res = await fetch(`/api/bookings?${q}`, { credentials: "same-origin", cache: "no-store" });
     if (res.status === 401) {
       const returnPath =
@@ -248,6 +250,9 @@ function SellerBookingsInner() {
     };
     const listRaw = Array.isArray(data.bookings) ? data.bookings : [];
     const list = await mergeBookingsListWithDetailTruth([], listRaw);
+    for (const row of list as SellerBooking[]) {
+      if (row.ticket_code) rememberSellerTicket(row.ticket_code);
+    }
     /** Merge with screen state so a stale poll cannot downgrade optimistic PATCH (e.g. completed → scheduling pending). */
     setBookings((prev) => mergeBookingListAvoidStatusRegression(prev, list));
     if (
@@ -338,6 +343,12 @@ function SellerBookingsInner() {
   }, [load]);
 
   useEffect(() => {
+    const onPaid = () => void load({ cacheBust: true });
+    window.addEventListener("tianguis:booking-paid", onPaid);
+    return () => window.removeEventListener("tianguis:booking-paid", onPaid);
+  }, [load]);
+
+  useEffect(() => {
     return () => {
       if (bannerTimerRef.current) window.clearTimeout(bannerTimerRef.current);
     };
@@ -348,7 +359,7 @@ function SellerBookingsInner() {
       if (document.visibilityState === "visible") void load();
     };
     document.addEventListener("visibilitychange", onVis);
-    const pollMs = ticketHint ? 4_000 : 8_000;
+    const pollMs = 4_000;
     const poll = window.setInterval(() => {
       if (document.visibilityState === "visible") void load({ cacheBust: true });
     }, pollMs);
