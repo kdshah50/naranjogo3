@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useAppLang } from "@/hooks/use-app-lang";
 import { formatDateTimeShort } from "@/lib/locale-format";
 import type { Lang } from "@/lib/i18n-lang";
+import { withLang } from "@/lib/i18n-lang";
 
 type Thread = {
   conversationId: string;
@@ -29,6 +30,9 @@ const COPY: Record<
     roleSeller: string;
     noPreview: string;
     showingRecent: string;
+    emptySellerHint: string;
+    openSellerBookings: string;
+    openProfile: string;
   }
 > = {
   es: {
@@ -40,7 +44,11 @@ const COPY: Record<
     roleBuyer: "Comprador",
     roleSeller: "Vendedor",
     noPreview: "Sin mensajes",
-    showingRecent: "Mostrando las 2 conversaciones más recientes.",
+    showingRecent: "Mostrando las 12 conversaciones más recientes.",
+    emptySellerHint:
+      "Proveedor: entra con el teléfono del anuncio (no la cuenta del cliente). Abre un hilo desde Reservas de clientes o el chat en tu anuncio.",
+    openSellerBookings: "Reservas de clientes →",
+    openProfile: "Mi perfil →",
   },
   en: {
     loginPrompt: "Log in to see your messages.",
@@ -51,7 +59,11 @@ const COPY: Record<
     roleBuyer: "Buyer",
     roleSeller: "Seller",
     noPreview: "No messages",
-    showingRecent: "Showing your 2 most recent conversations.",
+    showingRecent: "Showing your 12 most recent conversations.",
+    emptySellerHint:
+      "Provider: sign in with the phone on your listing (not the buyer account). Open a thread from Client bookings or chat on your listing page.",
+    openSellerBookings: "Client bookings →",
+    openProfile: "My profile →",
   },
 };
 
@@ -124,13 +136,24 @@ function MessagesInboxInner() {
         <p className="text-sm text-[#6B7280] mb-2">{t.subtitle}</p>
         {hasMore ? <p className="text-xs text-[#9CA3AF] mb-4">{t.showingRecent}</p> : <div className="mb-4" />}
         {threads.length === 0 ? (
-          <div className="rounded-xl border border-[#E5E0D8] bg-white p-8 text-center text-sm text-[#6B7280]">{t.empty}</div>
+          <div className="rounded-xl border border-[#E5E0D8] bg-white p-8 text-center text-sm text-[#6B7280] space-y-3">
+            <p>{t.empty}</p>
+            <p className="text-[11px] text-amber-900 leading-relaxed">{t.emptySellerHint}</p>
+            <div className="flex flex-wrap justify-center gap-3 pt-1">
+              <Link href={withLang("/seller-bookings", lang)} className="text-xs font-semibold text-[#1B4332] hover:underline">
+                {t.openSellerBookings}
+              </Link>
+              <Link href={withLang("/profile", lang)} className="text-xs font-semibold text-[#6B7280] hover:underline">
+                {t.openProfile}
+              </Link>
+            </div>
+          </div>
         ) : (
           <ul className="space-y-2">
             {threads.map((thread) => (
               <li key={thread.conversationId}>
                 <Link
-                  href={`/messages/${thread.conversationId}`}
+                  href={withLang(`/messages/${thread.conversationId}`, lang)}
                   className="block rounded-xl border border-[#E5E0D8] bg-white p-4 hover:border-[#1B4332] transition-colors"
                 >
                   <div className="flex justify-between gap-2 mb-1">

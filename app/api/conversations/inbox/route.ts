@@ -3,6 +3,7 @@ import { createAdminSupabase, getUserIdFromRequest, idMatchVariantsForIn, isSame
 import { expandUserAccountIdPool, poolsOverlap } from "@/lib/user-account-pool";
 import { latestTicketForListingBuyer, MAX_INBOX_THREADS } from "@/lib/conversation-ticket";
 import { decryptListingMessageRow } from "@/lib/listing-messages-server";
+import { repairConversationSellerIdIfStale } from "@/lib/listing-conversation-repair";
 
 export const dynamic = "force-dynamic";
 
@@ -72,15 +73,15 @@ export async function GET(req: NextRequest) {
       if (e4) {
         console.error("[conversations/inbox] conversations on owned listings", e4);
       } else {
-        const sellerPoolCache = new Map<string, string[]>();
+        const listingSellerPool = myPool;
+        const buyerPoolCache = new Map<string, string[]>();
         for (const r of convRows ?? []) {
-          const sid = r.seller_id;
-          if (!sellerPoolCache.has(sid)) {
-            sellerPoolCache.set(sid, await expandUserAccountIdPool(supabase, sid));
+          if (!buyerPoolCache.has(r.buyer_id)) {
+            buyerPoolCache.set(r.buyer_id, await expandUserAccountIdPool(supabase, r.buyer_id));
           }
-          if (poolsOverlap(sellerPoolCache.get(sid)!, myPool)) {
-            asSellerFromOwned.push(r as Row);
-          }
+          /** Listing owner sees every buyer thread (even stale `seller_id` on the row). */
+          if (poolsOverlap(buyerPoolCache.get(r.buyer_id)!, listingSellerPool)) continue;
+          asSellerFromOwned.push(r as Row);
         }
       }
     }
@@ -136,21 +137,28 @@ export async function GET(req: NextRequest) {
 
     const enriched = await Promise.all(
       filtered.map(async (r) => {
+        await repairConversationSellerIdIfStale(supabase, r.id, r.listing_id);
+
+        const convIdVars = idMatchVariantsForIn(r.id);
         const { data: last } = await supabase
           .from("listing_messages")
           .select("body,created_at")
-          .eq("conversation_id", r.id)
+          .in("conversation_id", convIdVars)
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
 
         const isBuyer = poolsOverlap(myPool, await buyerPoolFor(r.buyer_id));
         const otherId = isBuyer ? r.seller_id : r.buyer_id;
+        const listingTitle =
+          listingMap[r.listing_id]?.title_es ??
+          listingMap[r.listing_id.trim().toLowerCase()]?.title_es ??
+          "Anuncio";
         return {
           conversationId: r.id,
           listing_id: r.listing_id,
           buyer_id: r.buyer_id,
-          listing_title: listingMap[r.listing_id]?.title_es ?? "Anuncio",
+          listing_title: listingTitle,
           role: isBuyer ? ("buyer" as const) : ("seller" as const),
           other_user_id: otherId,
           other_name: labelUser(userById(otherId)),

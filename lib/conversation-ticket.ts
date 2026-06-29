@@ -76,4 +76,4 @@ export async function latestTicketsForListingBuyers(
   return out;
 }
 
-export const MAX_INBOX_THREADS = 2;
+export const MAX_INBOX_THREADS = 12;
