@@ -101,6 +101,12 @@ function SellerBookingsInner() {
     emptyHint: es
       ? "Si el cliente ya pagó: entra con la misma cuenta con la que publicaste el servicio. En «Mi perfil» el mismo WhatsApp suele unir cuentas. También: /seller-bookings?ticket=NG-… (código del WhatsApp)."
       : "If a client already paid: sign in with the same account you used to publish the service. The same WhatsApp in Profile usually links duplicate logins. Or open /seller-bookings?ticket=NG-… from your WhatsApp.",
+    emptyTicketHint: (tk: string) =>
+      es
+        ? `Buscando ticket ${tk}… Si la lista sigue vacía, inicia sesión con el WhatsApp del anuncio (cuenta proveedor), no con la cuenta del cliente. Abre el enlace completo del WhatsApp (incluye ?ticket=).`
+        : `Looking for ticket ${tk}… If the list stays empty, sign in with the phone on your provider profile (the account that published the ad), not the buyer account. Use the full WhatsApp link (includes ?ticket=).`,
+    ticketFromUrl: (tk: string) =>
+      es ? `Ticket del enlace: ${tk}` : `Ticket from link: ${tk}`,
     buyer: es ? "Cliente" : "Buyer",
     ref: es ? "ref" : "ref",
     fee: es ? "Tarifa plataforma" : "Platform fee",
@@ -172,6 +178,7 @@ function SellerBookingsInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const ticketHint = searchParams.get("ticket");
+  const normalizedTicket = normalizeNgTicketQuery(ticketHint);
   const [bookings, setBookings] = useState<SellerBooking[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -201,7 +208,13 @@ function SellerBookingsInner() {
     if (tk) q.set("ticket", tk);
     const res = await fetch(`/api/bookings?${q}`, { credentials: "same-origin", cache: "no-store" });
     if (res.status === 401) {
-      router.push("/auth/login?returnTo=/seller-bookings");
+      const returnPath =
+        typeof window !== "undefined"
+          ? `${window.location.pathname}${window.location.search}`
+          : normalizedTicket
+            ? `/seller-bookings?ticket=${encodeURIComponent(normalizedTicket)}`
+            : "/seller-bookings";
+      router.push(`/auth/login?returnTo=${encodeURIComponent(returnPath)}`);
       return;
     }
     if (!res.ok) {
@@ -318,7 +331,7 @@ function SellerBookingsInner() {
     );
 
     setLoading(false);
-  }, [router, es, ticketHint]);
+  }, [router, es, ticketHint, normalizedTicket]);
 
   useEffect(() => {
     void load();
@@ -502,6 +515,15 @@ function SellerBookingsInner() {
         </div>
         <p className="text-sm text-[#6B7280] mb-6">{t.lead}</p>
 
+        {normalizedTicket && (
+          <div className="mb-4 rounded-xl border border-[#1B4332]/20 bg-white px-3 py-2.5">
+            <p className="text-sm font-mono font-bold text-[#1B4332] tracking-tight">
+              🎫 {normalizedTicket}
+            </p>
+            <p className="text-[10px] text-[#6B7280] mt-1">{t.ticketFromUrl(normalizedTicket)}</p>
+          </div>
+        )}
+
         {sellerStats != null && (sellerStats.sellerPaidBookings > 0 || sellerStats.sellerCompletedPaid > 0) && (
           <div className="mb-4 rounded-xl border border-emerald-200 bg-[#ECFDF5] px-3 py-2 text-xs text-[#374151]">
             <ul className="space-y-1">
@@ -548,6 +570,11 @@ function SellerBookingsInner() {
         {bookings.length === 0 ? (
           <div className="bg-white rounded-2xl border border-[#E5E0D8] p-8 text-center text-sm text-[#6B7280] space-y-3">
             <p>{t.empty}</p>
+            {normalizedTicket ? (
+              <p className="text-[11px] text-amber-900 leading-relaxed font-medium">
+                {t.emptyTicketHint(normalizedTicket)}
+              </p>
+            ) : null}
             <p className="text-[11px] text-[#57534E] leading-relaxed">{t.emptyHint}</p>
           </div>
         ) : (

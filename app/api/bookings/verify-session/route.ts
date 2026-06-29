@@ -70,7 +70,9 @@ async function verifySessionResponseBody(
       buyerBookingsUrl: ticketCode
         ? `${appUrl}/my-bookings?ticket=${encodeURIComponent(String(ticketCode))}`
         : `${appUrl}/my-bookings`,
-      sellerBookingsUrl: `${appUrl}/seller-bookings`,
+      sellerBookingsUrl: ticketCode
+        ? `${appUrl}/seller-bookings?ticket=${encodeURIComponent(String(ticketCode))}`
+        : `${appUrl}/seller-bookings`,
       listingUrl: `${appUrl}/listing/${fresh.listing_id}`,
       claimsUrl: `${appUrl}/claims?booking=${encodeURIComponent(fresh.id)}`,
     },
