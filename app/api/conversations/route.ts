@@ -135,6 +135,15 @@ export async function GET(req: NextRequest) {
             messages: focusMessages,
           };
         }
+      } else if (threads.length > 0) {
+        /** Provider on listing page: preload latest buyer thread so messages aren't blank until click. */
+        const top = threads[0]!;
+        const focusMessages = await listConversationMessages(supabase, top.conversationId);
+        focusConversation = {
+          id: top.conversationId,
+          buyer_id: top.buyer_id,
+          messages: focusMessages,
+        };
       }
 
       const visibleThreads = threads.slice(0, MAX_INBOX_THREADS);

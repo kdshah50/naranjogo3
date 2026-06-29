@@ -44,6 +44,10 @@ export const LISTING_CHAT_COPY = {
     placeholder: "Escribe un mensaje…",
     send: "Enviar",
     noBuyerThreads: "Aún no hay mensajes de compradores en este anuncio.",
+    wrongProviderAccount:
+      "Estás en la cuenta de comprador u otra sesión. Para ver solicitudes de clientes en este anuncio, entra con el teléfono del proveedor (el de «Kay Shaw» en el anuncio).",
+    openMessages: "Abrir Mensajes →",
+    openSellerBookings: "Reservas de clientes →",
     networkErr: "Error de conexión",
     networkErrAgreed: "Error de red",
     prepareRebookErr: "No se pudo preparar la reserva",
@@ -99,6 +103,10 @@ export const LISTING_CHAT_COPY = {
     placeholder: "Type a message…",
     send: "Send",
     noBuyerThreads: "No buyer messages on this listing yet.",
+    wrongProviderAccount:
+      "You're on a buyer or different login. To see client requests on this listing, sign in with the provider phone shown on the ad (the listing owner account).",
+    openMessages: "Open Messages →",
+    openSellerBookings: "Client bookings →",
     networkErr: "Connection error",
     networkErrAgreed: "Network error",
     prepareRebookErr: "Could not prepare rebook",

@@ -338,6 +338,7 @@ export default async function ListingPage({
         <div className="flex flex-col gap-3">
           <ListingChat
             listingId={params.id}
+            listingSellerId={listing.seller_id ?? null}
             initialConversationId={searchParams?.chat}
             loginReturnTo={listingReturnPath}
             fullListingHref={listingBasePath}

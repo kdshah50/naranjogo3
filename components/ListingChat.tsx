@@ -61,6 +61,7 @@ function maybeNotifyBookingPaidFromChat(
 
 export default function ListingChat({
   listingId,
+  listingSellerId = null,
   initialConversationId,
   loginReturnTo,
   fullListingHref,
@@ -75,6 +76,8 @@ export default function ListingChat({
   highlightRebook = false,
 }: {
   listingId: string;
+  /** Listing owner — detect buyer-session vs provider-session on the listing page. */
+  listingSellerId?: string | null;
   initialConversationId?: string;
   /** Full path (incl. `?lang=` / `?chat=`) for post-login redirect. */
   loginReturnTo?: string;
@@ -110,6 +113,8 @@ export default function ListingChat({
   const [agreedPriceBuyerId, setAgreedPriceBuyerId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [myUserId, setMyUserId] = useState<string | null>(null);
+  const [myAccountPool, setMyAccountPool] = useState<string[]>([]);
+  const [authChecked, setAuthChecked] = useState(false);
   const [draft, setDraft] = useState("");
   /** Seller: agreed job total in MXN (pesos) for selected buyer — loaded/saved via API (stored as centavos). */
   const [agreedPesos, setAgreedPesos] = useState("");
@@ -142,7 +147,6 @@ export default function ListingChat({
   /** Seller manually picked a thread — don't let ?chat= deep-link polls override it. */
   const userPickedThreadRef = useRef(false);
   const emptyThreadBootstrapRef = useRef<string | null>(null);
-  const [myAccountPool, setMyAccountPool] = useState<string[]>([]);
 
   useEffect(() => {
     initialConversationIdRef.current = initialConversationId?.trim() || null;
@@ -388,24 +392,33 @@ export default function ListingChat({
 
   useEffect(() => {
     void (async () => {
-      const me = await fetch("/api/auth/me", { credentials: "same-origin" });
-      if (me.ok) {
-        const j = await me.json();
-        setMyUserId(j.user?.id ?? null);
-        const pool = (j as { accountPool?: string[] }).accountPool;
-        if (Array.isArray(pool) && pool.length > 0) {
-          setMyAccountPool(pool.map((id) => String(id).trim().toLowerCase()));
+      try {
+        const me = await fetch("/api/auth/me", { credentials: "same-origin" });
+        if (me.ok) {
+          const j = await me.json();
+          setMyUserId(j.user?.id ?? null);
+          const pool = (j as { accountPool?: string[] }).accountPool;
+          if (Array.isArray(pool) && pool.length > 0) {
+            setMyAccountPool(pool.map((id) => String(id).trim().toLowerCase()));
+          } else if (j.user?.id) {
+            setMyAccountPool([String(j.user.id).trim().toLowerCase()]);
+          }
+          const u = j.user as { display_name?: string | null; phone?: string | null } | undefined;
+          if (u?.display_name || u?.phone) {
+            const parts = String(u.display_name ?? "").trim().split(/\s+/).filter(Boolean);
+            const digits = String(u.phone ?? "").trim();
+            setBuyerContactPrefill({
+              firstName: parts[0] ?? "",
+              lastName: parts.slice(1).join(" "),
+              contactPhone: digits ? (digits.startsWith("+") ? digits : `+${digits}`) : "",
+            });
+          }
+        } else {
+          setMyUserId(null);
+          setMyAccountPool([]);
         }
-        const u = j.user as { display_name?: string | null; phone?: string | null } | undefined;
-        if (u?.display_name || u?.phone) {
-          const parts = String(u.display_name ?? "").trim().split(/\s+/).filter(Boolean);
-          const digits = String(u.phone ?? "").trim();
-          setBuyerContactPrefill({
-            firstName: parts[0] ?? "",
-            lastName: parts.slice(1).join(" "),
-            contactPhone: digits ? (digits.startsWith("+") ? digits : `+${digits}`) : "",
-          });
-        }
+      } finally {
+        setAuthChecked(true);
       }
       await loadListingScope();
     })();
@@ -1039,6 +1052,21 @@ export default function ListingChat({
     rebookPrefillLines?.map((x) => ({ sku: x.sku, qty: x.qty })) ?? undefined;
   const buyerFormKey = `${listingId}-${highlightRebook ? "rebook" : "new"}-${rebookPrefillLines?.length ?? 0}`;
 
+  const iOwnListing = useMemo(() => {
+    const sid = listingSellerId?.trim().toLowerCase();
+    if (!sid) return false;
+    if (myUserId?.trim().toLowerCase() === sid) return true;
+    return myAccountPool.includes(sid);
+  }, [listingSellerId, myUserId, myAccountPool]);
+
+  const wrongProviderSession =
+    authChecked &&
+    scopeLoaded &&
+    role === "buyer" &&
+    Boolean(listingSellerId?.trim()) &&
+    !iOwnListing &&
+    Boolean(myUserId);
+
   const refreshChat = async () => {
     await loadListingScope();
     if (requiresQuoteAccept) await loadQuoteState();
@@ -1108,6 +1136,20 @@ export default function ListingChat({
       {role === "buyer" && rebookPrepareError ? (
         <div className="px-4 py-2 border-b border-red-200 bg-red-50 text-xs text-red-800">
           {rebookPrepareError}
+        </div>
+      ) : null}
+
+      {wrongProviderSession ? (
+        <div className="px-4 py-3 border-b border-amber-200 bg-amber-50 text-xs text-amber-950 space-y-2">
+          <p className="leading-relaxed font-medium">{c.wrongProviderAccount}</p>
+          <div className="flex flex-wrap gap-3">
+            <Link href={withLang("/messages", lang)} className="font-semibold text-[#1B4332] hover:underline">
+              {c.openMessages}
+            </Link>
+            <Link href={withLang("/seller-bookings", lang)} className="font-semibold text-[#1B4332] hover:underline">
+              {c.openSellerBookings}
+            </Link>
+          </div>
         </div>
       ) : null}
 
