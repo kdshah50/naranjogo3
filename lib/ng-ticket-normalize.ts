@@ -17,5 +17,9 @@ export function normalizeNgTicketQuery(raw: string | null | undefined): string |
   if (new RegExp(`^NJ-${hex8}$`).test(t)) return `NG-${t.slice(3)}`;
   if (new RegExp(`^NJ${hex8}$`).test(t)) return `NG-${t.slice(2)}`;
   if (new RegExp(`^${hex8}$`).test(t)) return `NG-${t}`;
+  /** Letter o/O in the hex suffix (WhatsApp / phone fonts misread 0). */
+  const suffix = t.replace(/^NG-/i, "").replace(/^NG/i, "");
+  const ocrBody = suffix.replace(/[oO]/g, "0");
+  if (new RegExp(`^${hex8}$`).test(ocrBody)) return `NG-${ocrBody}`;
   return null;
 }

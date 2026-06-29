@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, Suspense } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import GuaranteeBadge from "@/components/GuaranteeBadge";
@@ -11,7 +11,6 @@ import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-
 import { providerServiceSupportsSupplementPayments } from "@/lib/provider-services";
 import { useAppLang, useAppLangActions } from "@/hooks/use-app-lang";
 import { mergeBookingsListWithDetailTruth } from "@/lib/booking-client-detail-truth";
-import { mergeBookingListAvoidStatusRegression } from "@/lib/booking-list-merge";
 import { rememberBuyerTicket, ticketsForApiQuery } from "@/lib/buyer-known-tickets";
 import { normalizeNgTicketQuery } from "@/lib/ng-ticket-normalize";
 
@@ -209,13 +208,21 @@ function MyBookingsPageInner() {
   const [stripeReceiptErr, setStripeReceiptErr] = useState<Record<string, string>>({});
   const [rebookBusyId, setRebookBusyId] = useState<string | null>(null);
   const [rebookMsg, setRebookMsg] = useState<Record<string, string>>({});
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastSyncLabel, setLastSyncLabel] = useState("");
+  const bookingsRef = useRef<Booking[]>([]);
 
-  const loadData = useCallback(() => {
-    const qp = new URLSearchParams({ status: "paid" });
-    const urlTicket = normalizeNgTicketQuery(ticketHint);
-    if (urlTicket) rememberBuyerTicket(urlTicket);
-    for (const tk of ticketsForApiQuery(urlTicket)) qp.append("ticket", tk);
-    Promise.all([
+  useEffect(() => {
+    bookingsRef.current = bookings;
+  }, [bookings]);
+
+  const loadData = useCallback(
+    (opts?: { forceDetail?: boolean }) => {
+      const qp = new URLSearchParams({ status: "paid" });
+      const urlTicket = normalizeNgTicketQuery(ticketHint);
+      if (urlTicket) rememberBuyerTicket(urlTicket);
+      for (const tk of ticketsForApiQuery(urlTicket)) qp.append("ticket", tk);
+      Promise.all([
       fetch(`/api/bookings?${qp}`, {
         credentials: "same-origin",
         cache: "no-store",
@@ -255,11 +262,13 @@ function MyBookingsPageInner() {
     ])
       .then(async ([bData, rData]) => {
         setBookingsLoadError(bData._loadError ?? null);
-        const list = await mergeBookingsListWithDetailTruth([], bData.bookings);
+        const list = await mergeBookingsListWithDetailTruth(bookingsRef.current, bData.bookings, {
+          includeTerminal: opts?.forceDetail === true,
+        });
         for (const x of list as Booking[]) {
           if (x.ticket_code) rememberBuyerTicket(x.ticket_code);
         }
-        setBookings((prev) => mergeBookingListAvoidStatusRegression(prev, list));
+        setBookings(list);
         const initCancel: Record<string, string> = {};
         for (const x of list as Booking[]) {
           initCancel[x.id] = "changed_mind";
@@ -274,10 +283,19 @@ function MyBookingsPageInner() {
         }
         setRebookDays((prev) => ({ ...initDays, ...prev }));
         setWaOn((prev) => ({ ...initWa, ...prev }));
+        setLastSyncLabel(
+          new Intl.DateTimeFormat(lang === "es" ? "es-MX" : "en-MX", {
+            hour: "numeric",
+            minute: "2-digit",
+            second: "2-digit",
+          }).format(new Date())
+        );
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [router, ticketHint]);
+    },
+    [router, ticketHint, lang],
+  );
 
   useEffect(() => {
     loadData();
@@ -364,12 +382,20 @@ function MyBookingsPageInner() {
     };
   }, [reviewFromWa, loadData]);
 
-  /** Provider updates status on the server — buyer never gets seller-only `tianguis:booking-lifecycle`. Poll whenever this screen is open (including when every row is already completed) so we never stop refreshing after a stale read. */
+  /** Provider updates status on the server — buyer never gets seller-only `tianguis:booking-lifecycle`. Poll whenever this screen is open. */
   useEffect(() => {
     if (loading) return;
-    const interval = window.setInterval(() => loadData(), 8_000);
+    const pollMs = 4_000;
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") loadData();
+    }, pollMs);
     return () => clearInterval(interval);
-  }, [loading, loadData]);
+  }, [loading, loadData, ticketFromUrl]);
+
+  const manualRefresh = () => {
+    setRefreshing(true);
+    void Promise.resolve(loadData({ forceDetail: true })).finally(() => setRefreshing(false));
+  };
 
   useEffect(() => {
     if (loading || bookings.length === 0) return;
@@ -388,6 +414,10 @@ function MyBookingsPageInner() {
           back: "← Mi perfil",
           title: "Mis reservas",
           subtitle: "Historial de servicios, reseñas y recordatorios. Vuelve a reservar en un clic.",
+          refreshList: "Actualizar lista",
+          lastSyncPrefix: "Actualizado:",
+          ticketFromUrl: (tk: string) => `Ticket del enlace: ${tk}`,
+          providerVisit: "Visita acordada",
           emptyTitle: "Aún no tienes reservas completadas.",
           emptyTicketHint:
             "Si abriste el enlace de WhatsApp en otra app, inicia sesión con el mismo número y abre Mis reservas desde ese enlace (incluye ?ticket=).",
@@ -455,6 +485,10 @@ function MyBookingsPageInner() {
           back: "← My profile",
           title: "My bookings",
           subtitle: "Service history, reviews, and reminders. Rebook in one tap.",
+          refreshList: "Refresh list",
+          lastSyncPrefix: "Updated:",
+          ticketFromUrl: (tk: string) => `Ticket from link: ${tk}`,
+          providerVisit: "Visit scheduled",
           emptyTitle: "You don’t have completed bookings yet.",
           emptyTicketHint:
             "If you opened the WhatsApp link in another app, sign in with the same phone and use the My bookings link from that message (includes ?ticket=).",
@@ -757,8 +791,32 @@ function MyBookingsPageInner() {
           </div>
         </div>
 
-        <h1 className="font-serif text-2xl font-bold text-[#1B4332] mt-0 mb-2">{t.title}</h1>
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-2">
+          <h1 className="font-serif text-2xl font-bold text-[#1B4332] mt-0">{t.title}</h1>
+          <div className="flex flex-col items-end gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => void manualRefresh()}
+              disabled={refreshing || loading}
+              className="px-3 py-1.5 rounded-xl border border-[#1B4332] text-[#1B4332] text-xs font-semibold hover:bg-[#ECFDF5] disabled:opacity-40"
+            >
+              {refreshing ? "…" : t.refreshList}
+            </button>
+            {lastSyncLabel && (
+              <span className="text-[10px] text-[#9CA3AF] tabular-nums">
+                {t.lastSyncPrefix} {lastSyncLabel}
+              </span>
+            )}
+          </div>
+        </div>
         <p className="text-sm text-[#6B7280] mb-4">{t.subtitle}</p>
+
+        {ticketFromUrl && (
+          <div className="mb-4 rounded-xl border border-[#1B4332]/20 bg-white px-3 py-2.5">
+            <p className="text-sm font-mono font-bold text-[#1B4332] tracking-tight">🎫 {ticketFromUrl}</p>
+            <p className="text-[10px] text-[#6B7280] mt-1">{t.ticketFromUrl(ticketFromUrl)}</p>
+          </div>
+        )}
 
         {bookingsLoadError && (
           <div
@@ -834,6 +892,15 @@ function MyBookingsPageInner() {
                           {t.guaranteeLink}
                         </Link>
                       </div>
+                      {b.appointment_at ? (
+                        <p className="text-[11px] text-indigo-900 mt-2">
+                          📅 {t.providerVisit}:{" "}
+                          {new Date(b.appointment_at).toLocaleString(lang === "es" ? "es-MX" : "en-MX", {
+                            dateStyle: "medium",
+                            timeStyle: "short",
+                          })}
+                        </p>
+                      ) : null}
                     </div>
                     <div className="text-right flex-shrink-0">
                       <p className="text-sm font-bold text-[#1B4332]">{formatMXN(b.commission_amount_cents, lang)}</p>

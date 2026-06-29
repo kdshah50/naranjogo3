@@ -6,15 +6,20 @@ type RowWithId = { id: string; status?: string | null };
 
 /**
  * List APIs merge several query branches and can briefly show `confirmed` after the DB row is
- * `completed`. GET /api/bookings/[id] reads the row directly — use it to fix open bookings on screen.
+ * `completed`. GET /api/bookings/[id] reads the row directly — use it to fix rows on screen.
  */
-export async function refreshOpenBookingsFromDetailApi<T extends RowWithId>(rows: T[]): Promise<T[]> {
-  const open = rows.filter((r) => !TERMINAL.has(String(r.status ?? "").toLowerCase()));
-  if (open.length === 0) return rows;
+export async function refreshOpenBookingsFromDetailApi<T extends RowWithId>(
+  rows: T[],
+  opts?: { includeTerminal?: boolean },
+): Promise<T[]> {
+  const toRefresh = opts?.includeTerminal
+    ? rows
+    : rows.filter((r) => !TERMINAL.has(String(r.status ?? "").toLowerCase()));
+  if (toRefresh.length === 0) return rows;
 
   const statusByKey = new Map<string, string>();
   await Promise.all(
-    open.map(async (row) => {
+    toRefresh.map(async (row) => {
       try {
         const res = await fetch(`/api/bookings/${encodeURIComponent(row.id)}`, {
           credentials: "same-origin",
@@ -43,9 +48,10 @@ export async function refreshOpenBookingsFromDetailApi<T extends RowWithId>(rows
 export async function mergeBookingsListWithDetailTruth<T extends RowWithId>(
   prev: T[],
   server: T[],
+  opts?: { includeTerminal?: boolean },
 ): Promise<T[]> {
   const merged = mergeBookingListAvoidStatusRegression(prev, server);
-  return refreshOpenBookingsFromDetailApi(merged);
+  return refreshOpenBookingsFromDetailApi(merged, opts);
 }
 
 /** When the paid list is complete on screen, recompute banner stats from truth-corrected rows. */
