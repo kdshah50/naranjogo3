@@ -335,9 +335,10 @@ function SellerBookingsInner() {
       if (document.visibilityState === "visible") void load();
     };
     document.addEventListener("visibilitychange", onVis);
+    const pollMs = ticketHint ? 4_000 : 8_000;
     const poll = window.setInterval(() => {
       if (document.visibilityState === "visible") void load({ cacheBust: true });
-    }, 8_000);
+    }, pollMs);
     return () => {
       document.removeEventListener("visibilitychange", onVis);
       window.clearInterval(poll);

@@ -16,7 +16,11 @@ export function chatMessageKey(m: ChatPollMessage): string {
 }
 
 export function chatMessageDigest(msgs: ChatPollMessage[]): string {
-  return msgs.map((m) => `${chatMessageKey(m)}\0${m.created_at}\0${m.body.length}`).join("\n");
+  return msgs.map((m) => `${chatMessageKey(m)}\0${m.created_at}\0${m.body}`).join("\n");
+}
+
+export function messagesContainPaymentDepositNotice(msgs: ChatPollMessage[]): boolean {
+  return msgs.some((m) => m.body.includes("pay-deposit-confirmed:"));
 }
 
 export function chatMessagesChanged(prev: ChatPollMessage[], fresh: ChatPollMessage[]): boolean {

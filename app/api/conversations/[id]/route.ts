@@ -7,6 +7,7 @@ import {
 import { expandUserAccountIdPool, poolsOverlap, userParticipatesInConversation } from "@/lib/user-account-pool";
 import { latestTicketForListingBuyer } from "@/lib/conversation-ticket";
 import { listConversationMessages } from "@/lib/listing-messages-server";
+import { repairConversationSellerIdIfStale } from "@/lib/listing-conversation-repair";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +43,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     if (!allowed) {
       return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
+
+    await repairConversationSellerIdIfStale(supabase, conv.id, conv.listing_id);
 
     const convRowId = conv.id;
 

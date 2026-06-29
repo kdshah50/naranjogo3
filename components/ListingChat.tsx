@@ -19,6 +19,7 @@ import {
 import {
   applyChatPollUpdate,
   appendChatMessageDeduped,
+  messagesContainPaymentDepositNotice,
   normalizeConversationId,
   threadActivitySig,
   type ChatPollMessage,
@@ -42,6 +43,21 @@ type Thread = {
   last_at: string;
   ticket_code?: string | null;
 };
+
+function maybeNotifyBookingPaidFromChat(
+  prev: ChatPollMessage[],
+  next: ChatPollMessage[],
+  listingId: string,
+) {
+  if (
+    !messagesContainPaymentDepositNotice(prev) &&
+    messagesContainPaymentDepositNotice(next)
+  ) {
+    window.dispatchEvent(
+      new CustomEvent("tianguis:booking-paid", { detail: { listingId } }),
+    );
+  }
+}
 
 export default function ListingChat({
   listingId,
@@ -291,7 +307,11 @@ export default function ListingChat({
         const data = await res.json();
         if (seq !== conversationLoadSeqRef.current) return;
         const fresh = (data.messages ?? []) as Msg[];
-        setMessages((prev) => (switching ? fresh : applyChatPollUpdate(prev, fresh)));
+        setMessages((prev) => {
+          const next = switching ? fresh : applyChatPollUpdate(prev, fresh);
+          maybeNotifyBookingPaidFromChat(prev, next, listingId);
+          return next;
+        });
         const conv = data.conversation as { listing_id?: string; buyer_id?: string } | undefined;
         const bid = conv?.buyer_id;
         if (bid) setAgreedPriceBuyerId(String(bid));
@@ -347,6 +367,7 @@ export default function ListingChat({
       const fresh = (data.messages ?? []) as Msg[];
       setMessages((prev) => {
         const next = applyChatPollUpdate(prev, fresh);
+        maybeNotifyBookingPaidFromChat(prev, next, listingId);
         if (
           roleRef.current === "seller" &&
           requiresQuoteAcceptRef.current &&
@@ -363,7 +384,7 @@ export default function ListingChat({
     } catch {
       /* silent */
     }
-  }, []);
+  }, [listingId]);
 
   useEffect(() => {
     void (async () => {
@@ -472,7 +493,14 @@ export default function ListingChat({
         if (!res.ok) return;
         const data = await res.json();
         const fresh: Msg[] = data.messages ?? [];
-        setMessages((prev) => applyChatPollUpdate(prev, fresh));
+        setMessages((prev) => {
+          const next = applyChatPollUpdate(prev, fresh);
+          maybeNotifyBookingPaidFromChat(prev, next, listingId);
+          if (role === "seller" && next.length > prev.length) {
+            queueMicrotask(() => void loadQuoteStateRef.current({ silent: true }));
+          }
+          return next;
+        });
         const lastMsg = fresh[fresh.length - 1];
         if (lastMsg) {
           lastThreadActivityRef.current = threadActivitySig(lastMsg.created_at, lastMsg.body);
@@ -482,7 +510,7 @@ export default function ListingChat({
       }
     }, intervalMs);
     return () => clearInterval(poll);
-  }, [selectedId, role]);
+  }, [selectedId, role, listingId]);
 
   // Sellers: refresh thread list + open conversation (mirrors buyer listing-scoped poll).
   useEffect(() => {

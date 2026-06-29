@@ -7,6 +7,7 @@ import {
 } from "@/lib/user-account-pool";
 import { latestTicketsForListingBuyers, MAX_INBOX_THREADS, latestTicketForListingBuyer } from "@/lib/conversation-ticket";
 import { listConversationMessages, decryptListingMessageRow, decryptListingMessageRows } from "@/lib/listing-messages-server";
+import { repairConversationSellerIdIfStale } from "@/lib/listing-conversation-repair";
 
 export const dynamic = "force-dynamic";
 
@@ -71,6 +72,10 @@ export async function GET(req: NextRequest) {
         if (poolsOverlap(await buyerPoolFor(c.buyer_id), listingSellerPool)) continue;
         convs.push(c);
       }
+
+      await Promise.all(
+        convs.map((c) => repairConversationSellerIdIfStale(supabase, c.id, listing.id)),
+      );
 
       const buyerIds = Array.from(new Set(convs.map((c) => c.buyer_id)));
       const buyerMap: Record<string, { display_name: string | null; phone: string | null }> = {};
@@ -181,6 +186,8 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    await repairConversationSellerIdIfStale(supabase, conv.id, listing.id);
+
     const { data: messages, error: msgErr } = await supabase
       .from("listing_messages")
       .select("id,sender_id,body,created_at")
@@ -252,6 +259,7 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     if (existing) {
+      await repairConversationSellerIdIfStale(supabase, existing.id, listing.id);
       return NextResponse.json({ conversationId: existing.id });
     }
 
@@ -273,7 +281,10 @@ export async function POST(req: NextRequest) {
           .in("listing_id", listingRowIdVariantsPost)
           .in("buyer_id", myPool)
           .maybeSingle();
-        if (row) return NextResponse.json({ conversationId: row.id });
+        if (row) {
+          await repairConversationSellerIdIfStale(supabase, row.id, listing.id);
+          return NextResponse.json({ conversationId: row.id });
+        }
       }
       console.error("[conversations] POST insert", insertErr);
       return NextResponse.json({ error: "No se pudo crear la conversación" }, { status: 500 });
