@@ -25,6 +25,10 @@ import { applyServiceBookingStatusTruthPass } from "@/lib/booking-status-truth";
 import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
 import { providerServiceRequiresQuoteAccept } from "@/lib/provider-services";
 import { loadServiceQuoteGateForBuyerPool, agreedGateFromQuoteRow } from "@/lib/service-quote-server";
+import {
+  TRANSPORT_VIAJE_ONLY_ERROR,
+  transportViajeFlowForListingTitle,
+} from "@/lib/rides/transport-viaje-flow";
 
 export const dynamic = "force-dynamic";
 
@@ -416,6 +420,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     if (listing.status !== "active") {
       return NextResponse.json({ error: "Este anuncio no está activo" }, { status: 400 });
+    }
+
+    if (transportViajeFlowForListingTitle(listing.title_es as string)) {
+      return NextResponse.json({ error: TRANSPORT_VIAJE_ONLY_ERROR, viaje_path: "/viaje" }, { status: 400 });
     }
 
     if (action === "request") {

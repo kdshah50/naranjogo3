@@ -38,6 +38,8 @@ type RideRow = {
   final_total_mxn_cents?: number | null;
   ticket_code: string | null;
   driver_id: string | null;
+  passengers?: number | null;
+  created_at?: string | null;
   updated_at?: string | null;
 };
 
@@ -1228,6 +1230,28 @@ function ViajePageInner() {
             <p className="text-sm text-[#1B4332]/80">
               {ride.pickup_address} → {ride.dropoff_address}
             </p>
+            {(ride.created_at || (ride.passengers != null && ride.passengers > 0)) && (
+              <p className="mt-1 text-xs text-[#1B4332]/65">
+                {ride.created_at ? (
+                  <>
+                    {t.requestedAt}{" "}
+                    {new Date(ride.created_at).toLocaleString(lang === "en" ? "en-MX" : "es-MX", {
+                      weekday: "short",
+                      day: "numeric",
+                      month: "short",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </>
+                ) : null}
+                {ride.created_at && ride.passengers != null && ride.passengers > 0 ? " · " : null}
+                {ride.passengers != null && ride.passengers > 0 ? (
+                  <>
+                    {t.ridePassengers} {ride.passengers}
+                  </>
+                ) : null}
+              </p>
+            )}
             {ride.ticket_code && (
               <p className="mt-3 text-lg font-mono font-bold">
                 {t.ticket} {ride.ticket_code}

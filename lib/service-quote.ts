@@ -37,6 +37,8 @@ export type ServiceQuoteMetadata = {
   serviceAddress?: string;
   /** ISO datetime — preferred visit before quote */
   preferredAt?: string;
+  /** Ride / transport: number of passengers (1–8) */
+  passengerCount?: number;
   /** Saved line items for rebook form prefill (cleared from gate row until buyer submits). */
   rebookPrefillLineItems?: ServiceQuoteLineItem[];
 };
@@ -95,6 +97,8 @@ export function parseQuoteMetadata(raw: unknown): ServiceQuoteMetadata | null {
   if (o.whatsappPhone === null) meta.whatsappPhone = null;
   if (typeof o.serviceAddress === "string") meta.serviceAddress = o.serviceAddress.trim();
   if (typeof o.preferredAt === "string") meta.preferredAt = o.preferredAt.trim();
+  const pax = Math.round(Number(o.passengerCount));
+  if (Number.isFinite(pax) && pax >= 1 && pax <= 8) meta.passengerCount = pax;
   const prefill = parseQuoteLineItems(o.rebookPrefillLineItems);
   if (prefill?.length) meta.rebookPrefillLineItems = prefill;
   return Object.keys(meta).length > 0 ? meta : null;

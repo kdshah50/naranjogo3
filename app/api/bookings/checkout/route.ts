@@ -19,6 +19,10 @@ import { resolveServicePricingBaseMxnCents } from "@/lib/service-booking-pricing
 import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
 import { providerServiceRequiresQuoteAccept } from "@/lib/provider-services";
 import { checkoutFullConnectBlockedMessage } from "@/lib/service-quote-vertical";
+import {
+  TRANSPORT_VIAJE_ONLY_ERROR,
+  transportViajeFlowForListingTitle,
+} from "@/lib/rides/transport-viaje-flow";
 import { loadServiceQuoteGateForBuyerPool, agreedGateFromQuoteRow } from "@/lib/service-quote-server";
 import { isWalletEnabled } from "@/lib/wallet-flags";
 import { captureWalletForServiceDeposit } from "@/lib/wallet-service-payment";
@@ -91,6 +95,10 @@ export async function POST(req: NextRequest) {
     }
     if (!listing.seller_id) {
       return NextResponse.json({ error: "Este anuncio no tiene proveedor asignado" }, { status: 400 });
+    }
+
+    if (transportViajeFlowForListingTitle(listing.title_es)) {
+      return NextResponse.json({ error: TRANSPORT_VIAJE_ONLY_ERROR, viaje_path: "/viaje" }, { status: 400 });
     }
 
     const myPool = await expandUserAccountIdPool(supabase, userId);

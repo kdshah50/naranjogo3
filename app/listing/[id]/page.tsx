@@ -30,10 +30,11 @@ import { getSellerPlatformJobStats } from "@/lib/seller-platform-stats";
 import { parseBeforeAfterPhotoUrls } from "@/lib/provider-trust";
 import ListingTrustStrip from "@/components/ListingTrustStrip";
 import ListingBeforeAfterSection from "@/components/ListingBeforeAfterSection";
-import ListingTransportRideBanner from "@/components/ListingTransportRideBanner";
+import ListingViajeBookingCTA from "@/components/ListingViajeBookingCTA";
 import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
-import { providerServiceRequiresQuoteAccept, TRANSPORT_APP_SERVICE } from "@/lib/provider-services";
+import { providerServiceRequiresQuoteAccept } from "@/lib/provider-services";
 import { quoteLayoutForSlug } from "@/lib/service-quote-vertical";
+import { transportListingUsesViajeFlow } from "@/lib/rides/transport-viaje-flow";
 
 export const dynamic = "force-dynamic";
 
@@ -125,6 +126,7 @@ export default async function ListingPage({
   const providerSlug = inferProviderSlugFromListingTitle(listing.title_es);
   const menuQuoteLayout = quoteLayoutForSlug(providerSlug);
   const requiresQuoteAccept = providerServiceRequiresQuoteAccept(providerSlug);
+  const viajeOnlyFlow = transportListingUsesViajeFlow(providerSlug);
   const highlightQuote = searchParams?.quote === "1" || searchParams?.quote === "true";
   const highlightRequest = searchParams?.request === "1" || searchParams?.request === "true";
   const highlightRebook = searchParams?.rebook === "1" || searchParams?.rebook === "true";
@@ -233,10 +235,13 @@ export default async function ListingPage({
           <ServiceMenuPublic
             menu={effectiveServiceMenu}
             lang={listingLang}
+            referenceFaresOnly={viajeOnlyFlow}
           />
         )}
-        {isServiceListing && providerSlug === TRANSPORT_APP_SERVICE && (
-          <ListingTransportRideBanner lang={listingLang} />
+        {isServiceListing && viajeOnlyFlow && (
+          <div className="mb-6">
+            <ListingViajeBookingCTA lang={listingLang} />
+          </div>
         )}
         {isServiceListing && sellerId && (
           <ListingTrustStrip
@@ -347,28 +352,31 @@ export default async function ListingPage({
             serviceMenu={isServiceListing ? effectiveServiceMenu : null}
             quoteLayout={menuQuoteLayout}
             providerSlug={providerSlug}
-            requiresQuoteAccept={requiresQuoteAccept}
+            requiresQuoteAccept={requiresQuoteAccept && !viajeOnlyFlow}
             highlightQuote={highlightQuote}
             highlightRequest={highlightRequest}
             highlightRebook={highlightRebook}
+            rideDispatchOnly={viajeOnlyFlow}
           />
           <div id="booking-section" className="scroll-mt-28">
-            <ServiceBookingBlock
-              listingId={params.id}
-              isService={isServiceListing}
-              sellerId={listing.seller_id ?? null}
-              listingLang={listingLang}
-              providerSlug={providerSlug}
-              loginReturnTo={listingReturnPath}
-              liveAvailability={
-                isServiceListing
-                  ? {
-                      syncEnabled: calendarSyncEnabled,
-                      upcomingSlotCount: liveSlots.length,
-                    }
-                  : undefined
-              }
-            />
+            {viajeOnlyFlow ? null : (
+              <ServiceBookingBlock
+                listingId={params.id}
+                isService={isServiceListing}
+                sellerId={listing.seller_id ?? null}
+                listingLang={listingLang}
+                providerSlug={providerSlug}
+                loginReturnTo={listingReturnPath}
+                liveAvailability={
+                  isServiceListing
+                    ? {
+                        syncEnabled: calendarSyncEnabled,
+                        upcomingSlotCount: liveSlots.length,
+                      }
+                    : undefined
+                }
+              />
+            )}
           </div>
         </div>
 

@@ -7,7 +7,7 @@ import {
 import { buyerHasSentInAppMessage, ensureContactGateFromMessages } from "@/lib/contact-gate";
 import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
 import { resolveListingServiceMenu } from "@/lib/listing-service-menu";
-import { providerServiceRequiresQuoteAccept } from "@/lib/provider-services";
+import { providerServiceRequiresQuoteAccept, TRANSPORT_APP_SERVICE } from "@/lib/provider-services";
 import {
   buildMenuQuoteMessage,
   computeQuoteTotalCents,
@@ -31,6 +31,10 @@ import {
 import { touchConversationUpdatedAt } from "@/lib/listing-messages-server";
 import { notifySellerBuyerServiceRequest, notifyBuyerServiceRequestSent } from "@/lib/service-quote-notify";
 import { quoteLayoutForSlug } from "@/lib/service-quote-vertical";
+import {
+  TRANSPORT_VIAJE_ONLY_ERROR,
+  transportViajeFlowForListingTitle,
+} from "@/lib/rides/transport-viaje-flow";
 import { expandUserAccountIdPool, userIsListingSellerAccount } from "@/lib/user-account-pool";
 
 export const dynamic = "force-dynamic";
@@ -54,6 +58,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const quoteBasis = (json as { quoteBasis?: string }).quoteBasis;
     const buyerNotes = String((json as { buyerNotes?: string }).buyerNotes ?? "").trim().slice(0, 500) || null;
     const lang = (json as { lang?: string }).lang === "en" ? "en" : "es";
+    const rawPassengers = Math.round(Number((json as { passengerCount?: number }).passengerCount));
+    const passengerCount =
+      Number.isFinite(rawPassengers) && rawPassengers >= 1 && rawPassengers <= 8 ? rawPassengers : null;
 
     const buyerContact = parseBuyerQuoteContactFromBody((json as { buyerContact?: unknown }).buyerContact);
     if (!buyerContact) {
@@ -91,6 +98,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     }
     if (listing.status !== "active") {
       return NextResponse.json({ error: "Este anuncio no está activo" }, { status: 400 });
+    }
+    if (transportViajeFlowForListingTitle(listing.title_es as string)) {
+      return NextResponse.json({ error: TRANSPORT_VIAJE_ONLY_ERROR, viaje_path: "/viaje" }, { status: 400 });
     }
     if (await userIsListingSellerAccount(supabase, buyerUserId, listing.seller_id as string)) {
       return NextResponse.json({ error: "No puedes solicitar tu propio servicio" }, { status: 400 });
@@ -152,8 +162,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       buyerNotes,
       lang,
       kind: "buyer_request",
+      ...(passengerCount != null ? { passengerCount } : {}),
       ...metadataFromBuyerContact(buyerContact),
-    }) ?? { kind: "buyer_request" as const, lang, buyerNotes, ...metadataFromBuyerContact(buyerContact) };
+    }) ?? {
+      kind: "buyer_request" as const,
+      lang,
+      buyerNotes,
+      ...(passengerCount != null ? { passengerCount } : {}),
+      ...metadataFromBuyerContact(buyerContact),
+    };
 
     let messageBody = buildMenuQuoteMessage({
       menu: parsedMenu.menu,
@@ -166,6 +183,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       providerSlug: slug,
     });
     messageBody += `\n\n${formatBuyerContactBlock(buyerContact, lang, { maskPii: true })}`;
+    if (passengerCount != null && slug === TRANSPORT_APP_SERVICE) {
+      messageBody +=
+        lang === "en"
+          ? `\n${"Passengers"}: ${passengerCount}`
+          : `\n${"Pasajeros"}: ${passengerCount}`;
+    }
     if (buyerNotes) {
       messageBody += lang === "en" ? `\n\nNotes: ${buyerNotes}` : `\n\nNotas: ${buyerNotes}`;
     }

@@ -74,6 +74,7 @@ export default function ListingChat({
   highlightQuote = false,
   highlightRequest = false,
   highlightRebook = false,
+  rideDispatchOnly = false,
 }: {
   listingId: string;
   /** Listing owner — detect buyer-session vs provider-session on the listing page. */
@@ -98,6 +99,8 @@ export default function ListingChat({
   highlightRequest?: boolean;
   /** Deep link ?rebook=1 — reset gate and show buyer request form with prefill. */
   highlightRebook?: boolean;
+  /** Taxi + RIDES_ENABLED: no menu quote/checkout — rides go through /viaje. */
+  rideDispatchOnly?: boolean;
 }) {
   const c = listingChatCopy(lang);
   const [loading, setLoading] = useState(() => !initialConversationId?.trim());
@@ -863,6 +866,7 @@ export default function ListingChat({
         quoteBasis: payload.quoteBasis,
         buyerNotes: payload.buyerNotes,
         buyerContact: payload.buyerContact,
+        passengerCount: payload.passengerCount,
         lang: lang === "en" ? "en" : "es",
       }),
     });
@@ -1036,6 +1040,7 @@ export default function ListingChat({
         !(quoteLineItems?.length ?? 0) &&
         (rebookPrefillLines?.length ?? 0) > 0));
   const showBuyerRequestForm =
+    !rideDispatchOnly &&
     role === "buyer" &&
     requiresQuoteAccept &&
     hasServiceMenu(effectiveMenu) &&
@@ -1044,6 +1049,7 @@ export default function ListingChat({
     (isRebookFormCycle ||
       ((quoteStatus === "none" || quoteStatus === "declined") && !quoteAwaitingProvider));
   const showBuyerQuotePanel =
+    !rideDispatchOnly &&
     role === "buyer" &&
     requiresQuoteAccept &&
     !rebookPreparing &&
@@ -1283,6 +1289,7 @@ export default function ListingChat({
           ) : null}
           {agreedErr ? <p className="text-red-600">{agreedErr}</p> : null}
           {requiresQuoteAccept &&
+            !rideDispatchOnly &&
             quoteStatus === "none" &&
             quoteLineItems != null &&
             quoteLineItems.length > 0 &&
@@ -1296,7 +1303,7 @@ export default function ListingChat({
                 providerSlug={providerSlug}
               />
             )}
-          {hasServiceMenu(effectiveMenu) && agreedPriceBuyerId && (
+          {hasServiceMenu(effectiveMenu) && agreedPriceBuyerId && !rideDispatchOnly && (
             <ServiceMenuQuoteBuilder
               menu={effectiveMenu}
               lang={lang === "en" ? "en" : "es"}
@@ -1326,7 +1333,15 @@ export default function ListingChat({
         </div>
       )}
 
-      {role === "buyer" && requiresQuoteAccept && hasServiceMenu(effectiveMenu) && quoteAwaitingProvider && !isRebookFormCycle && (
+      {role === "buyer" && rideDispatchOnly && (
+        <div className="px-4 py-2 border-b border-[#A7F3D0] bg-[#ECFDF5] text-xs text-[#065F46] leading-relaxed">
+          {lang === "en"
+            ? "Questions only in chat — to book a ride use /viaje (load balance at /saldo first)."
+            : "Solo preguntas en el chat — para reservar un viaje usa /viaje (carga saldo en /saldo primero)."}
+        </div>
+      )}
+
+      {role === "buyer" && requiresQuoteAccept && hasServiceMenu(effectiveMenu) && quoteAwaitingProvider && !isRebookFormCycle && !rideDispatchOnly && (
         <div className="px-4 py-2 border-b border-[#E5E0D8] bg-blue-50 text-xs text-blue-900">
           {c.requestSent}
         </div>
@@ -1357,7 +1372,7 @@ export default function ListingChat({
         </div>
       )}
 
-      {showBuyerQuotePanel && (
+      {showBuyerQuotePanel && !rideDispatchOnly && (
         <div className="px-4 py-2 border-b border-[#E5E0D8]">
           <ServiceQuoteBuyerPanel
             listingId={listingId}

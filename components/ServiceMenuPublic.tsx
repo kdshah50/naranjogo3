@@ -16,9 +16,12 @@ import {
 export default function ServiceMenuPublic({
   menu,
   lang = "es",
+  referenceFaresOnly = false,
 }: {
   menu: ServiceMenu | null | undefined;
   lang?: "es" | "en";
+  /** Taxi + RIDES_ENABLED: menu is reference only; booking is on /viaje. */
+  referenceFaresOnly?: boolean;
 }) {
   if (!menu || !Array.isArray(menu.items) || menu.items.length === 0) {
     return null;
@@ -30,9 +33,18 @@ export default function ServiceMenuPublic({
     maximumFractionDigits: 0,
   });
 
-  const heading = lang === "en" ? "Service menu" : "Menú de servicios";
-  const subheading =
-    lang === "en"
+  const heading = referenceFaresOnly
+    ? lang === "en"
+      ? "Reference fares"
+      : "Tarifas de referencia"
+    : lang === "en"
+      ? "Service menu"
+      : "Menú de servicios";
+  const subheading = referenceFaresOnly
+    ? lang === "en"
+      ? "Indicative prices — book live trips on /viaje (wallet + driver dispatch)."
+      : "Precios orientativos — reserva el viaje en vivo en /viaje (saldo + asignación de conductor)."
+    : lang === "en"
       ? "Fixed prices per service. Build a custom quote in chat."
       : "Precios fijos por servicio. Solicita un presupuesto en el chat.";
   const disclaimer =

@@ -41,6 +41,8 @@ export type QuoteBuilderPayload = {
   messageBody: string;
   buyerNotes?: string | null;
   buyerContact?: BuyerQuoteContact;
+  /** Transport: number of passengers (1–8) */
+  passengerCount?: number;
 };
 
 /**
@@ -105,6 +107,7 @@ export default function ServiceMenuQuoteBuilder({
   const [dropoffAddress, setDropoffAddress] = useState("");
   const [transportMode, setTransportMode] = useState<"custom" | "menu">("custom");
   const [preferredAtLocal, setPreferredAtLocal] = useState("");
+  const [passengerCount, setPassengerCount] = useState(1);
   const [contactErr, setContactErr] = useState("");
   const [submitErr, setSubmitErr] = useState("");
   const contactSectionRef = useRef<HTMLDivElement | null>(null);
@@ -317,6 +320,10 @@ export default function ServiceMenuQuoteBuilder({
       messageBody,
       buyerNotes: buyerNotes.trim() || null,
       buyerContact: buildBuyerContact() ?? undefined,
+      passengerCount:
+        providerSlug === TRANSPORT_APP_SERVICE && variant === "buyer" && requiresBuyerContact
+          ? Math.min(Math.max(passengerCount, 1), 8)
+          : undefined,
     };
   };
 
@@ -363,6 +370,7 @@ export default function ServiceMenuQuoteBuilder({
       setPickupAddress("");
       setDropoffAddress("");
       setPreferredAtLocal("");
+      setPassengerCount(1);
     } catch (e: unknown) {
       const msg =
         e instanceof Error
@@ -607,6 +615,26 @@ export default function ServiceMenuQuoteBuilder({
               className="w-full rounded-lg border border-blue-200 bg-white px-2 py-1.5 text-[11px] outline-none focus:border-[#2563EB] disabled:opacity-50"
             />
           </label>
+          {providerSlug === TRANSPORT_APP_SERVICE ? (
+            <label className="block space-y-0.5">
+              <span className="text-[10px] font-semibold text-[#1E3A8A]">
+                {lang === "en" ? "Passengers" : "Pasajeros"} *
+              </span>
+              <input
+                type="number"
+                min={1}
+                max={8}
+                value={passengerCount}
+                onChange={(e) => {
+                  const n = Math.floor(Number(e.target.value));
+                  if (!Number.isFinite(n)) return;
+                  setPassengerCount(Math.min(Math.max(n, 1), 8));
+                }}
+                disabled={disabled || busy}
+                className="w-full rounded-lg border border-blue-200 bg-white px-2 py-1.5 text-[11px] outline-none focus:border-[#2563EB] disabled:opacity-50"
+              />
+            </label>
+          ) : null}
           {contactErr ? <p className="text-[10px] text-red-600">{contactErr}</p> : null}
         </div>
       )}
