@@ -92,7 +92,7 @@ export const PROVIDER_SERVICES = [
   { value: "chef", es: "Chef a domicilio", en: "Private Chef" },
   { value: "servicios_computo", es: "Servicios de cómputo / IT", en: "Computer / IT Services" },
   { value: "veterinaria", es: "Servicios veterinarios", en: "Veterinary Services" },
-  { value: "transporte_app", es: "Taxi / transporte por aplicación (tipo Uber / DiDi)", en: "Taxi / ride-hailing (Uber-style)" },
+  { value: "transporte_app", es: "Taxi / transporte por aplicación", en: "Taxi / ride-hailing app" },
   { value: "arreglos_de_ropa", es: "Arreglos de ropa / costurería", en: "Clothing Alterations / Tailoring" },
   { value: "otro", es: "Otro servicio", en: "Other service" },
 ] as const;
@@ -107,6 +107,49 @@ export const PET_SITTING_SERVICE = "pet_sitting";
 export const DOG_GROOMING_SERVICE = "estetica_canina";
 export const TRANSPORT_APP_SERVICE = "transporte_app";
 export const BILINGUAL_ERRANDS_SERVICE = "mandados";
+
+/** Signup titles that used older catalog labels — still stored in listings.title_es / title_en. */
+export const LEGACY_PROVIDER_TITLE_LABELS: Array<{
+  value: (typeof PROVIDER_SERVICES)[number]["value"];
+  legacyEs: string;
+  legacyEn: string;
+}> = [
+  {
+    value: TRANSPORT_APP_SERVICE,
+    legacyEs: "Taxi / transporte por aplicación (tipo Uber / DiDi)",
+    legacyEn: "Taxi / ride-hailing (Uber-style)",
+  },
+];
+
+/** Map a stored listing title prefix to the current catalog label for display. */
+export function normalizeLegacyProviderListingTitlePrefix(title: string, lang: "es" | "en"): string {
+  const t = title.trim();
+  if (!t) return title;
+  for (const leg of LEGACY_PROVIDER_TITLE_LABELS) {
+    const svc = PROVIDER_SERVICES.find((s) => s.value === leg.value);
+    if (!svc) continue;
+    for (const legacy of [leg.legacyEs, leg.legacyEn]) {
+      const legacyPrefix = `${legacy} —`;
+      if (t.startsWith(legacyPrefix)) {
+        const current = lang === "en" ? svc.en : svc.es;
+        return `${current} —${t.slice(legacyPrefix.length)}`;
+      }
+    }
+  }
+  return title;
+}
+
+/** Infer slug from a legacy signup title prefix, if any. */
+export function providerSlugFromLegacyListingTitlePrefix(title: string): string | null {
+  const t = title.trim();
+  if (!t) return null;
+  for (const leg of LEGACY_PROVIDER_TITLE_LABELS) {
+    for (const legacy of [leg.legacyEs, leg.legacyEn]) {
+      if (t.startsWith(`${legacy} —`)) return leg.value;
+    }
+  }
+  return null;
+}
 
 export const PET_CARE_SERVICES = new Set<string>([
   PET_WALKING_SERVICE,

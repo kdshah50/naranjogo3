@@ -9,7 +9,7 @@ export default function ListingViajeBookingCTA({ lang = "es" }: { lang?: Lang })
     lang === "en"
       ? {
           title: "Book a ride",
-          lead: "All taxi trips on Naranjogo use the live dispatch flow — same as Uber/DiDi.",
+          lead: "All taxi trips on Naranjogo use live dispatch — request on /viaje and track your ride in real time.",
           step1: "Load prepaid balance at",
           step2: "Request pickup & drop-off (colonia or address)",
           step3: "Your driver accepts on",
@@ -20,7 +20,7 @@ export default function ListingViajeBookingCTA({ lang = "es" }: { lang?: Lang })
         }
       : {
           title: "Pedir un viaje",
-          lead: "Todos los viajes de taxi en Naranjogo usan el flujo en vivo — igual que Uber/DiDi.",
+          lead: "Todos los viajes de taxi en Naranjogo usan despacho en vivo — pide en /viaje y sigue el estado al momento.",
           step1: "Carga saldo prepago en",
           step2: "Elige origen y destino (colonia o dirección)",
           step3: "Tu conductor acepta en",

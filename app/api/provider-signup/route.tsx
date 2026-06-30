@@ -6,6 +6,7 @@ import {
   providerMetaFooters,
   providerServiceLabels,
   providerServiceSupportsMenu,
+  PROVIDER_SERVICES,
   PROVIDER_LANGUAGE_OPTIONS,
   SERVICE_LOCATION_OPTIONS,
   sanitizeAlternateServiceSlugs,
@@ -216,6 +217,9 @@ export async function POST(req: NextRequest) {
     const coloniaData = COLONIAS[coloniaKey] ?? COLONIAS["otro"];
     const coloniaLabelEs = coloniaData.label;
     const coloniaLabelEn = coloniaLabel(coloniaKey, "en");
+    const svcDef = PROVIDER_SERVICES.find((s) => s.value === serviceStr);
+    const titleLabelEs = svcDef?.es ?? String(service_label ?? serviceStr);
+    const titleLabelEn = svcDef?.en ?? String(service_label ?? serviceStr);
     const locationCity = `${coloniaLabelEs}, San Miguel de Allende`;
     const descWithAddressEs = address
       ? `${description}\n\nZona: ${coloniaLabelEs}. Ref: ${address}`
@@ -233,8 +237,8 @@ export async function POST(req: NextRequest) {
 
     const listing = {
       seller_id:          sellerId,
-      title_es:           `${service_label} — ${coloniaLabelEs}, SMA`,
-      title_en:           `${service_label} — ${coloniaLabelEs}, SMA`,
+      title_es:           `${titleLabelEs} — ${coloniaLabelEs}, SMA`,
+      title_en:           `${titleLabelEn} — ${coloniaLabelEn}, SMA`,
       description_es:     descWithAddressEs + meta.es,
       description_en:      descWithAddressEn + meta.en,
       price_mxn:          price_mxn > 0 ? price_mxn : 50000,

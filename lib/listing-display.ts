@@ -1,5 +1,5 @@
 import type { Lang } from "@/lib/i18n-lang";
-import { PROVIDER_SERVICES } from "@/lib/provider-services";
+import { normalizeLegacyProviderListingTitlePrefix, PROVIDER_SERVICES } from "@/lib/provider-services";
 
 type ListingTextFields = {
   title_es?: string | null;
@@ -10,7 +10,7 @@ type ListingTextFields = {
 
 /** Swap provider service prefix in listing titles (signup often stores English in title_es). */
 function localizeProviderListingTitlePrefix(title: string, lang: Lang): string {
-  const t = title.trim();
+  const t = normalizeLegacyProviderListingTitlePrefix(title, lang).trim();
   if (!t) return title;
   for (const s of PROVIDER_SERVICES) {
     const esPrefix = `${s.es} —`;

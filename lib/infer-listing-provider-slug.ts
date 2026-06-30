@@ -2,6 +2,7 @@ import {
   PROVIDER_SERVICES,
   TRANSPORT_APP_SERVICE,
   providerServiceSupportsMenu,
+  providerSlugFromLegacyListingTitlePrefix,
 } from "@/lib/provider-services";
 
 /** Infer provider signup slug from listing title (provider-signup uses `{label} — {colonia}, SMA`). */
@@ -14,6 +15,8 @@ export function inferProviderSlugFromListingTitle(title: string | null | undefin
   ) {
     return TRANSPORT_APP_SERVICE;
   }
+  const legacySlug = providerSlugFromLegacyListingTitlePrefix(t);
+  if (legacySlug) return legacySlug;
   for (const s of PROVIDER_SERVICES) {
     const esPrefix = `${s.es} —`;
     const enPrefix = `${s.en} —`;
