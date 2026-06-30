@@ -26,6 +26,88 @@ const DRIVER_PUBLIC_STATUSES = new Set([
   "completed",
 ]);
 
+function rowTimeMs(row: RideBookingRow): number {
+  const raw = row.updated_at ?? row.created_at;
+  const t = raw ? Date.parse(raw) : 0;
+  return Number.isFinite(t) ? t : 0;
+}
+
+async function hydrateRowFromEvents(
+  supabase: SupabaseClient,
+  row: RideBookingRow,
+): Promise<RideBookingRow> {
+  const fresh =
+    (await getRideByIdFresh(supabase, row.id, { attempts: 4, delayMs: 150 })) ?? row;
+  const fromEvents = await applyEventTruthToRide(supabase, fresh);
+  const logStatus = await getRideLifecycleStatusFromEvents(supabase, row.id);
+  if (logStatus && rideStatusRank(logStatus) > rideStatusRank(fromEvents.status)) {
+    return { ...fromEvents, status: logStatus as RideBookingRow["status"] };
+  }
+  return fromEvents;
+}
+
+/**
+ * Collect pinned ride id + ticket canonical + all sibling rows; pick highest
+ * lifecycle from ride_events (fixes ghost matched row vs accepted real row).
+ */
+async function pickBestBuyerRideRow(
+  supabase: SupabaseClient,
+  args: {
+    pool: string[];
+    sessionUserId: string;
+    authPhone: string | null;
+    ticket: string;
+    rideId: string;
+  },
+): Promise<RideBookingRow | null> {
+  const accountOpts = { authPhone: args.authPhone };
+  const byId = new Map<string, RideBookingRow>();
+
+  if (args.rideId) {
+    const pinned = await getRideById(supabase, args.rideId);
+    if (pinned && args.pool.some((uid) => isSameUserId(uid, pinned.buyer_id))) {
+      byId.set(pinned.id, pinned);
+    }
+  }
+
+  if (args.ticket) {
+    const canonical = await resolveCanonicalRideByTicketForBuyer(
+      supabase,
+      args.sessionUserId,
+      args.ticket,
+      accountOpts,
+    );
+    if (canonical?.id) byId.set(canonical.id, canonical);
+
+    for (const sibling of await listRideBookingsByTicket(
+      supabase,
+      args.ticket,
+      args.pool,
+    )) {
+      if (sibling?.id) byId.set(sibling.id, sibling);
+    }
+  }
+
+  if (byId.size === 0) return null;
+
+  let best: RideBookingRow | null = null;
+  let bestRank = -2;
+
+  for (const row of byId.values()) {
+    const truth = await hydrateRowFromEvents(supabase, row);
+    const rank = rideStatusRank(truth.status);
+    if (
+      rank > bestRank ||
+      (rank === bestRank && best && rowTimeMs(truth) > rowTimeMs(best))
+    ) {
+      best = truth;
+      bestRank = rank;
+    }
+  }
+
+  return best;
+}
+
 async function loadDriverPublic(
   supabase: SupabaseClient,
   driverUserId: string,
@@ -80,52 +162,18 @@ export async function getBuyerRideTruthState(
 ): Promise<BuyerRideTruthState | null> {
   const accountOpts = { authPhone: args.authPhone };
   const pool = await expandUserAccountIdPool(supabase, args.sessionUserId, accountOpts);
-
-  let base: RideBookingRow | null = null;
   const ticket = String(args.ticketCode ?? "").trim();
   const rideId = String(args.rideId ?? "").trim();
 
-  if (ticket) {
-    base = await resolveCanonicalRideByTicketForBuyer(
-      supabase,
-      args.sessionUserId,
-      ticket,
-      accountOpts,
-    );
-  }
-  if (!base?.id && rideId) {
-    const row = await getRideById(supabase, rideId);
-    if (row && pool.some((uid) => isSameUserId(uid, row.buyer_id))) {
-      base = row;
-    }
-  }
+  const fresh = await pickBestBuyerRideRow(supabase, {
+    pool,
+    sessionUserId: args.sessionUserId,
+    authPhone: args.authPhone,
+    ticket,
+    rideId,
+  });
 
-  if (!base?.id) return null;
-
-  let fresh =
-    (await getRideByIdFresh(supabase, base.id, { attempts: 6, delayMs: 250 })) ?? base;
-  fresh = await applyEventTruthToRide(supabase, fresh);
-
-  // Duplicate NG- rows: scan every sibling's event log (UI may pin a ghost id).
-  if (ticket) {
-    const siblings = await listRideBookingsByTicket(supabase, ticket, pool);
-    for (const sibling of siblings) {
-      const logStatus = await getRideLifecycleStatusFromEvents(supabase, sibling.id);
-      if (!logStatus || rideStatusRank(logStatus) <= rideStatusRank(fresh.status)) continue;
-      const rowForSibling =
-        sibling.id === fresh.id
-          ? fresh
-          : (await getRideByIdFresh(supabase, sibling.id, { attempts: 4, delayMs: 150 })) ??
-            sibling;
-      const upgraded = await applyEventTruthToRide(supabase, {
-        ...rowForSibling,
-        status: logStatus as RideBookingRow["status"],
-      });
-      if (rideStatusRank(upgraded.status) > rideStatusRank(fresh.status)) {
-        fresh = upgraded;
-      }
-    }
-  }
+  if (!fresh?.id) return null;
 
   const ride = withStatusCode(fresh) as RideBookingRow & {
     status_code: number;
