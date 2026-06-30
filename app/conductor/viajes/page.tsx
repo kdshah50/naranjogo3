@@ -14,6 +14,7 @@ import {
   fetchDriverRecoverByTicket,
   fetchRideRowById,
 } from "@/lib/rides/client-ride-sync";
+import { fetchRidesEnabledOnServer } from "@/lib/rides/client-rides-enabled";
 import { mergeRideStatusRow, rideStatusRank } from "@/lib/rides/ride-status-merge";
 import {
   driverFlowStepIndex,
@@ -217,9 +218,6 @@ export default function ConductorViajesPage() {
   );
 }
 
-const STABLE_ORIGIN = process.env.NEXT_PUBLIC_STABLE_ORIGIN?.replace(/\/$/, "") ?? "";
-
-/** Panel fetch only when discovering new trips — polls use event-truth recover. */
 const PANEL_DISCOVERY_SOURCES = new Set([
   "mount",
   "mount-retry",
@@ -227,14 +225,6 @@ const PANEL_DISCOVERY_SOURCES = new Set([
   "recover",
   "url-pin",
 ]);
-
-function isLikelyRidesHost(): boolean {
-  if (typeof window === "undefined") return true;
-  const env = process.env.NEXT_PUBLIC_VERCEL_ENV ?? "";
-  if (env === "preview" || env === "development") return true;
-  const h = window.location.hostname;
-  return h.includes("vercel.app") || h === "localhost" || h === "127.0.0.1";
-}
 
 function ConductorViajesInner() {
   const lang = useAppLang();
@@ -264,7 +254,7 @@ function ConductorViajesInner() {
   const [sessionLabel, setSessionLabel] = useState<string | null>(null);
   const [sessionPhone, setSessionPhone] = useState<string | null>(null);
   const [driverApproved, setDriverApproved] = useState(false);
-  const [wrongHost, setWrongHost] = useState(false);
+  const [ridesDisabledOnServer, setRidesDisabledOnServer] = useState(false);
   const [debugChecks, setDebugChecks] = useState<string[] | null>(null);
   const [debugBusy, setDebugBusy] = useState(false);
   const [recoverTicketInput, setRecoverTicketInput] = useState(() =>
@@ -866,7 +856,9 @@ function ConductorViajesInner() {
   const panelStreamEnabled = !panelError && Boolean(canonicalUserId ?? online?.user_id);
 
   useEffect(() => {
-    setWrongHost(!isLikelyRidesHost());
+    void fetchRidesEnabledOnServer().then((enabled) => {
+      setRidesDisabledOnServer(!enabled);
+    });
   }, []);
 
   useEffect(() => {
@@ -1197,14 +1189,9 @@ function ConductorViajesInner() {
       <div className="mx-auto max-w-lg px-4 py-8">
         <RidesStagingBanner />
 
-        {wrongHost && (
+        {ridesDisabledOnServer && (
           <div className="mb-4 rounded-lg border border-red-400 bg-red-50 px-4 py-3 text-sm text-red-950">
             <p>{t.ridesDisabled}</p>
-            {STABLE_ORIGIN && (
-              <a href={STABLE_ORIGIN + "/conductor/viajes"} className="mt-2 inline-block font-medium underline break-all">
-                {STABLE_ORIGIN}/conductor/viajes
-              </a>
-            )}
           </div>
         )}
 
@@ -1252,7 +1239,7 @@ function ConductorViajesInner() {
           </div>
         )}
 
-        {trips.length === 0 && !wrongHost && (
+        {trips.length === 0 && !ridesDisabledOnServer && (
           <div className="mb-4 rounded-lg border border-[#1B4332]/15 bg-white/90 px-4 py-3 text-sm">
             <button
               type="button"
@@ -1472,10 +1459,10 @@ function ConductorViajesInner() {
               {busy === "online" ? "…" : isOnline ? t.disconnect : t.connect}
             </button>
           </div>
-          {!canGoOnline && wrongHost && (
+          {!canGoOnline && ridesDisabledOnServer && (
             <p className="mt-3 text-xs text-amber-800 leading-relaxed">{t.ridesDisabled}</p>
           )}
-          {!canGoOnline && !wrongHost && sessionUserId && (
+          {!canGoOnline && !ridesDisabledOnServer && sessionUserId && (
             <p className="mt-3 text-xs text-amber-800 leading-relaxed">{connectBlockedMessage}</p>
           )}
         </section>

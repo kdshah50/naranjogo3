@@ -299,7 +299,7 @@ const DRIVER_TRIPS = {
     profileLoadFailed: "No se pudo cargar el perfil de conductor",
     panelLoadFailed: "No se pudo cargar el panel de conductor",
     ridesDisabled:
-      "Viajes no activos en esta URL (usa el preview de Vercel con RIDES_ENABLED=true, no naranjogo.com.mx).",
+      "Viajes no están activos en este despliegue. En Vercel, pon RIDES_ENABLED=true y vuelve a desplegar.",
     noDriverProfile:
       "No hay perfil de conductor para esta sesión. Cierra sesión en /unete y vuelve a entrar con 415 181 6902.",
     sessionMissingPhone: "La sesión no tiene teléfono — cierra sesión y vuelve a entrar.",
@@ -374,7 +374,7 @@ const DRIVER_TRIPS = {
     profileLoadFailed: "Could not load driver profile",
     panelLoadFailed: "Could not load driver panel",
     ridesDisabled:
-      "Rides are not enabled on this URL (naranjogo.com.mx). Open the Vercel preview with RIDES_ENABLED=true.",
+      "Rides are not enabled on this deployment. Set RIDES_ENABLED=true on Vercel and redeploy.",
     noDriverProfile:
       "No driver profile for this session. Log out at /unete and sign in again with 415 181 6902.",
     sessionMissingPhone: "Session has no phone — log out and sign in again.",
