@@ -17,6 +17,7 @@ import {
   type RideDriverPublic,
 } from "@/lib/rides/client-ride-sync";
 import { mergeRideStatusRow, rideStatusRank } from "@/lib/rides/ride-status-merge";
+import { rideStatusToCode } from "@/lib/rides/ride-status-codes";
 import { rideStatusLabel, viajeCopy } from "@/lib/rides/ui-copy";
 
 type FareEstimate = {
@@ -512,7 +513,9 @@ function ViajePageInner() {
             normalizeTicketKey(prev.ticket_code) === normalizeTicketKey(incoming.ticket_code);
           if (sameTicket) return prev;
         }
-        if (prev && rideStatusRank(incoming.status) < rideStatusRank(prev.status)) {
+        const prevCode = prev?.status_code ?? rideStatusToCode(prev?.status);
+        const incomingCode = incoming.status_code ?? rideStatusToCode(incoming.status);
+        if (prev && incomingCode < prevCode) {
           return prev;
         }
         const next = prev ? { ...prev, ...incoming, status: incoming.status } : incoming;

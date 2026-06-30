@@ -6,11 +6,16 @@ import {
   applyEventTruthToRide,
   getRideById,
   getRideByIdFresh,
+  getRideLifecycleStatusFromEvents,
   type RideBookingRow,
 } from "@/lib/rides/ride-bookings-server";
-import { resolveCanonicalRideByTicketForBuyer } from "@/lib/rides/resolve-ride-by-ticket";
+import {
+  listRideBookingsByTicket,
+  resolveCanonicalRideByTicketForBuyer,
+} from "@/lib/rides/resolve-ride-by-ticket";
 import { withStatusCode } from "@/lib/rides/ride-transition-pipeline";
 import type { RideDriverPublic } from "@/lib/rides/ride-sync-server";
+import { rideStatusRank } from "@/lib/rides/ride-status-merge";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 
 const DRIVER_PUBLIC_STATUSES = new Set([
@@ -100,6 +105,27 @@ export async function getBuyerRideTruthState(
   let fresh =
     (await getRideByIdFresh(supabase, base.id, { attempts: 6, delayMs: 250 })) ?? base;
   fresh = await applyEventTruthToRide(supabase, fresh);
+
+  // Duplicate NG- rows: scan every sibling's event log (UI may pin a ghost id).
+  if (ticket) {
+    const siblings = await listRideBookingsByTicket(supabase, ticket, pool);
+    for (const sibling of siblings) {
+      const logStatus = await getRideLifecycleStatusFromEvents(supabase, sibling.id);
+      if (!logStatus || rideStatusRank(logStatus) <= rideStatusRank(fresh.status)) continue;
+      const rowForSibling =
+        sibling.id === fresh.id
+          ? fresh
+          : (await getRideByIdFresh(supabase, sibling.id, { attempts: 4, delayMs: 150 })) ??
+            sibling;
+      const upgraded = await applyEventTruthToRide(supabase, {
+        ...rowForSibling,
+        status: logStatus as RideBookingRow["status"],
+      });
+      if (rideStatusRank(upgraded.status) > rideStatusRank(fresh.status)) {
+        fresh = upgraded;
+      }
+    }
+  }
 
   const ride = withStatusCode(fresh) as RideBookingRow & {
     status_code: number;
