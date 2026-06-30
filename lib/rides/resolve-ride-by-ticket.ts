@@ -108,32 +108,45 @@ async function findTerminalRideByTicket(
   return null;
 }
 
-/** Canonical row for a ticket — freshest DB update, re-fetched by id. */
+const BUYER_OPEN_STATUSES = new Set([
+  "requested",
+  "matched",
+  "accepted",
+  "arrived",
+  "in_trip",
+]);
+
+/** Canonical row for a ticket — event-hydrated; open trip beats stale completed on same NG- ticket. */
 export async function resolveCanonicalRideByTicket(
   supabase: SupabaseClient,
   ticketCode: string,
   buyerPool: string[],
 ): Promise<RideBookingRow | null> {
-  const terminal = await findTerminalRideByTicket(supabase, ticketCode, buyerPool);
-  if (terminal) return terminal;
-
   const rows = await listRideBookingsByTicket(supabase, ticketCode, buyerPool);
   if (rows.length === 0) return null;
 
-  let best: RideBookingRow | null = null;
-  let bestRank = -1;
+  const hydrated: RideBookingRow[] = [];
   for (const row of rows) {
     const fresh = (await getRideByIdFresh(supabase, row.id, { attempts: 4, delayMs: 150 })) ?? row;
-    const rank = rideStatusRank(fresh.status);
+    hydrated.push(await applyEventTruthToRide(supabase, fresh));
+  }
+
+  const openRows = hydrated.filter((row) => BUYER_OPEN_STATUSES.has(row.status));
+  const pool = openRows.length > 0 ? openRows : hydrated;
+
+  let best: RideBookingRow | null = null;
+  let bestRank = -2;
+  for (const row of pool) {
+    const rank = rideStatusRank(row.status);
     if (
       rank > bestRank ||
-      (rank === bestRank && best && rowTimeMs(fresh) > rowTimeMs(best))
+      (rank === bestRank && best && rowTimeMs(row) > rowTimeMs(best))
     ) {
-      best = fresh;
+      best = row;
       bestRank = rank;
     }
   }
-  return best ? applyEventTruthToRide(supabase, best) : null;
+  return best;
 }
 
 export async function resolveCanonicalRideByTicketForBuyer(

@@ -8,13 +8,9 @@ import {
   getRideByIdFresh,
   type RideBookingRow,
 } from "@/lib/rides/ride-bookings-server";
-import {
-  listRideBookingsByTicket,
-  resolveCanonicalRideByTicketForBuyer,
-} from "@/lib/rides/resolve-ride-by-ticket";
+import { resolveCanonicalRideByTicketForBuyer } from "@/lib/rides/resolve-ride-by-ticket";
 import { withStatusCode } from "@/lib/rides/ride-transition-pipeline";
 import type { RideDriverPublic } from "@/lib/rides/ride-sync-server";
-import { rideStatusRank } from "@/lib/rides/ride-status-merge";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 
 const DRIVER_PUBLIC_STATUSES = new Set([
@@ -91,7 +87,8 @@ export async function getBuyerRideTruthState(
       ticket,
       accountOpts,
     );
-  } else if (rideId) {
+  }
+  if (!base?.id && rideId) {
     const row = await getRideById(supabase, rideId);
     if (row && pool.some((uid) => isSameUserId(uid, row.buyer_id))) {
       base = row;
@@ -102,27 +99,7 @@ export async function getBuyerRideTruthState(
 
   let fresh =
     (await getRideByIdFresh(supabase, base.id, { attempts: 6, delayMs: 250 })) ?? base;
-
-  if (ticket) {
-    const rows = await listRideBookingsByTicket(supabase, ticket, pool);
-    let best = fresh;
-    let bestRank = rideStatusRank(fresh.status);
-    for (const row of rows) {
-      const hydrated =
-        row.id === fresh.id
-          ? fresh
-          : (await getRideByIdFresh(supabase, row.id, { attempts: 4, delayMs: 150 })) ?? row;
-      const rank = rideStatusRank(hydrated.status);
-      if (rank > bestRank) {
-        best = hydrated;
-        bestRank = rank;
-      }
-    }
-    fresh = best;
-  }
-
-  const probeStatus = await applyEventTruthToRide(supabase, fresh);
-  fresh = probeStatus;
+  fresh = await applyEventTruthToRide(supabase, fresh);
 
   const ride = withStatusCode(fresh) as RideBookingRow & {
     status_code: number;

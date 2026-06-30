@@ -548,8 +548,16 @@ function ViajePageInner() {
 
     let truthApplied = false;
     if (ticketHint || rideRef) {
-      const { ride: truthRow, driver_public: truthDriver, httpStatus } =
+      let { ride: truthRow, driver_public: truthDriver, httpStatus } =
         await fetchBuyerRideTruth(ticketHint, rideRef);
+      if (!truthRow?.id && rideRef) {
+        const byId = await fetchBuyerRideTruth(undefined, rideRef);
+        if (byId.ride?.id) {
+          truthRow = byId.ride;
+          truthDriver = byId.driver_public;
+          httpStatus = byId.httpStatus;
+        }
+      }
       if (httpStatus === 401 && !isStale()) {
         setAuthError(t.loginRequired);
         return;
@@ -941,8 +949,16 @@ function ViajePageInner() {
       }
       applyServerRide(rideRow, "request");
       if (rideRow?.id) {
-        const fresh = await fetchRideRowById<RideRow>(rideRow.id);
-        if (fresh) applyServerRide(fresh, "request-verify");
+        const { ride: truth, driver_public: truthDriver } = await fetchBuyerRideTruth(
+          rideRow.ticket_code,
+          rideRow.id,
+        );
+        if (truth?.id) {
+          applyTruthRide(truth, truthDriver, "request-truth");
+        } else {
+          const fresh = await fetchRideRowById<RideRow>(rideRow.id);
+          if (fresh) applyServerRide(fresh, "request-verify");
+        }
       }
       window.setTimeout(() => void refreshActiveRide("post-request"), 500);
       if (data.estimate) setEstimate(data.estimate);
