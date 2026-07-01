@@ -246,14 +246,20 @@ export default function ServiceBookingBlock({
     const activePaidLifecycle =
       Boolean(booking.paidBookingId) && st !== "completed" && st !== "cancelled";
     const quotePending = String(booking.quoteStatus ?? "") === "pending";
+    const quoteAccepted = String(booking.quoteStatus ?? "") === "accepted";
     const shouldPoll = Boolean(
-      booking.checkoutBlocked || booking.hasPendingBooking || activePaidLifecycle || quotePending,
+      booking.checkoutBlocked ||
+        booking.hasPendingBooking ||
+        activePaidLifecycle ||
+        quotePending ||
+        quoteAccepted ||
+        booking.quoteAwaitingProvider,
     );
     if (!shouldPoll) return;
     const id = window.setInterval(() => {
       if (document.visibilityState !== "visible") return;
       void load();
-    }, 8_000);
+    }, 3_000);
     return () => window.clearInterval(id);
   }, [
     load,
@@ -263,6 +269,7 @@ export default function ServiceBookingBlock({
     booking?.paidBookingId,
     booking?.paidBookingStatus,
     booking?.quoteStatus,
+    booking?.quoteAwaitingProvider,
   ]);
 
   useEffect(() => {

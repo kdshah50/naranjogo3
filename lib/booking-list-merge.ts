@@ -61,7 +61,38 @@ export function mergeBookingListRowsPreferTruth(a: BookingListMergeRow, b: Booki
  * screen if the payload is stale (parallel polls or a slow fetch finishing after an optimistic PATCH).
  * Same rank → prefer newer `updated_at` so a slower-but-fresher response beats a fast stale one.
  */
-export function mergeBookingListAvoidStatusRegression<T extends { id: string; status?: string | null }>(
+type MergeListRow = {
+  id: string;
+  status?: string | null;
+  ticket_code?: string | null;
+  paid_at?: string | null;
+  updated_at?: string | null;
+};
+
+/** Prefer server snapshot when it carries fields the on-screen row still lacks. */
+function mergeBookingRowFieldsFromServer<T extends MergeListRow>(prev: T, server: T): T {
+  let out = server;
+  const ps = normalizeLifecycleStatus(prev.status);
+  const ss = normalizeLifecycleStatus(server.status);
+  const rp = lifecycleRankNormalized(ps);
+  const rs = lifecycleRankNormalized(ss);
+  if (rp > rs) {
+    out = { ...out, status: prev.status };
+  } else if (rp === rs) {
+    const tp = updatedAtMs(prev);
+    const ts = updatedAtMs(server);
+    if (tp > ts) out = { ...out, status: prev.status };
+  }
+  if (!prev.ticket_code?.trim() && server.ticket_code?.trim()) {
+    out = { ...out, ticket_code: server.ticket_code };
+  }
+  if (!prev.paid_at && server.paid_at) {
+    out = { ...out, paid_at: server.paid_at };
+  }
+  return out;
+}
+
+export function mergeBookingListAvoidStatusRegression<T extends MergeListRow>(
   prev: T[],
   server: T[],
 ): T[] {
@@ -69,16 +100,6 @@ export function mergeBookingListAvoidStatusRegression<T extends { id: string; st
   return server.map((s) => {
     const o = prevByKey.get(canonicalBookingRowIdKey(s.id));
     if (!o) return s;
-    const ns = normalizeLifecycleStatus(s.status);
-    const no = normalizeLifecycleStatus(o.status);
-    const rs = lifecycleRankNormalized(ns);
-    const ro = lifecycleRankNormalized(no);
-    if (ro > rs) return { ...s, status: o.status };
-    if (rs > ro) return s;
-    const ts = updatedAtMs(s as BookingListMergeRow);
-    const to = updatedAtMs(o as BookingListMergeRow);
-    if (ts > to) return s;
-    if (to > ts) return { ...s, status: o.status };
-    return s;
+    return mergeBookingRowFieldsFromServer(o, s);
   });
 }

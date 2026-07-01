@@ -19,11 +19,14 @@ import {
 import {
   applyChatPollUpdate,
   appendChatMessageDeduped,
+  extractTicketCodeFromMessages,
   messagesContainPaymentDepositNotice,
+  messagesContainQuoteRespondNotice,
   normalizeConversationId,
   threadActivitySig,
   type ChatPollMessage,
 } from "@/lib/listing-chat-poll";
+import { rememberSellerTicket } from "@/lib/seller-known-tickets";
 import { listingChatCopy, formatListingChatSystemBody } from "@/lib/listing-chat-copy";
 import { redactPiiInChatDisplay } from "@/lib/pii-display";
 import { withLang } from "@/lib/i18n-lang";
@@ -49,13 +52,24 @@ function maybeNotifyBookingPaidFromChat(
   next: ChatPollMessage[],
   listingId: string,
 ) {
-  if (
-    !messagesContainPaymentDepositNotice(prev) &&
-    messagesContainPaymentDepositNotice(next)
-  ) {
+  const paidNow =
+    !messagesContainPaymentDepositNotice(prev) && messagesContainPaymentDepositNotice(next);
+  const ticket = extractTicketCodeFromMessages(next);
+  if (ticket) rememberSellerTicket(ticket);
+  if (paidNow) {
     window.dispatchEvent(
-      new CustomEvent("tianguis:booking-paid", { detail: { listingId } }),
+      new CustomEvent("tianguis:booking-paid", { detail: { listingId, ticketCode: ticket } }),
     );
+  }
+}
+
+function maybeNotifyQuoteRespondFromChat(
+  prev: ChatPollMessage[],
+  next: ChatPollMessage[],
+  listingId: string,
+) {
+  if (!messagesContainQuoteRespondNotice(prev) && messagesContainQuoteRespondNotice(next)) {
+    window.dispatchEvent(new CustomEvent("tianguis:quote-updated", { detail: { listingId } }));
   }
 }
 
@@ -150,6 +164,18 @@ export default function ListingChat({
   /** Seller manually picked a thread — don't let ?chat= deep-link polls override it. */
   const userPickedThreadRef = useRef(false);
   const emptyThreadBootstrapRef = useRef<string | null>(null);
+  const threadsRef = useRef<Thread[]>([]);
+  threadsRef.current = threads;
+
+  const resolveQuoteBuyerId = useCallback((): string | null => {
+    if (agreedPriceBuyerId?.trim()) return agreedPriceBuyerId.trim();
+    const sel = selectedIdRef.current;
+    if (!sel) return null;
+    const th = threadsRef.current.find(
+      (t) => normalizeConversationId(t.conversationId) === normalizeConversationId(sel),
+    );
+    return th?.buyer_id?.trim() ? String(th.buyer_id).trim() : null;
+  }, [agreedPriceBuyerId]);
 
   useEffect(() => {
     initialConversationIdRef.current = initialConversationId?.trim() || null;
@@ -232,8 +258,12 @@ export default function ListingChat({
       const data = await res.json();
       setRole(data.role);
       if (data.role === "seller") {
-        setThreads(data.threads ?? []);
-        setThreadsTotal(Number(data.threadsTotal ?? data.threads?.length ?? 0));
+        const newThreads = (data.threads ?? []) as Thread[];
+        setThreads(newThreads);
+        setThreadsTotal(Number(data.threadsTotal ?? newThreads.length ?? 0));
+        for (const th of newThreads) {
+          if (th.ticket_code) rememberSellerTicket(th.ticket_code);
+        }
         const focus = data.focusConversation as
           | { id?: string; buyer_id?: string; messages?: Msg[] }
           | null
@@ -317,6 +347,7 @@ export default function ListingChat({
         setMessages((prev) => {
           const next = switching ? fresh : applyChatPollUpdate(prev, fresh);
           maybeNotifyBookingPaidFromChat(prev, next, listingId);
+          maybeNotifyQuoteRespondFromChat(prev, next, listingId);
           return next;
         });
         const conv = data.conversation as { listing_id?: string; buyer_id?: string } | undefined;
@@ -372,13 +403,16 @@ export default function ListingChat({
       const data = await res.json();
       if (selectedIdRef.current && normalizeConversationId(selectedIdRef.current) !== normId) return;
       const fresh = (data.messages ?? []) as Msg[];
+      const conv = data.conversation as { buyer_id?: string } | undefined;
+      if (conv?.buyer_id) setAgreedPriceBuyerId(String(conv.buyer_id));
       setMessages((prev) => {
         const next = applyChatPollUpdate(prev, fresh);
         maybeNotifyBookingPaidFromChat(prev, next, listingId);
+        maybeNotifyQuoteRespondFromChat(prev, next, listingId);
         if (
           roleRef.current === "seller" &&
           requiresQuoteAcceptRef.current &&
-          next.length > prev.length
+          next.length !== prev.length
         ) {
           queueMicrotask(() => void loadQuoteStateRef.current({ silent: true }));
         }
@@ -429,9 +463,11 @@ export default function ListingChat({
 
   useEffect(() => {
     const onBookingPaid = (ev: Event) => {
-      const d = (ev as CustomEvent<{ listingId?: string }>).detail;
+      const d = (ev as CustomEvent<{ listingId?: string; ticketCode?: string | null }>).detail;
       if (!d?.listingId || d.listingId === listingId) {
+        if (d?.ticketCode) rememberSellerTicket(d.ticketCode);
         void loadListingScope({ silent: true });
+        if (requiresQuoteAcceptRef.current) void loadQuoteStateRef.current({ silent: true });
         if (selectedId) void loadConversation(selectedId, agreedPriceBuyerId ?? undefined);
       }
     };
@@ -483,7 +519,16 @@ export default function ListingChat({
     if (th?.buyer_id) setAgreedPriceBuyerId(String(th.buyer_id));
   }, [role, threads, initialConversationId]);
 
-  // Sellers otherwise see an empty message pane until they click a buyer; they may think no message arrived.
+  useEffect(() => {
+    if (role !== "seller" || !selectedId) return;
+    const th = threads.find(
+      (t) => normalizeConversationId(t.conversationId) === normalizeConversationId(selectedId),
+    );
+    if (th?.buyer_id && th.buyer_id !== agreedPriceBuyerId) {
+      setAgreedPriceBuyerId(String(th.buyer_id));
+    }
+  }, [role, selectedId, threads, agreedPriceBuyerId]);
+
   useEffect(() => {
     if (role !== "seller" || threads.length === 0) return;
     if (selectedId) return;
@@ -509,10 +554,13 @@ export default function ListingChat({
         if (!res.ok) return;
         const data = await res.json();
         const fresh: Msg[] = data.messages ?? [];
+        const conv = data.conversation as { buyer_id?: string } | undefined;
+        if (conv?.buyer_id) setAgreedPriceBuyerId(String(conv.buyer_id));
         setMessages((prev) => {
           const next = applyChatPollUpdate(prev, fresh);
           maybeNotifyBookingPaidFromChat(prev, next, listingId);
-          if (role === "seller" && next.length > prev.length) {
+          maybeNotifyQuoteRespondFromChat(prev, next, listingId);
+          if (role === "seller" && requiresQuoteAcceptRef.current && next.length !== prev.length) {
             queueMicrotask(() => void loadQuoteStateRef.current({ silent: true }));
           }
           return next;
@@ -531,13 +579,14 @@ export default function ListingChat({
   // Sellers: refresh thread list + open conversation (mirrors buyer listing-scoped poll).
   useEffect(() => {
     if (role !== "seller" || !listingId) return;
+    const pollMs = requiresQuoteAccept ? 2000 : 4000;
     const poll = setInterval(() => {
       if (document.visibilityState !== "visible") return;
       void loadListingScope({ silent: true });
       if (selectedIdRef.current) void syncConversationMessages(selectedIdRef.current);
-    }, 4000);
+    }, pollMs);
     return () => clearInterval(poll);
-  }, [role, listingId, loadListingScope, syncConversationMessages]);
+  }, [role, listingId, requiresQuoteAccept, loadListingScope, syncConversationMessages]);
 
   useEffect(() => {
     const onContact = () => {
@@ -603,11 +652,13 @@ export default function ListingChat({
 
   const loadQuoteState = useCallback(async (opts?: { silent?: boolean }) => {
     if (!requiresQuoteAccept) return;
+    const quoteBuyerId = role === "seller" ? resolveQuoteBuyerId() : null;
+    if (role === "seller" && !quoteBuyerId) return;
     if (!opts?.silent) setQuoteLoading(true);
     try {
       const buyerQuery =
-        role === "seller" && agreedPriceBuyerId
-          ? `?buyerId=${encodeURIComponent(agreedPriceBuyerId)}`
+        role === "seller" && quoteBuyerId
+          ? `?buyerId=${encodeURIComponent(quoteBuyerId)}`
           : "";
       const r = await fetch(
         `/api/listings/${encodeURIComponent(listingId)}/service-booking/quote${buyerQuery}`,
@@ -624,10 +675,13 @@ export default function ListingChat({
       const items = (d as { quoteLineItems?: ServiceQuoteLineItem[] | null }).quoteLineItems;
       setQuoteLineItems(Array.isArray(items) && items.length > 0 ? items : null);
       setQuoteMetadata((d as { quoteMetadata?: ServiceQuoteMetadata | null }).quoteMetadata ?? null);
+      if (role === "seller" && quoteBuyerId && quoteBuyerId !== agreedPriceBuyerId) {
+        setAgreedPriceBuyerId(quoteBuyerId);
+      }
     } finally {
       if (!opts?.silent) setQuoteLoading(false);
     }
-  }, [requiresQuoteAccept, role, agreedPriceBuyerId, listingId]);
+  }, [requiresQuoteAccept, role, agreedPriceBuyerId, listingId, resolveQuoteBuyerId]);
   loadQuoteStateRef.current = loadQuoteState;
 
   useEffect(() => {
@@ -671,10 +725,10 @@ export default function ListingChat({
   // Seller on another device/tab won't get buyer-side quote events — poll quote gate while chat is open.
   useEffect(() => {
     if (role !== "seller" || !requiresQuoteAccept) return;
-    if (!selectedId && !agreedPriceBuyerId) return;
+    if (!selectedId && threads.length === 0) return;
     const t = setInterval(() => void loadQuoteState({ silent: true }), 2000);
     return () => clearInterval(t);
-  }, [role, requiresQuoteAccept, selectedId, agreedPriceBuyerId, loadQuoteState]);
+  }, [role, requiresQuoteAccept, selectedId, threads.length, loadQuoteState]);
 
   useEffect(() => {
     if (role !== "seller") return;
@@ -906,6 +960,9 @@ export default function ListingChat({
             lastThreadActivityRef.current = sig;
             void syncConversationMessages(selectedId);
             void loadQuoteState({ silent: true });
+          }
+          if (active?.ticket_code) {
+            rememberSellerTicket(active.ticket_code);
           }
         }
         setThreads(newThreads);
@@ -1417,8 +1474,39 @@ export default function ListingChat({
               {c.quoteDeclinedHint}
             </p>
           ) : null}
+          {quoteStatus === "accepted" ? (
+            <p className="text-[#065F46] mt-2 leading-snug">
+              {lang === "en"
+                ? "The client accepted — they can pay the deposit in the app. When paid, manage the booking under Client bookings."
+                : "El cliente aceptó — puede pagar el depósito en la app. Cuando pague, gestiona la reserva en Reservas de clientes."}
+            </p>
+          ) : null}
         </div>
       )}
+
+      {role === "seller" && selectedId && (() => {
+        const active = threads.find(
+          (t) => normalizeConversationId(t.conversationId) === normalizeConversationId(selectedId),
+        );
+        if (!active?.ticket_code) return null;
+        return (
+          <div className="px-4 py-2 border-b border-emerald-200 bg-emerald-50 text-xs">
+            <p className="font-semibold text-[#065F46]">
+              {lang === "en" ? "Paid booking" : "Reserva pagada"} ·{" "}
+              <span className="font-mono">{active.ticket_code}</span>
+            </p>
+            <Link
+              href={withLang(
+                `/seller-bookings?ticket=${encodeURIComponent(active.ticket_code)}`,
+                lang,
+              )}
+              className="inline-block mt-1 font-semibold text-[#1B4332] hover:underline"
+            >
+              {lang === "en" ? "Schedule · in progress · complete →" : "Agendar · en curso · completar →"}
+            </Link>
+          </div>
+        );
+      })()}
 
       <div
         ref={messagesScrollRef}

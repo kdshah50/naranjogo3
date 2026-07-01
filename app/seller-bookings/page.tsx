@@ -344,8 +344,13 @@ function SellerBookingsInner() {
 
   useEffect(() => {
     const onPaid = () => void load({ cacheBust: true });
+    const onLifecycle = () => void load({ cacheBust: true });
     window.addEventListener("tianguis:booking-paid", onPaid);
-    return () => window.removeEventListener("tianguis:booking-paid", onPaid);
+    window.addEventListener("tianguis:booking-lifecycle", onLifecycle);
+    return () => {
+      window.removeEventListener("tianguis:booking-paid", onPaid);
+      window.removeEventListener("tianguis:booking-lifecycle", onLifecycle);
+    };
   }, [load]);
 
   useEffect(() => {
@@ -356,18 +361,29 @@ function SellerBookingsInner() {
 
   useEffect(() => {
     const onVis = () => {
-      if (document.visibilityState === "visible") void load();
+      if (document.visibilityState === "visible") void load({ cacheBust: true });
     };
     document.addEventListener("visibilitychange", onVis);
-    const pollMs = 4_000;
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [load]);
+
+  useEffect(() => {
+    if (loading) return;
+    const needsFastPoll =
+      Boolean(normalizedTicket) ||
+      bookings.length === 0 ||
+      bookings.some(
+        (b) =>
+          String(b.status ?? "") !== "completed" &&
+          String(b.status ?? "") !== "cancelled" &&
+          !b.ticket_code?.trim(),
+      );
+    const pollMs = needsFastPoll ? 2_000 : 3_000;
     const poll = window.setInterval(() => {
       if (document.visibilityState === "visible") void load({ cacheBust: true });
     }, pollMs);
-    return () => {
-      document.removeEventListener("visibilitychange", onVis);
-      window.clearInterval(poll);
-    };
-  }, [load]);
+    return () => window.clearInterval(poll);
+  }, [load, loading, normalizedTicket, bookings]);
 
   const manualRefresh = () => {
     setRefreshing(true);

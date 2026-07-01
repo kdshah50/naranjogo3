@@ -22,8 +22,12 @@ import { withLang } from "@/lib/i18n-lang";
 import {
   applyChatPollUpdate,
   appendChatMessageDeduped,
+  extractTicketCodeFromMessages,
+  messagesContainPaymentDepositNotice,
+  messagesContainQuoteRespondNotice,
   type ChatPollMessage,
 } from "@/lib/listing-chat-poll";
+import { rememberSellerTicket } from "@/lib/seller-known-tickets";
 import { redactPiiInChatDisplay } from "@/lib/pii-display";
 
 type Msg = ChatPollMessage;
@@ -123,9 +127,39 @@ export default function ConversationThread({
       if (!res.ok) return;
       const data = await res.json();
       const fresh: Msg[] = data.messages ?? [];
+      const conv = data.conversation as { buyer_id?: string } | undefined;
+      if (conv?.buyer_id) setBuyerId(String(conv.buyer_id));
+      const ticketFromApi = (data.ticket_code as string | null | undefined) ?? null;
+      if (ticketFromApi) {
+        setTicketCode(ticketFromApi);
+        rememberSellerTicket(ticketFromApi);
+      }
       setMessages((prev) => {
         const next = applyChatPollUpdate(prev, fresh);
-        if (role === "seller" && requiresQuoteAccept && next.length > prev.length) {
+        const listingFromState = listingId;
+        if (listingFromState) {
+          if (
+            !messagesContainPaymentDepositNotice(prev) &&
+            messagesContainPaymentDepositNotice(next)
+          ) {
+            const tk = extractTicketCodeFromMessages(next);
+            if (tk) rememberSellerTicket(tk);
+            window.dispatchEvent(
+              new CustomEvent("tianguis:booking-paid", {
+                detail: { listingId: listingFromState, ticketCode: tk },
+              }),
+            );
+          }
+          if (
+            !messagesContainQuoteRespondNotice(prev) &&
+            messagesContainQuoteRespondNotice(next)
+          ) {
+            window.dispatchEvent(
+              new CustomEvent("tianguis:quote-updated", { detail: { listingId: listingFromState } }),
+            );
+          }
+        }
+        if (role === "seller" && requiresQuoteAccept && next.length !== prev.length) {
           queueMicrotask(() => void loadQuoteStateRef.current());
         }
         return next;
@@ -133,7 +167,7 @@ export default function ConversationThread({
     } catch {
       /* silent */
     }
-  }, [conversationId, role, requiresQuoteAccept]);
+  }, [conversationId, role, requiresQuoteAccept, listingId]);
 
   const loadQuoteState = useCallback(async () => {
     if (!listingId) return;

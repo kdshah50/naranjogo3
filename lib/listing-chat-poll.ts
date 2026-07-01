@@ -23,6 +23,28 @@ export function messagesContainPaymentDepositNotice(msgs: ChatPollMessage[]): bo
   return msgs.some((m) => m.body.includes("pay-deposit-confirmed:"));
 }
 
+/** Buyer accept/decline on a provider quote (chat message or system notice). */
+export function messagesContainQuoteRespondNotice(msgs: ChatPollMessage[]): boolean {
+  return msgs.some(
+    (m) =>
+      m.body.includes("✅ Acepto") ||
+      m.body.includes("✅ I accept") ||
+      m.body.includes("❌ Rechazo") ||
+      m.body.includes("❌ I decline") ||
+      m.body.includes("quote-accepted:") ||
+      m.body.includes("Cotización aceptada"),
+  );
+}
+
+/** Extract NG- ticket from payment-confirmed chat line when present. */
+export function extractTicketCodeFromMessages(msgs: ChatPollMessage[]): string | null {
+  for (const m of msgs) {
+    const match = m.body.match(/Ticket:\s*(NG-[A-F0-9]{8})/i);
+    if (match?.[1]) return match[1].toUpperCase();
+  }
+  return null;
+}
+
 export function chatMessagesChanged(prev: ChatPollMessage[], fresh: ChatPollMessage[]): boolean {
   if (prev.length !== fresh.length) return true;
   return chatMessageDigest(prev) !== chatMessageDigest(fresh);
