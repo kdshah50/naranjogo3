@@ -144,6 +144,9 @@ const VIAJE = {
     rideSyncHint: "Actualizando estado cada pocos segundos…",
     refreshStatusNow: "Actualizar ahora",
     clearRideScreen: "Limpiar pantalla",
+    requestAnotherRide: "Pedir otro viaje",
+    activeTripBlocksRequest:
+      "Hay un viaje activo arriba. Cancélalo, o pulsa «Pedir otro viaje» en esa tarjeta, antes de solicitar otro.",
     cancelRide: "Cancelar viaje",
     tipMxn: "Propina (MXN)",
     sendTip: "Enviar propina",
@@ -213,6 +216,9 @@ const VIAJE = {
     rideSyncHint: "Refreshing status every few seconds…",
     refreshStatusNow: "Refresh now",
     clearRideScreen: "Clear screen",
+    requestAnotherRide: "Request another ride",
+    activeTripBlocksRequest:
+      "You have an active trip above. Cancel it, or tap «Request another ride» on that card, before requesting again.",
     cancelRide: "Cancel ride",
     tipMxn: "Tip (MXN)",
     sendTip: "Send tip",

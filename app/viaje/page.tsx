@@ -844,14 +844,14 @@ function ViajePageInner() {
                 ? t.rideActive
                 : t.rideCreated;
 
-  const hasBlockingTrip = Boolean(
-    (ride && (isBuyerActiveStatus(ride.status) || isTerminalRideStatus(ride.status))) ||
-      terminalBanner,
+  /** Only in-progress trips block a new request — completed/cancelled may stay visible above the form. */
+  const hasBlockingActiveTrip = Boolean(
+    ride && isBuyerActiveStatus(ride.status),
   );
 
   const canSubmit = useMemo(
-    () => pickupColonia !== dropoffColonia && !authError && !hasBlockingTrip,
-    [pickupColonia, dropoffColonia, authError, hasBlockingTrip],
+    () => pickupColonia !== dropoffColonia && !authError && !hasBlockingActiveTrip,
+    [pickupColonia, dropoffColonia, authError, hasBlockingActiveTrip],
   );
 
   const runEstimate = useCallback(async () => {
@@ -1209,6 +1209,12 @@ function ViajePageInner() {
             </button>
           </div>
 
+          {!canSubmit && hasBlockingActiveTrip && !authError && (
+            <p className="text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              {t.activeTripBlocksRequest}
+            </p>
+          )}
+
           {estimateError && <p className="text-sm text-red-700">{estimateError}</p>}
           {requestError && <p className="text-sm text-red-700">{requestError}</p>}
 
@@ -1349,12 +1355,21 @@ function ViajePageInner() {
               {" · "}
               <button
                 type="button"
-                className="underline"
+                className="underline font-semibold"
                 onClick={clearStaleRideUi}
               >
-                {t.clearRideScreen}
+                {isBuyerActiveStatus(ride.status) ? t.requestAnotherRide : t.clearRideScreen}
               </button>
             </p>
+            {isBuyerActiveStatus(ride.status) && (
+              <button
+                type="button"
+                onClick={clearStaleRideUi}
+                className="mt-3 rounded-full border border-[#1B4332] px-4 py-2 text-sm font-medium text-[#1B4332] hover:bg-[#ECFDF5]"
+              >
+                {t.requestAnotherRide}
+              </button>
+            )}
             {["requested", "matched", "accepted", "arrived"].includes(ride.status) && (
               <button
                 type="button"
@@ -1363,6 +1378,15 @@ function ViajePageInner() {
                 className="mt-3 rounded-full border border-red-700 px-4 py-2 text-sm text-red-800 disabled:opacity-50"
               >
                 {t.cancelRide}
+              </button>
+            )}
+            {isTerminalRideStatus(ride.status) && (
+              <button
+                type="button"
+                onClick={clearStaleRideUi}
+                className="mt-4 rounded-full bg-[#1B4332] px-5 py-2 text-sm font-medium text-white"
+              >
+                {t.requestAnotherRide}
               </button>
             )}
             {ride.status === "completed" && (
@@ -1402,10 +1426,10 @@ function ViajePageInner() {
             </p>
             <button
               type="button"
-              className="mt-2 underline text-[#1B4332]"
+              className="mt-3 rounded-full bg-[#1B4332] px-5 py-2 text-sm font-medium text-white"
               onClick={clearStaleRideUi}
             >
-              {t.clearRideScreen}
+              {t.requestAnotherRide}
             </button>
           </section>
         )}
