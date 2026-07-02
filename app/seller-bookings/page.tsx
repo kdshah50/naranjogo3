@@ -369,9 +369,19 @@ function SellerBookingsInner() {
 
   useEffect(() => {
     if (loading) return;
+    const visibleActive = bookings.filter(
+      (b) =>
+        String(b.status ?? "") !== "completed" &&
+        String(b.status ?? "") !== "cancelled",
+    ).length;
+    const statsSuggestMissingRows =
+      sellerStats != null &&
+      (sellerStats.sellerPaidBookings > bookings.length ||
+        sellerStats.sellerActivePaidBookings > visibleActive);
     const needsFastPoll =
       Boolean(normalizedTicket) ||
       bookings.length === 0 ||
+      statsSuggestMissingRows ||
       bookings.some(
         (b) =>
           String(b.status ?? "") !== "completed" &&
@@ -383,7 +393,7 @@ function SellerBookingsInner() {
       if (document.visibilityState === "visible") void load({ cacheBust: true });
     }, pollMs);
     return () => window.clearInterval(poll);
-  }, [load, loading, normalizedTicket, bookings]);
+  }, [load, loading, normalizedTicket, bookings, sellerStats]);
 
   const manualRefresh = () => {
     setRefreshing(true);

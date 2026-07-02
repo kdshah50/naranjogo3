@@ -12,6 +12,10 @@ import { getSellerAccountBookingCounts } from "@/lib/seller-platform-stats";
 import { normalizeNgTicketQuery } from "@/lib/ng-ticket-normalize";
 import { enrichBookingListRows, loadReviewedBookingIdSet } from "@/lib/api-bookings-enrich";
 import { applyServiceBookingStatusTruthPass } from "@/lib/booking-status-truth";
+import {
+  sellerStatsAtLeastAsLargeAsList,
+  stitchPaidBookingsFromRecentPaymentEvents,
+} from "@/lib/booking-payment-event-stitch";
 import { sellerCanManagePaidBookingRow } from "@/lib/seller-booking-access";
 
 export const dynamic = "force-dynamic";
@@ -370,9 +374,22 @@ export async function GET(req: NextRequest) {
       statusFilter,
     );
 
+    if (statusFilter === "paid") {
+      await stitchPaidBookingsFromRecentPaymentEvents(
+        supabase,
+        merged,
+        (row) => sellerCanManagePaidBookingRow(supabase, poolVariants, row),
+        statusFilter,
+      );
+    }
+
     bookingRows = sortSellerMergedRows([...merged.values()], statusFilter);
     if (bookingRows.length > SELLER_PAID_RESPONSE_CAP) {
       bookingRows = bookingRows.slice(0, SELLER_PAID_RESPONSE_CAP);
+    }
+
+    if (sellerStats && statusFilter === "paid") {
+      sellerStats = sellerStatsAtLeastAsLargeAsList(sellerStats, bookingRows);
     }
   } else {
     const buyerPool = await expandUserAccountIdPool(supabase, userId, { authPhone });
@@ -450,6 +467,15 @@ export async function GET(req: NextRequest) {
       statusFilter,
       authPhone,
     );
+
+    if (statusFilter === "paid") {
+      await stitchPaidBookingsFromRecentPaymentEvents(
+        supabase,
+        mergedBuy,
+        (row) => buyerCanSeePaidBookingRow(supabase, buyerPool, row, authPhone),
+        statusFilter,
+      );
+    }
 
     bookingRows = [...mergedBuy.values()].sort((a, b) =>
       statusFilter === "paid"
