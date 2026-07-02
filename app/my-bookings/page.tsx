@@ -7,6 +7,8 @@ import GuaranteeBadge from "@/components/GuaranteeBadge";
 import RoutineHabitsCard from "@/components/RoutineHabitsCard";
 import BuyerRetentionPanel from "@/components/BuyerRetentionPanel";
 import HousekeepingBookingPayments from "@/components/HousekeepingBookingPayments";
+import BuyerRideHistorySection, { type BuyerRideHistoryRow } from "@/components/BuyerRideHistorySection";
+import { fetchRidesEnabledOnServer } from "@/lib/rides/client-rides-enabled";
 import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
 import { providerServiceSupportsSupplementPayments } from "@/lib/provider-services";
 import { useAppLang, useAppLangActions } from "@/hooks/use-app-lang";
@@ -210,11 +212,46 @@ function MyBookingsPageInner() {
   const [rebookMsg, setRebookMsg] = useState<Record<string, string>>({});
   const [refreshing, setRefreshing] = useState(false);
   const [lastSyncLabel, setLastSyncLabel] = useState("");
+  const [ridesEnabled, setRidesEnabled] = useState(false);
+  const [rideHistory, setRideHistory] = useState<BuyerRideHistoryRow[]>([]);
   const bookingsRef = useRef<Booking[]>([]);
 
   useEffect(() => {
     bookingsRef.current = bookings;
   }, [bookings]);
+
+  useEffect(() => {
+    void fetchRidesEnabledOnServer().then(setRidesEnabled);
+  }, []);
+
+  const loadRideHistory = useCallback(() => {
+    if (!ridesEnabled) {
+      setRideHistory([]);
+      return;
+    }
+    const qp = new URLSearchParams();
+    const urlTicket = normalizeNgTicketQuery(ticketHint);
+    if (urlTicket) qp.set("ticket", urlTicket);
+    void fetch(`/api/rides/buyer/history?${qp}`, { credentials: "same-origin", cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { rides: [] }))
+      .then((d) => {
+        setRideHistory(Array.isArray(d.rides) ? d.rides : []);
+      })
+      .catch(() => setRideHistory([]));
+  }, [ridesEnabled, ticketHint]);
+
+  useEffect(() => {
+    loadRideHistory();
+  }, [loadRideHistory]);
+
+  useEffect(() => {
+    if (!ridesEnabled || loading) return;
+    const pollMs = 4_000;
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") loadRideHistory();
+    }, pollMs);
+    return () => clearInterval(interval);
+  }, [ridesEnabled, loading, loadRideHistory, ticketHint]);
 
   const loadData = useCallback(
     (opts?: { forceDetail?: boolean }) => {
@@ -394,6 +431,7 @@ function MyBookingsPageInner() {
 
   const manualRefresh = () => {
     setRefreshing(true);
+    loadRideHistory();
     void Promise.resolve(loadData({ forceDetail: true })).finally(() => setRefreshing(false));
   };
 
@@ -413,7 +451,9 @@ function MyBookingsPageInner() {
       ? {
           back: "← Mi perfil",
           title: "Mis reservas",
-          subtitle: "Historial de servicios, reseñas y recordatorios. Vuelve a reservar en un clic.",
+          subtitle:
+            "Historial de servicios (limpieza, chef, costura…). Los viajes de taxi aparecen abajo en «Mis viajes».",
+          servicesSection: "Reservas de servicios",
           refreshList: "Actualizar lista",
           lastSyncPrefix: "Actualizado:",
           ticketFromUrl: (tk: string) => `Ticket del enlace: ${tk}`,
@@ -484,7 +524,9 @@ function MyBookingsPageInner() {
       : {
           back: "← My profile",
           title: "My bookings",
-          subtitle: "Service history, reviews, and reminders. Rebook in one tap.",
+          subtitle:
+            "Service history (cleaning, chef, tailoring…). Taxi rides appear below under “My rides”.",
+          servicesSection: "Service bookings",
           refreshList: "Refresh list",
           lastSyncPrefix: "Updated:",
           ticketFromUrl: (tk: string) => `Ticket from link: ${tk}`,
@@ -833,14 +875,24 @@ function MyBookingsPageInner() {
           <RoutineHabitsCard lang={lang} />
         </div>
 
-        {bookings.length === 0 ? (
+        {ridesEnabled ? (
+          <BuyerRideHistorySection rides={rideHistory} lang={lang} ticketHighlight={ticketFromUrl} />
+        ) : null}
+
+        {bookings.length === 0 && rideHistory.length === 0 ? (
           <div className="bg-white rounded-2xl border border-[#E5E0D8] p-8 text-center shadow-sm">
             <p className="text-4xl mb-3">📋</p>
             <p className="text-sm text-[#6B7280] mb-4">{t.emptyTitle}</p>
-            {ticketFromUrl ? (
+            {ticketFromUrl && !rideHistory.some((r) => (r.ticket_code ?? "").toUpperCase() === ticketFromUrl) ? (
               <p className="text-xs text-[#92400E] bg-[#FFFBEB] border border-amber-200 rounded-lg px-3 py-2 mb-4 mx-auto max-w-md">
                 {t.emptyTicketHint}
                 <span className="block font-mono font-semibold mt-2 text-[#78350F]">{ticketFromUrl}</span>
+              </p>
+            ) : ticketFromUrl && ridesEnabled ? (
+              <p className="text-xs text-[#92400E] bg-[#FFFBEB] border border-amber-200 rounded-lg px-3 py-2 mb-4 mx-auto max-w-md">
+                {lang === "es"
+                  ? "Si este ticket es un viaje de taxi, usa el enlace de arriba o abre Pedir viaje."
+                  : "If this ticket is a taxi ride, use the link above or open Request ride."}
               </p>
             ) : null}
             <Link
@@ -852,6 +904,9 @@ function MyBookingsPageInner() {
           </div>
         ) : (
           <div className="flex flex-col gap-4">
+            {ridesEnabled && bookings.length > 0 ? (
+              <h2 className="text-sm font-bold text-[#1B4332] pt-1">📋 {t.servicesSection}</h2>
+            ) : null}
             {bookings.map((b) => {
               const ago = timeAgo(b.paid_at ?? b.created_at, lang);
               return (

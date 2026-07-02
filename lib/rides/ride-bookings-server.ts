@@ -520,6 +520,25 @@ export async function applyEventTruthToRide(
   let bestStatus: RideBookingStatus = row.status;
   let bestRank = rideStatusRank(row.status);
 
+  for (const [eventType, status] of [
+    ["trip_completed", "completed"],
+    ["ride_cancelled", "cancelled"],
+  ] as const) {
+    const { data } = await supabase
+      .from("ride_events")
+      .select("id")
+      .eq("ride_id", row.id)
+      .eq("event_type", eventType)
+      .limit(1)
+      .maybeSingle();
+    if (!data?.id) continue;
+    const rank = rideStatusRank(status);
+    if (rank > bestRank) {
+      bestStatus = status;
+      bestRank = rank;
+    }
+  }
+
   const fromProbes = await resolveLifecycleStatusFromEventProbes(supabase, row.id);
   if (fromProbes) {
     const rank = rideStatusRank(fromProbes);

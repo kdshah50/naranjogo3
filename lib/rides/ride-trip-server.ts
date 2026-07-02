@@ -5,11 +5,13 @@ import { isSameUserId } from "@/lib/auth-server";
 import { normalizeNgTicketQuery } from "@/lib/ng-ticket-normalize";
 import {
   appendRideEvent,
+  applyEventTruthToRide,
   getRideById,
   getRideByIdFresh,
   type RideBookingRow,
   type RideBookingStatus,
 } from "@/lib/rides/ride-bookings-server";
+import { resolveCanonicalRideByTicketForBuyer } from "@/lib/rides/resolve-ride-by-ticket";
 import { commitRidePhaseTransition } from "@/lib/rides/ride-transition-pipeline";
 import {
   canTransitionRideStatus,
@@ -970,4 +972,84 @@ export async function latestBuyerRideForDisplay(
   }
 
   return pickLatestBuyerRideRow(rows);
+}
+
+const BUYER_HISTORY_STATUSES = [
+  "requested",
+  "matched",
+  "accepted",
+  "arrived",
+  "in_trip",
+  "completed",
+  "cancelled",
+] as const;
+
+function dedupeBuyerRidesByTicket(rows: RideBookingRow[]): RideBookingRow[] {
+  const byTicket = new Map<string, RideBookingRow>();
+  for (const row of rows) {
+    const key = normalizeRideTicketCode(row.ticket_code) || row.id;
+    const cur = byTicket.get(key);
+    if (!cur) {
+      byTicket.set(key, row);
+      continue;
+    }
+    const rankDiff = rideStatusRank(row.status) - rideStatusRank(cur.status);
+    if (rankDiff > 0 || (rankDiff === 0 && buyerRowTimeMs(row) > buyerRowTimeMs(cur))) {
+      byTicket.set(key, row);
+    }
+  }
+  return [...byTicket.values()].sort((a, b) => buyerRowTimeMs(b) - buyerRowTimeMs(a));
+}
+
+/** Recent taxi/ride rows for /my-bookings — event-hydrated, one row per NG- ticket. */
+export async function listBuyerRideHistory(
+  supabase: SupabaseClient,
+  buyerUserId: string,
+  options?: RideAccountOptions & { limit?: number; ticketHint?: string | null },
+): Promise<RideBookingRow[]> {
+  const accountOpts = { authPhone: options?.authPhone ?? null };
+  const pool = await expandUserAccountIdPool(supabase, buyerUserId, accountOpts);
+  if (pool.length === 0) return [];
+
+  const buyerPool = [...new Set(pool.flatMap((id) => idMatchVariantsForIn(id)))];
+  const limit = Math.min(Math.max(options?.limit ?? 12, 1), 30);
+  const ticketHint = normalizeNgTicketQuery(options?.ticketHint ?? "");
+
+  const byId = new Map<string, RideBookingRow>();
+
+  if (ticketHint) {
+    const pinned = await resolveCanonicalRideByTicketForBuyer(
+      supabase,
+      buyerUserId,
+      ticketHint,
+      accountOpts,
+    );
+    if (pinned?.id) byId.set(pinned.id, pinned);
+  }
+
+  const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from("ride_bookings")
+    .select("*")
+    .in("buyer_id", buyerPool)
+    .in("status", [...BUYER_HISTORY_STATUSES])
+    .gte("created_at", since)
+    .order("updated_at", { ascending: false })
+    .limit(40);
+
+  if (error) {
+    console.error("[ride-trip] listBuyerRideHistory", error);
+  } else {
+    for (const row of (data ?? []) as RideBookingRow[]) {
+      if (tripMatchesBuyerPool(row, pool)) byId.set(row.id, row);
+    }
+  }
+
+  const hydrated: RideBookingRow[] = [];
+  for (const row of byId.values()) {
+    const fresh = (await getRideByIdFresh(supabase, row.id, { attempts: 3, delayMs: 150 })) ?? row;
+    hydrated.push(await applyEventTruthToRide(supabase, fresh));
+  }
+
+  return dedupeBuyerRidesByTicket(hydrated).slice(0, limit);
 }

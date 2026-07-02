@@ -9,6 +9,7 @@ import SellerStripePayoutCard from "@/components/SellerStripePayoutCard";
 import { useAppLang, useAppLangActions } from "@/hooks/use-app-lang";
 import { formatCurrencyMXN } from "@/lib/locale-format";
 import { listingTitleSupportsServiceMenu } from "@/lib/infer-listing-provider-slug";
+import { fetchRidesEnabledOnServer } from "@/lib/rides/client-rides-enabled";
 
 type User = {
   id: string;
@@ -78,6 +79,11 @@ function ProfilePageInner() {
     { listing_id: string; title: string; price_mxn: number; location_city: string | null }[]
   >([]);
   const [pendingReviewCount, setPendingReviewCount] = useState(0);
+  const [ridesEnabled, setRidesEnabled] = useState(false);
+
+  useEffect(() => {
+    void fetchRidesEnabledOnServer().then(setRidesEnabled);
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -523,7 +529,9 @@ function ProfilePageInner() {
                     {lang === "es" ? "Mis reservas" : "My bookings"}
                   </p>
                   <p className="text-xs text-[#6B7280]">
-                    {lang === "es" ? "Historial, estado del servicio y reseñas" : "History, service status, and reviews"}
+                    {lang === "es"
+                      ? "Servicios (limpieza, chef, costura…) — no incluye taxi"
+                      : "Services (cleaning, chef, tailoring…) — not taxi rides"}
                   </p>
                 </div>
               </div>
@@ -543,6 +551,51 @@ function ProfilePageInner() {
           </div>
         </Link>
 
+        {ridesEnabled ? (
+          <>
+            <Link href="/viaje" className="block mb-3">
+              <div className="bg-white rounded-2xl border border-[#E5E0D8] p-4 hover:border-[#1B4332] transition-colors">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">🚕</span>
+                    <div>
+                      <p className="text-sm font-bold text-[#1C1917]">
+                        {lang === "es" ? "Mis viajes (taxi)" : "My rides (taxi)"}
+                      </p>
+                      <p className="text-xs text-[#6B7280]">
+                        {lang === "es"
+                          ? "Pedir viaje, estado en vivo y tickets NG-…"
+                          : "Request rides, live status, and NG-… tickets"}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[#6B7280] text-sm">→</span>
+                </div>
+              </div>
+            </Link>
+            <Link href="/conductor/viajes" className="block mb-3">
+              <div className="bg-white rounded-2xl border border-[#E5E0D8] p-4 hover:border-[#1B4332] transition-colors">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">🚗</span>
+                    <div>
+                      <p className="text-sm font-bold text-[#1C1917]">
+                        {lang === "es" ? "Viajes asignados (conductor)" : "Assigned trips (driver)"}
+                      </p>
+                      <p className="text-xs text-[#6B7280]">
+                        {lang === "es"
+                          ? "Panel de conductor — aceptar, iniciar y completar"
+                          : "Driver panel — accept, start, and complete rides"}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[#6B7280] text-sm">→</span>
+                </div>
+              </div>
+            </Link>
+          </>
+        ) : null}
+
         <Link href="/seller-bookings" className="block mb-3">
           <div className="bg-white rounded-2xl border border-[#E5E0D8] p-4 hover:border-[#1B4332] transition-colors">
             <div className="flex items-center justify-between">
@@ -554,8 +607,8 @@ function ProfilePageInner() {
                   </p>
                   <p className="text-xs text-[#6B7280]">
                     {lang === "es"
-                      ? "Marcar servicio completado y reseñas"
-                      : "Mark jobs complete & reviews"}
+                      ? "Servicios que vendes — no viajes de taxi"
+                      : "Services you sell — not taxi rides"}
                   </p>
                 </div>
               </div>

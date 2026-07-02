@@ -9,9 +9,19 @@ import type { RideAccountOptions } from "@/lib/rides/ride-trip-server";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 
 function rowTimeMs(row: RideBookingRow): number {
-  const raw = row.updated_at ?? row.created_at;
+  const raw = row.trip_ended_at ?? row.updated_at ?? row.created_at;
   const t = raw ? Date.parse(raw) : 0;
   return Number.isFinite(t) ? t : 0;
+}
+
+async function hydrateTerminalRow(
+  supabase: SupabaseClient,
+  row: RideBookingRow,
+): Promise<RideBookingRow> {
+  const fresh = (await getRideByIdFresh(supabase, row.id, { attempts: 4, delayMs: 150 })) ?? row;
+  const truth = await applyEventTruthToRide(supabase, fresh);
+  if (truth.status === "completed" || truth.status === "cancelled") return truth;
+  return { ...truth, status: row.status === "cancelled" ? "cancelled" : "completed" };
 }
 
 function tripMatchesBuyerPool(ride: RideBookingRow, pool: string[]): boolean {
@@ -56,6 +66,31 @@ async function findTerminalRideByTicket(
 ): Promise<RideBookingRow | null> {
   const ticket = normalizeRideTicketCode(ticketCode);
   if (!ticket || buyerPool.length === 0) return null;
+
+  const siblingRows = await listRideBookingsByTicket(supabase, ticketCode, buyerPool);
+  for (const row of siblingRows) {
+    const { data: completedEvt } = await supabase
+      .from("ride_events")
+      .select("id, created_at")
+      .eq("ride_id", row.id)
+      .eq("event_type", "trip_completed")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (completedEvt?.id) {
+      return hydrateTerminalRow(supabase, row);
+    }
+    const { data: cancelledEvt } = await supabase
+      .from("ride_events")
+      .select("id")
+      .eq("ride_id", row.id)
+      .eq("event_type", "ride_cancelled")
+      .limit(1)
+      .maybeSingle();
+    if (cancelledEvt?.id) {
+      return hydrateTerminalRow(supabase, { ...row, status: "cancelled" });
+    }
+  }
 
   for (const status of ["completed", "cancelled"] as const) {
     const { data, error } = await supabase
@@ -116,7 +151,7 @@ const BUYER_OPEN_STATUSES = new Set([
   "in_trip",
 ]);
 
-/** Canonical row for a ticket — event-hydrated; open trip beats stale completed on same NG- ticket. */
+/** Canonical row for a ticket — event-hydrated; genuine open trip beats terminal; stale open loses. */
 export async function resolveCanonicalRideByTicket(
   supabase: SupabaseClient,
   ticketCode: string,
@@ -131,8 +166,13 @@ export async function resolveCanonicalRideByTicket(
     hydrated.push(await applyEventTruthToRide(supabase, fresh));
   }
 
+  const terminal = await findTerminalRideByTicket(supabase, ticketCode, buyerPool);
+  const terminalHydrated = terminal ? await hydrateTerminalRow(supabase, terminal) : null;
+  const terminalMs = terminalHydrated ? rowTimeMs(terminalHydrated) : 0;
+
   const openRows = hydrated.filter((row) => BUYER_OPEN_STATUSES.has(row.status));
-  const pool = openRows.length > 0 ? openRows : hydrated;
+  const genuineOpen = openRows.filter((row) => terminalMs <= 0 || rowTimeMs(row) > terminalMs);
+  const pool = genuineOpen.length > 0 ? genuineOpen : terminalHydrated ? [terminalHydrated] : hydrated;
 
   let best: RideBookingRow | null = null;
   let bestRank = -2;
