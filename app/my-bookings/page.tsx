@@ -257,6 +257,7 @@ function MyBookingsPageInner() {
   const loadData = useCallback(
     (opts?: { forceDetail?: boolean }) => {
       const qp = new URLSearchParams({ status: "paid" });
+      qp.set("_cb", String(Date.now()));
       const urlTicket = normalizeNgTicketQuery(ticketHint);
       if (urlTicket) rememberBuyerTicket(urlTicket);
       for (const tk of ticketsForApiQuery(urlTicket)) qp.append("ticket", tk);
@@ -420,15 +421,24 @@ function MyBookingsPageInner() {
     };
   }, [reviewFromWa, loadData]);
 
-  /** Provider updates status on the server — buyer never gets seller-only `tianguis:booking-lifecycle`. Poll whenever this screen is open. */
+  /** Provider updates status on the server — poll while open; faster when tickets/status may lag. */
   useEffect(() => {
     if (loading) return;
-    const pollMs = 4_000;
+    const needsFastPoll =
+      Boolean(ticketFromUrl) ||
+      bookings.length === 0 ||
+      bookings.some(
+        (b) =>
+          !String(b.ticket_code ?? "").trim() ||
+          (String(b.status ?? "") !== "completed" &&
+            String(b.status ?? "") !== "cancelled"),
+      );
+    const pollMs = needsFastPoll ? 2_500 : 4_000;
     const interval = window.setInterval(() => {
       if (document.visibilityState === "visible") loadData();
     }, pollMs);
     return () => clearInterval(interval);
-  }, [loading, loadData, ticketFromUrl]);
+  }, [loading, loadData, ticketFromUrl, bookings]);
 
   const manualRefresh = () => {
     setRefreshing(true);

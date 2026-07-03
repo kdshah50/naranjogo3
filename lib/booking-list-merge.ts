@@ -67,7 +67,63 @@ type MergeListRow = {
   ticket_code?: string | null;
   paid_at?: string | null;
   updated_at?: string | null;
+  payment_status?: string | null;
 };
+
+const ACTIVE_LIFECYCLE = new Set(["pending", "confirmed", "scheduled", "in_progress"]);
+const RETAIN_COMPLETED_MS = 72 * 60 * 60 * 1000;
+
+function paidAtMs(row: MergeListRow): number {
+  const v = row.paid_at;
+  if (v == null || v === "") return 0;
+  const t = new Date(String(v)).getTime();
+  return Number.isFinite(t) ? t : 0;
+}
+
+function sortMergedBookingList<T extends MergeListRow>(rows: T[]): T[] {
+  const pri = (s: string): number => {
+    switch (normalizeLifecycleStatus(s)) {
+      case "in_progress":
+        return 0;
+      case "scheduled":
+        return 1;
+      case "confirmed":
+      case "pending":
+        return 2;
+      case "completed":
+        return 3;
+      case "cancelled":
+        return 4;
+      default:
+        return 2;
+    }
+  };
+  return [...rows].sort((a, b) => {
+    const pa = pri(String(a.status ?? ""));
+    const pb = pri(String(b.status ?? ""));
+    if (pa !== pb) return pa - pb;
+    return paidAtMs(b) - paidAtMs(a);
+  });
+}
+
+/**
+ * Keep on-screen paid rows when a stale list poll omits them (read-replica lag / recency cap).
+ * Active jobs always stay; recently completed rows with a ticket stay for 72h.
+ */
+function shouldRetainMissingPaidRow<T extends MergeListRow>(prev: T): boolean {
+  const st = normalizeLifecycleStatus(prev.status);
+  if (st === "cancelled") return false;
+  const paid =
+    String(prev.payment_status ?? "").toLowerCase() === "paid" || Boolean(prev.paid_at?.trim());
+  if (!paid) return false;
+  if (ACTIVE_LIFECYCLE.has(st)) return true;
+  if (st === "completed" && prev.ticket_code?.trim()) {
+    const raw = prev.updated_at ?? prev.paid_at;
+    const t = raw ? new Date(String(raw)).getTime() : 0;
+    if (Number.isFinite(t) && Date.now() - t < RETAIN_COMPLETED_MS) return true;
+  }
+  return false;
+}
 
 /** Prefer server snapshot when it carries fields the on-screen row still lacks. */
 function mergeBookingRowFieldsFromServer<T extends MergeListRow>(prev: T, server: T): T {
@@ -83,11 +139,17 @@ function mergeBookingRowFieldsFromServer<T extends MergeListRow>(prev: T, server
     const ts = updatedAtMs(server);
     if (tp > ts) out = { ...out, status: prev.status };
   }
-  if (!prev.ticket_code?.trim() && server.ticket_code?.trim()) {
+  const serverTicket = server.ticket_code?.trim();
+  const prevTicket = prev.ticket_code?.trim();
+  if (serverTicket) {
     out = { ...out, ticket_code: server.ticket_code };
+  } else if (prevTicket) {
+    out = { ...out, ticket_code: prev.ticket_code };
   }
   if (!prev.paid_at && server.paid_at) {
     out = { ...out, paid_at: server.paid_at };
+  } else if (prev.paid_at && !server.paid_at) {
+    out = { ...out, paid_at: prev.paid_at };
   }
   return out;
 }
@@ -97,9 +159,17 @@ export function mergeBookingListAvoidStatusRegression<T extends MergeListRow>(
   server: T[],
 ): T[] {
   const prevByKey = new Map(prev.map((row) => [canonicalBookingRowIdKey(row.id), row]));
-  return server.map((s) => {
+  const serverKeys = new Set(server.map((s) => canonicalBookingRowIdKey(s.id)));
+  const merged = server.map((s) => {
     const o = prevByKey.get(canonicalBookingRowIdKey(s.id));
     if (!o) return s;
     return mergeBookingRowFieldsFromServer(o, s);
   });
+  for (const row of prev) {
+    const key = canonicalBookingRowIdKey(row.id);
+    if (serverKeys.has(key)) continue;
+    if (!shouldRetainMissingPaidRow(row)) continue;
+    merged.push(row);
+  }
+  return sortMergedBookingList(merged);
 }

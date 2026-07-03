@@ -2,7 +2,12 @@ import { canonicalBookingRowIdKey, mergeBookingListAvoidStatusRegression } from 
 
 const TERMINAL = new Set(["completed", "cancelled"]);
 
-type RowWithId = { id: string; status?: string | null };
+type RowWithId = {
+  id: string;
+  status?: string | null;
+  ticket_code?: string | null;
+  paid_at?: string | null;
+};
 
 /**
  * List APIs merge several query branches and can briefly show `confirmed` after the DB row is
@@ -12,12 +17,14 @@ export async function refreshOpenBookingsFromDetailApi<T extends RowWithId>(
   rows: T[],
   opts?: { includeTerminal?: boolean },
 ): Promise<T[]> {
-  const toRefresh = opts?.includeTerminal
-    ? rows
-    : rows.filter((r) => !TERMINAL.has(String(r.status ?? "").toLowerCase()));
+  const toRefresh = rows.filter((r) => {
+    if (!String(r.ticket_code ?? "").trim()) return true;
+    if (opts?.includeTerminal) return true;
+    return !TERMINAL.has(String(r.status ?? "").toLowerCase());
+  });
   if (toRefresh.length === 0) return rows;
 
-  const statusByKey = new Map<string, string>();
+  const patchByKey = new Map<string, { status?: string; ticket_code?: string | null; paid_at?: string | null }>();
   await Promise.all(
     toRefresh.map(async (row) => {
       try {
@@ -26,21 +33,39 @@ export async function refreshOpenBookingsFromDetailApi<T extends RowWithId>(
           cache: "no-store",
         });
         if (!res.ok) return;
-        const data = (await res.json()) as { status?: string };
+        const data = (await res.json()) as {
+          status?: string;
+          ticket_code?: string | null;
+          ticketCode?: string | null;
+          paid_at?: string | null;
+          paidAt?: string | null;
+        };
         const st = String(data.status ?? "").trim();
-        if (!st) return;
-        statusByKey.set(canonicalBookingRowIdKey(row.id), st);
+        const tk = (data.ticket_code ?? data.ticketCode)?.trim() || null;
+        const paid = data.paid_at ?? data.paidAt ?? null;
+        if (!st && !tk && !paid) return;
+        patchByKey.set(canonicalBookingRowIdKey(row.id), {
+          ...(st ? { status: st } : {}),
+          ...(tk ? { ticket_code: tk } : {}),
+          ...(paid ? { paid_at: paid } : {}),
+        });
       } catch {
         /* non-fatal */
       }
     }),
   );
 
-  if (statusByKey.size === 0) return rows;
+  if (patchByKey.size === 0) return rows;
 
   return rows.map((row) => {
-    const st = statusByKey.get(canonicalBookingRowIdKey(row.id));
-    return st ? { ...row, status: st } : row;
+    const patch = patchByKey.get(canonicalBookingRowIdKey(row.id));
+    if (!patch) return row;
+    return {
+      ...row,
+      ...(patch.status ? { status: patch.status } : {}),
+      ...(patch.ticket_code ? { ticket_code: patch.ticket_code } : {}),
+      ...(patch.paid_at && !row.paid_at ? { paid_at: patch.paid_at } : {}),
+    };
   });
 }
 
