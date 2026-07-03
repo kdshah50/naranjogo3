@@ -564,8 +564,8 @@ function ProfilePageInner() {
                       </p>
                       <p className="text-xs text-[#6B7280]">
                         {lang === "es"
-                          ? "Pedir viaje, estado en vivo y tickets NG-…"
-                          : "Request rides, live status, and NG-… tickets"}
+                          ? "Pedir viaje y estado en vivo — el historial solo muestra zonas (sin dirección completa)"
+                          : "Request rides and live status — history shows zones only (no full street address)"}
                       </p>
                     </div>
                   </div>
@@ -584,8 +584,8 @@ function ProfilePageInner() {
                       </p>
                       <p className="text-xs text-[#6B7280]">
                         {lang === "es"
-                          ? "Panel de conductor — aceptar, iniciar y completar"
-                          : "Driver panel — accept, start, and complete rides"}
+                          ? "Panel de conductor — direcciones completas solo en viaje activo"
+                          : "Driver panel — full addresses only during an active trip"}
                       </p>
                     </div>
                   </div>

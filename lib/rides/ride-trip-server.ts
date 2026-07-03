@@ -30,6 +30,7 @@ import { normalizeRideTicketCode } from "@/lib/rides/ride-ghost-filter";
 import { rideStatusRank } from "@/lib/rides/ride-status-merge";
 import { driverRideAccountIdPool, findActiveDriverProfileForAccount } from "@/lib/rides/driver-account";
 import { userIdsForAuthPhone } from "@/lib/resolve-login-user";
+import { normalizeRideRowAddressesFromDb } from "@/lib/rides/ride-address-pii";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 import { idMatchVariantsForIn } from "@/lib/user-id-variants";
 
@@ -971,7 +972,9 @@ export async function latestBuyerRideForDisplay(
     }
   }
 
-  return pickLatestBuyerRideRow(rows);
+  const picked = pickLatestBuyerRideRow(rows.map(normalizeRideRowAddressesFromDb));
+  if (!picked) return null;
+  return (await getRideByIdFresh(supabase, picked.id)) ?? picked;
 }
 
 const BUYER_HISTORY_STATUSES = [
@@ -999,6 +1002,28 @@ function dedupeBuyerRidesByTicket(rows: RideBookingRow[]): RideBookingRow[] {
     }
   }
   return [...byTicket.values()].sort((a, b) => buyerRowTimeMs(b) - buyerRowTimeMs(a));
+}
+
+async function enrichRideColoniaFromEvents(
+  supabase: SupabaseClient,
+  row: RideBookingRow,
+): Promise<RideBookingRow> {
+  if (row.pickup_colonia?.trim() || row.dropoff_colonia?.trim()) return row;
+  const { data } = await supabase
+    .from("ride_events")
+    .select("meta")
+    .eq("ride_id", row.id)
+    .eq("event_type", "ride_requested")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  const meta = data?.meta as { pickup_colonia?: string; dropoff_colonia?: string } | null;
+  if (!meta?.pickup_colonia && !meta?.dropoff_colonia) return row;
+  return {
+    ...row,
+    pickup_colonia: row.pickup_colonia ?? meta?.pickup_colonia ?? null,
+    dropoff_colonia: row.dropoff_colonia ?? meta?.dropoff_colonia ?? null,
+  };
 }
 
 /** Recent taxi/ride rows for /my-bookings — event-hydrated, one row per NG- ticket. */
@@ -1041,14 +1066,18 @@ export async function listBuyerRideHistory(
     console.error("[ride-trip] listBuyerRideHistory", error);
   } else {
     for (const row of (data ?? []) as RideBookingRow[]) {
-      if (tripMatchesBuyerPool(row, pool)) byId.set(row.id, row);
+      const normalized = normalizeRideRowAddressesFromDb(row);
+      if (tripMatchesBuyerPool(normalized, pool)) byId.set(normalized.id, normalized);
     }
   }
 
   const hydrated: RideBookingRow[] = [];
   for (const row of byId.values()) {
-    const fresh = (await getRideByIdFresh(supabase, row.id, { attempts: 3, delayMs: 150 })) ?? row;
-    hydrated.push(await applyEventTruthToRide(supabase, fresh));
+    const fresh =
+      (await getRideByIdFresh(supabase, row.id, { attempts: 3, delayMs: 150 })) ??
+      normalizeRideRowAddressesFromDb(row);
+    const truth = await applyEventTruthToRide(supabase, fresh);
+    hydrated.push(await enrichRideColoniaFromEvents(supabase, truth));
   }
 
   return dedupeBuyerRidesByTicket(hydrated).slice(0, limit);

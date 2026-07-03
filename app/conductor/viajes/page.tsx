@@ -23,6 +23,7 @@ import {
   driverTripsCopy,
   rideStatusLabel,
 } from "@/lib/rides/ui-copy";
+import { rideRouteSummaryFromRow } from "@/lib/rides/ride-route-summary";
 
 const DRIVER_ACTIVE_STATUSES = new Set(["matched", "accepted", "arrived", "in_trip"]);
 const CONDUCTOR_TERMINAL_RIDE_KEY = "ng_conductor_terminal_ride_id";
@@ -163,6 +164,8 @@ type RideRow = {
   status: string;
   pickup_address: string;
   dropoff_address: string;
+  pickup_colonia?: string | null;
+  dropoff_colonia?: string | null;
   ticket_code: string | null;
   estimated_total_mxn_cents: number;
   created_at?: string;
@@ -1319,7 +1322,7 @@ function ConductorViajesInner() {
               <p className="mt-1 font-mono font-bold">{completedNotice.ticket_code}</p>
             )}
             <p className="mt-1 text-xs opacity-80">
-              {completedNotice.pickup_address} → {completedNotice.dropoff_address}
+              {rideRouteSummaryFromRow(completedNotice, lang).route_label}
             </p>
           </div>
         ) : trips.length === 0 ? (

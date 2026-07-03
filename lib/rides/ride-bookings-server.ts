@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { generateTicketCodeCandidate } from "@/lib/booking-lifecycle";
 import { pickBestDriver } from "@/lib/rides/dispatch";
 import { pickCanonicalDriverProfile } from "@/lib/rides/driver-account";
+import { encryptRideAddressForStorage, normalizeRideRowAddressesFromDb } from "@/lib/rides/ride-address-pii";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 import { locationFromColoniaKey } from "@/lib/rides/ride-locations";
 import { estimateFare, type RideLocation } from "@/lib/rides/ride-pricing";
@@ -30,9 +31,11 @@ export type RideBookingRow = {
   pickup_lat: number;
   pickup_lng: number;
   pickup_address: string;
+  pickup_colonia?: string | null;
   dropoff_lat: number;
   dropoff_lng: number;
   dropoff_address: string;
+  dropoff_colonia?: string | null;
   passengers: number;
   luggage: string | null;
   language: string | null;
@@ -219,10 +222,12 @@ export async function createRideRequest(
       status: "requested",
       pickup_lat: args.pickup.lat,
       pickup_lng: args.pickup.lng,
-      pickup_address: args.pickup.address,
+      pickup_address: encryptRideAddressForStorage(args.pickup.address),
+      pickup_colonia: args.pickupColoniaKey ?? null,
       dropoff_lat: args.dropoff.lat,
       dropoff_lng: args.dropoff.lng,
-      dropoff_address: args.dropoff.address,
+      dropoff_address: encryptRideAddressForStorage(args.dropoff.address),
+      dropoff_colonia: args.dropoffColoniaKey ?? null,
       passengers,
       luggage: args.luggage ?? null,
       language: args.language ?? "es",
@@ -240,7 +245,7 @@ export async function createRideRequest(
     return { ok: false, error: "No se pudo crear el viaje" };
   }
 
-  const ride = inserted as RideBookingRow;
+  const ride = normalizeRideRowAddressesFromDb(inserted as RideBookingRow);
 
   await appendRideEvent(supabase, {
     rideId: ride.id,
@@ -283,7 +288,7 @@ export async function getRideById(
     console.error("[ride-bookings] getRideById", error);
     return null;
   }
-  return (data as RideBookingRow) ?? null;
+  return (data ? normalizeRideRowAddressesFromDb(data as RideBookingRow) : null);
 }
 
 /** Lifecycle steps logged in ride_events — probed directly when booking rows lag on replica. */

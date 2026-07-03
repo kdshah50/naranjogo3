@@ -230,6 +230,7 @@ function MyBookingsPageInner() {
       return;
     }
     const qp = new URLSearchParams();
+    qp.set("lang", lang);
     const urlTicket = normalizeNgTicketQuery(ticketHint);
     if (urlTicket) qp.set("ticket", urlTicket);
     void fetch(`/api/rides/buyer/history?${qp}`, { credentials: "same-origin", cache: "no-store" })
@@ -238,7 +239,7 @@ function MyBookingsPageInner() {
         setRideHistory(Array.isArray(d.rides) ? d.rides : []);
       })
       .catch(() => setRideHistory([]));
-  }, [ridesEnabled, ticketHint]);
+  }, [ridesEnabled, ticketHint, lang]);
 
   useEffect(() => {
     loadRideHistory();

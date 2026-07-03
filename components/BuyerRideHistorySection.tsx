@@ -4,12 +4,14 @@ import Link from "next/link";
 import { rideStatusLabel } from "@/lib/rides/ui-copy";
 import { formatCurrencyMXN } from "@/lib/locale-format";
 
+/** Redacted ride row from GET /api/rides/buyer/history — zones only, no street addresses. */
 export type BuyerRideHistoryRow = {
   id: string;
   status: string;
   ticket_code: string | null;
-  pickup_address: string;
-  dropoff_address: string;
+  route_label: string;
+  pickup_zone: string;
+  dropoff_zone: string;
   estimated_total_mxn_cents: number;
   final_total_mxn_cents?: number | null;
   updated_at?: string | null;
@@ -40,19 +42,23 @@ export default function BuyerRideHistorySection({ rides, lang, ticketHighlight }
     lang === "es"
       ? {
           sectionTitle: "Mis viajes (taxi)",
-          sectionBlurb: "Los viajes NG-… se gestionan en Pedir viaje — no en reservas de servicios.",
+          sectionBlurb:
+            "Solo colonia/zona en el historial — la dirección completa se ve en Pedir viaje durante el viaje activo.",
           openTrip: "Ver viaje activo →",
           viewTrip: "Abrir en Pedir viaje →",
           estimate: "Estimado",
           final: "Total",
+          zoneHint: "Ruta (zonas)",
         }
       : {
           sectionTitle: "My rides (taxi)",
-          sectionBlurb: "NG-… ride tickets live on Request ride — not on service bookings.",
+          sectionBlurb:
+            "History shows neighborhood zones only — full addresses appear on Request ride during an active trip.",
           openTrip: "View active ride →",
           viewTrip: "Open in Request ride →",
           estimate: "Estimate",
           final: "Total",
+          zoneHint: "Route (zones)",
         };
 
   return (
@@ -86,9 +92,10 @@ export default function BuyerRideHistorySection({ rides, lang, ticketHighlight }
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-[#1C1917] truncate">
-                    {r.pickup_address} → {r.dropoff_address}
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-[#9CA3AF] mb-0.5">
+                    {t.zoneHint}
                   </p>
+                  <p className="text-sm font-semibold text-[#1C1917] truncate">{r.route_label}</p>
                   <div className="flex flex-wrap gap-2 mt-2 items-center">
                     {ticket ? (
                       <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-sky-50 text-sky-900">
