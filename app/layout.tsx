@@ -8,6 +8,7 @@ import PostHogIdentify from "@/components/posthog/PostHogIdentify";
 import PostHogPageView from "@/components/posthog/PostHogPageView";
 import PostHogProvider from "@/components/posthog/PostHogProvider";
 import SiteFooter from "@/components/SiteFooter";
+import SitePageFrame from "@/components/SitePageFrame";
 import { CartProvider } from "@/components/cart/CartContext";
 import { getPublicAppUrl } from "@/lib/app-url";
 
@@ -41,7 +42,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <PostHogIdentify />
             </Suspense>
             <Header />
-            <div className="flex-1 min-h-0 flex flex-col">{children}</div>
+            <SitePageFrame>{children}</SitePageFrame>
             <SiteFooter />
           </CartProvider>
         </PostHogProvider>
