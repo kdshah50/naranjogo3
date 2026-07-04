@@ -47,7 +47,7 @@ function buildReferencePlaces(): Record<string, RideReferencePlace> {
       lat: coords.lat,
       lng: coords.lng,
       label: item.name_es,
-      label_en: item.name_en,
+      label_en: item.name_en ?? item.name_es,
       reference_fare_mxn_cents: item.price_mxn_cents,
       is_airport: AIRPORT_REFERENCE_KEYS.has(item.sku),
     };
