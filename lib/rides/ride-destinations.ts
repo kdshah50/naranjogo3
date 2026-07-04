@@ -8,6 +8,7 @@ import { taxiRideShareStarterMenu } from "@/lib/listing-service-menu";
 import type { EstimateFareOptions } from "@/lib/rides/ride-pricing";
 
 export const QUICK_INDIVIDUAL_SKU = "quick_individual";
+export const WAIT_TIME_HOUR_SKU = "wait_time_hour";
 export type RideTripType = "standard" | "quick_individual";
 
 export type RideReferencePlace = {
@@ -113,13 +114,44 @@ export function quickIndividualFarePerStopCents(): number {
   return item?.price_mxn_cents ?? 8000;
 }
 
+export function waitTimeFarePerHourCents(): number {
+  const item = taxiRideShareStarterMenu().items.find((i) => i.sku === WAIT_TIME_HOUR_SKU);
+  return item?.price_mxn_cents ?? 30000;
+}
+
+export function normalizeWaitTimeHours(hours: number | null | undefined): number {
+  const n = Math.round(Number(hours ?? 0));
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(n, 8);
+}
+
 export function isLocalColoniaKey(key: string): boolean {
   return key in COLONIAS && key !== "otro";
 }
 
-export function encodeQuickIndividualStopsMeta(stopKeys: string[]): string {
+export function encodeRideTripMeta(args: {
+  tripType?: RideTripType;
+  destinationStopKeys?: string[];
+  waitTimeHours?: number;
+}): string | null {
+  const waitTimeHours = normalizeWaitTimeHours(args.waitTimeHours);
+  const stops = args.destinationStopKeys?.filter(Boolean) ?? [];
+  if (args.tripType !== "quick_individual" && waitTimeHours === 0) {
+    return null;
+  }
   return JSON.stringify({
-    trip_type: "quick_individual",
-    stops: stopKeys,
+    trip_type: args.tripType ?? "standard",
+    ...(stops.length > 0 ? { stops } : {}),
+    ...(waitTimeHours > 0 ? { wait_time_hours: waitTimeHours } : {}),
   });
+}
+
+/** @deprecated Use encodeRideTripMeta */
+export function encodeQuickIndividualStopsMeta(stopKeys: string[]): string {
+  return (
+    encodeRideTripMeta({
+      tripType: "quick_individual",
+      destinationStopKeys: stopKeys,
+    }) ?? JSON.stringify({ trip_type: "quick_individual", stops: stopKeys })
+  );
 }

@@ -7,7 +7,7 @@ import { pickCanonicalDriverProfile } from "@/lib/rides/driver-account";
 import { encryptRideAddressForStorage, normalizeRideRowAddressesFromDb } from "@/lib/rides/ride-address-pii";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 import { locationFromColoniaKey, locationFromRidePlaceKey } from "@/lib/rides/ride-locations";
-import { encodeQuickIndividualStopsMeta, type RideTripType } from "@/lib/rides/ride-destinations";
+import { encodeRideTripMeta, type RideTripType } from "@/lib/rides/ride-destinations";
 import { resolveRideFareEstimate, type RideLocation } from "@/lib/rides/ride-pricing";
 import { holdWalletForRide, hasHoldForRide, releaseWalletHoldForRide } from "@/lib/rides/wallet-hold";
 import { getWalletForUser } from "@/lib/rides/wallet-server";
@@ -176,6 +176,7 @@ export type CreateRideRequestArgs = {
   tripType?: RideTripType;
   destinationStopKeys?: string[];
   stopLocations?: RideLocation[];
+  waitTimeHours?: number;
   passengers?: number;
   luggage?: string | null;
   language?: string | null;
@@ -211,12 +212,15 @@ export async function createRideRequest(
     dropoff: args.dropoff,
     dropoffKey: args.dropoffColoniaKey,
     stopLocations,
+    waitTimeHours: args.waitTimeHours,
   });
 
   const luggageMeta =
-    tripType === "quick_individual" && args.destinationStopKeys?.length
-      ? encodeQuickIndividualStopsMeta(args.destinationStopKeys)
-      : args.luggage ?? null;
+    encodeRideTripMeta({
+      tripType,
+      destinationStopKeys: args.destinationStopKeys,
+      waitTimeHours: args.waitTimeHours,
+    }) ?? args.luggage ?? null;
 
   const wallet = await getWalletForUser(supabase, buyerId, { ledgerLimit: 1 });
   if (wallet.balance_mxn_cents < estimate.hold_amount_mxn_cents) {

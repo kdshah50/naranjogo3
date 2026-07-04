@@ -3,8 +3,8 @@
  * Run: npm run test:ride-pricing
  */
 import { COLONIAS } from "../lib/colonias";
-import { estimateFare, estimateQuickIndividualFare, resolveRideFareEstimate, haversineMeters, surgeMultiplierForWhen } from "../lib/rides/ride-pricing";
-import { fareOptionsForDropoffKey, quickIndividualFarePerStopCents } from "../lib/rides/ride-destinations";
+import { estimateFare, estimateQuickIndividualFare, resolveRideFareEstimate, applyWaitTimeToFareEstimate, haversineMeters, surgeMultiplierForWhen } from "../lib/rides/ride-pricing";
+import { fareOptionsForDropoffKey, quickIndividualFarePerStopCents, waitTimeFarePerHourCents } from "../lib/rides/ride-destinations";
 import { parseRideIntentFromText } from "../lib/rides/whatsapp-inbound";
 
 let failed = 0;
@@ -64,6 +64,23 @@ assert(
   "3 quick individual destinations = $240 MXN",
 );
 assert(quickThree.estimated_total_mxn_cents === 24000, "3 × $80 MXN");
+
+const withWait = applyWaitTimeToFareEstimate(est, 2);
+assert(withWait.wait_time_hours === 2, "wait hours stored");
+assert(withWait.wait_time_mxn_cents === waitTimeFarePerHourCents() * 2, "2h wait = $600");
+assert(
+  withWait.estimated_total_mxn_cents === est.estimated_total_mxn_cents + waitTimeFarePerHourCents() * 2,
+  "wait time added to trip fare",
+);
+
+const airportWithWait = resolveRideFareEstimate({
+  tripType: "standard",
+  pickup: { lat: centro.lat, lng: centro.lng, address: "Centro" },
+  dropoff: { lat: 20.6173, lng: -100.1856, address: "QRO" },
+  dropoffKey: "airport_queretaro",
+  waitTimeHours: 1,
+});
+assert(airportWithWait.estimated_total_mxn_cents === 200000 + 30000, "airport + 1h wait");
 
 const dist = haversineMeters(centro.lat, centro.lng, guadalupe.lat, guadalupe.lng);
 assert(dist === est.distance_m, "haversine matches estimate distance");

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminSupabase, getUserIdFromRequest } from "@/lib/auth-server";
 import { isRidesEnabled } from "@/lib/rides/flags";
 import { verifyInternalSecret } from "@/lib/rides/internal-auth";
-import { isLocalColoniaKey, type RideTripType } from "@/lib/rides/ride-destinations";
+import { isLocalColoniaKey, normalizeWaitTimeHours, type RideTripType } from "@/lib/rides/ride-destinations";
 import { locationFromRidePlaceKey } from "@/lib/rides/ride-locations";
 import { resolveRideFareEstimate, type RideLocation } from "@/lib/rides/ride-pricing";
 
@@ -17,6 +17,7 @@ type EstimateBody = {
   dropoff_colonia?: string;
   trip_type?: RideTripType;
   destination_stops?: string[];
+  wait_time_hours?: number;
 };
 
 function locationFromBody(
@@ -78,6 +79,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = (await req.json().catch(() => ({}))) as EstimateBody;
     const tripType = body.trip_type === "quick_individual" ? "quick_individual" : "standard";
+    const waitTimeHours = normalizeWaitTimeHours(body.wait_time_hours);
     const pickup = locationFromBody("pickup", body);
 
     if (!pickup) {
@@ -113,6 +115,7 @@ export async function POST(req: NextRequest) {
         pickup,
         dropoff,
         stopLocations,
+        waitTimeHours,
       });
       return NextResponse.json({ estimate, pickup, dropoff, destination_stops: stopKeys });
     }
@@ -130,6 +133,7 @@ export async function POST(req: NextRequest) {
       pickup,
       dropoff,
       dropoffKey: body.dropoff_colonia,
+      waitTimeHours,
     });
     return NextResponse.json({ estimate, pickup, dropoff });
   } catch (e) {

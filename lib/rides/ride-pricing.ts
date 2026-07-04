@@ -4,7 +4,9 @@
 
 import {
   fareOptionsForDropoffKey,
+  normalizeWaitTimeHours,
   quickIndividualFarePerStopCents,
+  waitTimeFarePerHourCents,
   type RideTripType,
 } from "@/lib/rides/ride-destinations";
 
@@ -40,6 +42,10 @@ export type FareEstimate = {
   /** Set for quick individual multi-stop trips. */
   quick_individual_stops?: number;
   quick_individual_per_stop_mxn_cents?: number;
+  /** Trip fare before optional wait time. */
+  trip_fare_mxn_cents?: number;
+  wait_time_hours?: number;
+  wait_time_mxn_cents?: number;
 };
 
 export type EstimateFareOptions = {
@@ -167,25 +173,48 @@ export function estimateFare(
   };
 }
 
+export function applyWaitTimeToFareEstimate(
+  estimate: FareEstimate,
+  waitTimeHours: number | null | undefined,
+): FareEstimate {
+  const hours = normalizeWaitTimeHours(waitTimeHours);
+  const tripFare = estimate.estimated_total_mxn_cents;
+  if (hours === 0) {
+    return { ...estimate, trip_fare_mxn_cents: tripFare, wait_time_hours: 0, wait_time_mxn_cents: 0 };
+  }
+  const waitCents = hours * waitTimeFarePerHourCents();
+  const total = tripFare + waitCents;
+  return {
+    ...estimate,
+    trip_fare_mxn_cents: tripFare,
+    wait_time_hours: hours,
+    wait_time_mxn_cents: waitCents,
+    estimated_total_mxn_cents: total,
+    hold_amount_mxn_cents: Math.ceil(total * HOLD_MULTIPLIER),
+  };
+}
+
 export function resolveRideFareEstimate(args: {
   tripType?: RideTripType;
   pickup: RideLocation;
   dropoff: RideLocation;
   dropoffKey?: string | null;
   stopLocations?: RideLocation[];
+  waitTimeHours?: number | null;
   when?: Date;
 }): FareEstimate {
   const tripType = args.tripType ?? "standard";
   const stops = args.stopLocations?.length ? args.stopLocations : [args.dropoff];
-  if (tripType === "quick_individual") {
-    return estimateQuickIndividualFare(stops.length, { pickup: args.pickup, stops });
-  }
-  return estimateFare(
-    args.pickup,
-    args.dropoff,
-    args.when,
-    fareOptionsForDropoffKey(args.dropoffKey),
-  );
+  const baseEstimate =
+    tripType === "quick_individual"
+      ? estimateQuickIndividualFare(stops.length, { pickup: args.pickup, stops })
+      : estimateFare(
+          args.pickup,
+          args.dropoff,
+          args.when,
+          fareOptionsForDropoffKey(args.dropoffKey),
+        );
+  return applyWaitTimeToFareEstimate(baseEstimate, args.waitTimeHours);
 }
 
 export function formatMxnFromCents(cents: number): string {

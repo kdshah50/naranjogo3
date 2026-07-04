@@ -116,6 +116,8 @@ const VIAJE = {
     pickupDetail: "Detalle (opcional) — ej. Plaza Cívica",
     dropoffDetail: "Detalle (opcional)",
     passengers: "Pasajeros",
+    waitTimeHours: "Tiempo de espera (horas)",
+    waitTimeHint: "Opcional — $300 MXN por hora según el menú de referencia.",
     requestedAt: "Solicitado:",
     ridePassengers: "Pasajeros:",
     estimating: "Calculando…",
@@ -201,6 +203,8 @@ const VIAJE = {
     pickupDetail: "Details (optional) — e.g. Plaza Cívica",
     dropoffDetail: "Details (optional)",
     passengers: "Passengers",
+    waitTimeHours: "Wait time (hours)",
+    waitTimeHint: "Optional — $300 MXN per hour per the reference menu.",
     requestedAt: "Requested:",
     ridePassengers: "Passengers:",
     estimating: "Calculating…",
@@ -605,6 +609,13 @@ export function viajeCopy(lang: Lang) {
       return lang === "es"
         ? `${stops} viaje(s) individual(es) rápido(s) × $${perStop} MXN = $${total} MXN`
         : `${stops} quick individual trip(s) × $${perStop} MXN = $${total} MXN`;
+    },
+    waitTimeBreakdown: (hours: number, perHourCents: number) => {
+      const perHour = perHourCents / 100;
+      const total = hours * perHour;
+      return lang === "es"
+        ? `Tiempo de espera: ${hours} h × $${perHour} MXN = $${total} MXN`
+        : `Wait time: ${hours} hr × $${perHour} MXN = $${total} MXN`;
     },
   };
 }

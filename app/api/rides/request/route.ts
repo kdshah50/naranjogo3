@@ -7,7 +7,7 @@ import { buildDispatchDebugReport } from "@/lib/rides/dispatch-debug";
 import {
   createRideRequest,
 } from "@/lib/rides/ride-bookings-server";
-import { isLocalColoniaKey, type RideTripType } from "@/lib/rides/ride-destinations";
+import { isLocalColoniaKey, normalizeWaitTimeHours, type RideTripType } from "@/lib/rides/ride-destinations";
 import {
   isValidRidePlaceKey,
   locationFromRidePlaceKey,
@@ -35,6 +35,7 @@ type RequestBody = {
   buyer_id?: string;
   trip_type?: RideTripType;
   destination_stops?: string[];
+  wait_time_hours?: number;
 };
 
 function resolveLocation(
@@ -89,6 +90,7 @@ export async function POST(req: NextRequest) {
 
     const pickupColonia = body.pickup_colonia?.trim();
     const tripType = body.trip_type === "quick_individual" ? "quick_individual" : "standard";
+    const waitTimeHours = normalizeWaitTimeHours(body.wait_time_hours);
     const quickStopKeys =
       tripType === "quick_individual"
         ? (body.destination_stops ?? [])
@@ -178,6 +180,7 @@ export async function POST(req: NextRequest) {
       tripType,
       destinationStopKeys: tripType === "quick_individual" ? quickStopKeys : undefined,
       stopLocations,
+      waitTimeHours,
       passengers: body.passengers,
       luggage: body.luggage ?? null,
       language: body.language ?? "es",

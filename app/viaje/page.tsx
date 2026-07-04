@@ -11,6 +11,7 @@ import {
   quickIndividualFarePerStopCents,
   referencePlaceLabel,
   RIDE_REFERENCE_PLACE_KEYS,
+  waitTimeFarePerHourCents,
   type RideTripType,
 } from "@/lib/rides/ride-destinations";
 import { ridePlaceLabel } from "@/lib/rides/ride-locations";
@@ -38,6 +39,9 @@ type FareEstimate = {
   used_fixed_price?: boolean;
   quick_individual_stops?: number;
   quick_individual_per_stop_mxn_cents?: number;
+  trip_fare_mxn_cents?: number;
+  wait_time_hours?: number;
+  wait_time_mxn_cents?: number;
 };
 
 type RideRow = {
@@ -340,6 +344,7 @@ function ViajePageInner() {
   const [pickupAddress, setPickupAddress] = useState("");
   const [dropoffAddress, setDropoffAddress] = useState("");
   const [passengers, setPassengers] = useState(1);
+  const [waitTimeHours, setWaitTimeHours] = useState(0);
 
   const [estimate, setEstimate] = useState<FareEstimate | null>(null);
   const [estimateError, setEstimateError] = useState<string | null>(null);
@@ -904,19 +909,22 @@ function ViajePageInner() {
   );
 
   const estimatePayload = useCallback(() => {
+    const base = {
+      wait_time_hours: waitTimeHours,
+      pickup_colonia: pickupColonia,
+      pickup_address: pickupAddress.trim() || pickupPlaceLabel(pickupColonia),
+    };
     if (tripType === "quick_individual") {
       return {
+        ...base,
         trip_type: "quick_individual" as const,
-        pickup_colonia: pickupColonia,
-        pickup_address: pickupAddress.trim() || pickupPlaceLabel(pickupColonia),
         destination_stops: quickDestinations,
       };
     }
     return {
+      ...base,
       trip_type: "standard" as const,
-      pickup_colonia: pickupColonia,
       dropoff_colonia: dropoffColonia,
-      pickup_address: pickupAddress.trim() || pickupPlaceLabel(pickupColonia),
       dropoff_address: dropoffAddress.trim() || dropoffPlaceLabel(dropoffColonia),
     };
   }, [
@@ -926,6 +934,7 @@ function ViajePageInner() {
     quickDestinations,
     pickupAddress,
     dropoffAddress,
+    waitTimeHours,
     pickupPlaceLabel,
     dropoffPlaceLabel,
   ]);
@@ -1342,6 +1351,19 @@ function ViajePageInner() {
           )}
 
           <div>
+            <label className="block text-sm font-medium mb-1">{t.waitTimeHours}</label>
+            <input
+              type="number"
+              min={0}
+              max={8}
+              className="w-24 rounded-lg border border-[#1B4332]/20 px-3 py-2"
+              value={waitTimeHours}
+              onChange={(e) => setWaitTimeHours(Math.max(0, Math.min(8, Number(e.target.value) || 0)))}
+            />
+            <p className="mt-1 text-xs text-[#1B4332]/70">{t.waitTimeHint}</p>
+          </div>
+
+          <div>
             <label className="block text-sm font-medium mb-1">{t.passengers}</label>
             <input
               type="number"
@@ -1392,6 +1414,14 @@ function ViajePageInner() {
                   {t.quickIndividualBreakdown(
                     estimate.quick_individual_stops,
                     estimate.quick_individual_per_stop_mxn_cents,
+                  )}
+                </p>
+              ) : null}
+              {estimate.wait_time_hours && estimate.wait_time_mxn_cents ? (
+                <p className="text-[#1B4332]/80">
+                  {t.waitTimeBreakdown(
+                    estimate.wait_time_hours,
+                    waitTimeFarePerHourCents(),
                   )}
                 </p>
               ) : null}
