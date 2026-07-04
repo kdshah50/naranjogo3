@@ -37,7 +37,7 @@ const airportEst = estimateFare(
   fareOptionsForDropoffKey("airport_queretaro"),
 );
 assert(airportEst.used_fixed_price, "airport destination always uses reference fare");
-assert(airportEst.estimated_total_mxn_cents === 180000, "QRO reference fare applied");
+assert(airportEst.estimated_total_mxn_cents === 200000, "QRO one-way reference fare applied");
 
 const atotonilcoEst = estimateFare(
   { lat: centro.lat, lng: centro.lng, address: "Centro" },

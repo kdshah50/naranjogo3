@@ -1222,8 +1222,10 @@ function ViajePageInner() {
               <option value="standard">{t.tripTypeStandard}</option>
               <option value="quick_individual">{t.tripTypeQuickIndividual}</option>
             </select>
-            {tripType === "quick_individual" && (
+            {tripType === "quick_individual" ? (
               <p className="mt-1 text-xs text-[#1B4332]/70">{t.quickIndividualHint}</p>
+            ) : (
+              <p className="mt-1 text-xs text-[#1B4332]/70">{t.standardFareOneWayHint}</p>
             )}
           </div>
 

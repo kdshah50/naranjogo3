@@ -55,9 +55,9 @@ export const DEFAULT_DOG_GROOMING_DISCLAIMER_EN =
   "Price may vary by breed, weight, coat condition, and behavior. Confirmed when the pet is assessed.";
 
 export const DEFAULT_TAXI_RIDE_DISCLAIMER_ES =
-  "El precio puede variar por tráfico, horario, paradas extra o espera adicional. Se confirma en mensaje antes del viaje.";
+  "Tarifas de referencia son solo ida (no ida y vuelta). El precio puede variar por tráfico, horario, paradas extra o espera adicional.";
 export const DEFAULT_TAXI_RIDE_DISCLAIMER_EN =
-  "Price may vary with traffic, time of day, extra stops, or additional wait time. Confirmed by message before the ride.";
+  "Reference fares are one way only (not round trip). Price may vary with traffic, time of day, extra stops, or additional wait time.";
 
 export type ServiceMenuItem = {
   sku: string;
@@ -981,14 +981,14 @@ export function taxiRideShareStarterMenu(): ServiceMenu {
     },
     {
       sku: "centro_atotonilco",
-      name_es: "Centro a Atotonilco (por viaje)",
-      name_en: "City Center to Atotonilco (per trip)",
+      name_es: "Centro a Atotonilco — solo ida",
+      name_en: "City Center to Atotonilco — one way",
       price_mxn_cents: 25000,
     },
     {
       sku: "return_sma",
-      name_es: "Regreso a SMA (por viaje)",
-      name_en: "Return to SMA (per trip)",
+      name_es: "San Miguel de Allende — solo ida",
+      name_en: "San Miguel de Allende — one way",
       price_mxn_cents: 25000,
     },
     {
@@ -1005,26 +1005,26 @@ export function taxiRideShareStarterMenu(): ServiceMenu {
     },
     {
       sku: "airport_guanajuato",
-      name_es: "Aeropuerto Guanajuato (ciudad)",
-      name_en: "Guanajuato (city) airport",
+      name_es: "Aeropuerto Guanajuato — solo ida",
+      name_en: "Guanajuato airport — one way",
       price_mxn_cents: 200000,
     },
     {
       sku: "airport_leon",
-      name_es: "Aeropuerto León (Guanajuato)",
-      name_en: "León (Guanajuato) airport",
+      name_es: "Aeropuerto León (Guanajuato) — solo ida",
+      name_en: "León (Guanajuato) airport — one way",
       price_mxn_cents: 250000,
     },
     {
       sku: "airport_queretaro",
-      name_es: "Aeropuerto Querétaro",
-      name_en: "Querétaro (Guanajuato) airport",
-      price_mxn_cents: 180000,
+      name_es: "Aeropuerto Querétaro — solo ida",
+      name_en: "Querétaro (Guanajuato) airport — one way",
+      price_mxn_cents: 200000,
     },
     {
       sku: "airport_cdmx",
-      name_es: "Ciudad de México",
-      name_en: "Mexico City",
+      name_es: "Ciudad de México — solo ida",
+      name_en: "Mexico City — one way",
       price_mxn_cents: 600000,
     },
     {
