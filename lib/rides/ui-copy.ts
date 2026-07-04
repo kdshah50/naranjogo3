@@ -99,8 +99,19 @@ const VIAJE = {
     topUpHint: " — carga saldo en /saldo antes de pedir un viaje.",
     cancelFailed: "No se pudo cancelar",
     tipFailed: "No se pudo enviar propina",
-    pickupColonia: "Origen (colonia)",
-    dropoffColonia: "Destino (colonia)",
+    pickupColonia: "Origen",
+    tripType: "Tipo de viaje",
+    tripTypeStandard: "Tarifa estándar (distancia)",
+    tripTypeQuickIndividual: "Viajes individuales rápidos",
+    quickIndividualHint: "Cada destino cuesta $80 MXN según el menú de referencia.",
+    quickDestinations: "Destinos",
+    addDestination: "+ Agregar destino",
+    removeDestination: "Quitar",
+    pickupLocalGroup: "Colonias en San Miguel",
+    pickupReferenceGroup: "Destinos de referencia (menú)",
+    dropoffColonia: "Destino",
+    dropoffLocalGroup: "Colonias en San Miguel",
+    dropoffReferenceGroup: "Destinos de referencia (menú)",
     pickupDetail: "Detalle (opcional) — ej. Plaza Cívica",
     dropoffDetail: "Detalle (opcional)",
     passengers: "Pasajeros",
@@ -111,6 +122,7 @@ const VIAJE = {
     requesting: "Solicitando…",
     requestTaxi: "Pedir taxi",
     estimatedFare: "Tarifa estimada:",
+    fixedPriceApplied: "Tarifa de referencia del menú aplicada.",
     balanceHold: "Reserva en saldo:",
     km: "km",
     min: "min",
@@ -171,8 +183,19 @@ const VIAJE = {
     topUpHint: " — top up at /saldo before requesting a ride.",
     cancelFailed: "Could not cancel",
     tipFailed: "Could not send tip",
-    pickupColonia: "Pickup (neighborhood)",
-    dropoffColonia: "Drop-off (neighborhood)",
+    pickupColonia: "Pickup",
+    tripType: "Trip type",
+    tripTypeStandard: "Standard fare (distance)",
+    tripTypeQuickIndividual: "Quick individual trips",
+    quickIndividualHint: "Each destination is $80 MXN per the reference menu.",
+    quickDestinations: "Destinations",
+    addDestination: "+ Add destination",
+    removeDestination: "Remove",
+    pickupLocalGroup: "San Miguel neighborhoods",
+    pickupReferenceGroup: "Reference destinations (menu)",
+    dropoffColonia: "Destination",
+    dropoffLocalGroup: "San Miguel neighborhoods",
+    dropoffReferenceGroup: "Reference destinations (menu)",
     pickupDetail: "Details (optional) — e.g. Plaza Cívica",
     dropoffDetail: "Details (optional)",
     passengers: "Passengers",
@@ -183,6 +206,7 @@ const VIAJE = {
     requesting: "Requesting…",
     requestTaxi: "Request taxi",
     estimatedFare: "Estimated fare:",
+    fixedPriceApplied: "Listing reference fare applied.",
     balanceHold: "Balance hold:",
     km: "km",
     min: "min",
@@ -563,7 +587,24 @@ const CONDUCTOR = {
 export type ConductorCopy = (typeof CONDUCTOR)[Lang];
 
 export function viajeCopy(lang: Lang) {
-  return VIAJE[lang];
+  const base = VIAJE[lang];
+  return {
+    ...base,
+    quickIndividualFarePreview: (stops: number, perStopCents: number) => {
+      const perStop = perStopCents / 100;
+      const total = stops * perStop;
+      return lang === "es"
+        ? `${stops} destino(s) × $${perStop} MXN = $${total} MXN`
+        : `${stops} destination(s) × $${perStop} MXN = $${total} MXN`;
+    },
+    quickIndividualBreakdown: (stops: number, perStopCents: number) => {
+      const perStop = perStopCents / 100;
+      const total = stops * perStop;
+      return lang === "es"
+        ? `${stops} viaje(s) individual(es) rápido(s) × $${perStop} MXN = $${total} MXN`
+        : `${stops} quick individual trip(s) × $${perStop} MXN = $${total} MXN`;
+    },
+  };
 }
 
 export function saldoCopy(lang: Lang) {

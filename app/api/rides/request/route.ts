@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminSupabase } from "@/lib/auth-server";
-import { COLONIAS } from "@/lib/colonias";
 import { isRidesEnabled } from "@/lib/rides/flags";
 import { verifyInternalSecret } from "@/lib/rides/internal-auth";
 import { ridesRouteGuard } from "@/lib/rides/ride-route-guard";
@@ -8,7 +7,12 @@ import { buildDispatchDebugReport } from "@/lib/rides/dispatch-debug";
 import {
   createRideRequest,
 } from "@/lib/rides/ride-bookings-server";
-import { locationFromColoniaKey } from "@/lib/rides/ride-locations";
+import { isLocalColoniaKey, type RideTripType } from "@/lib/rides/ride-destinations";
+import {
+  isValidRidePlaceKey,
+  locationFromRidePlaceKey,
+  ridePlaceLabel,
+} from "@/lib/rides/ride-locations";
 import {
   notifyBuyerRideCreated,
   notifyDriverRideMatched,
@@ -29,16 +33,18 @@ type RequestBody = {
   language?: string;
   auto_match?: boolean;
   buyer_id?: string;
+  trip_type?: RideTripType;
+  destination_stops?: string[];
 };
 
 function resolveLocation(
-  coloniaKey: string | undefined,
+  placeKey: string | undefined,
   lat: number | undefined,
   lng: number | undefined,
   address: string | undefined
 ): RideLocation | null {
-  if (coloniaKey) {
-    return locationFromColoniaKey(coloniaKey, address);
+  if (placeKey) {
+    return locationFromRidePlaceKey(placeKey, address);
   }
   if (typeof lat === "number" && typeof lng === "number" && Number.isFinite(lat) && Number.isFinite(lng)) {
     return {
@@ -82,15 +88,46 @@ export async function POST(req: NextRequest) {
     }
 
     const pickupColonia = body.pickup_colonia?.trim();
-    const dropoffColonia = body.dropoff_colonia?.trim();
+    const tripType = body.trip_type === "quick_individual" ? "quick_individual" : "standard";
+    const quickStopKeys =
+      tripType === "quick_individual"
+        ? (body.destination_stops ?? [])
+            .map((key) => key.trim())
+            .filter((key) => key.length > 0)
+            .slice(0, 8)
+        : [];
+    const dropoffColonia =
+      tripType === "quick_individual"
+        ? quickStopKeys[quickStopKeys.length - 1]
+        : body.dropoff_colonia?.trim();
 
-    if (pickupColonia && !COLONIAS[pickupColonia]) {
-      return NextResponse.json({ error: "Colonia de origen inválida" }, { status: 400 });
+    if (pickupColonia && !isValidRidePlaceKey(pickupColonia)) {
+      return NextResponse.json({ error: "Origen inválido" }, { status: 400 });
     }
-    if (dropoffColonia && !COLONIAS[dropoffColonia]) {
-      return NextResponse.json({ error: "Colonia de destino inválida" }, { status: 400 });
+
+    if (tripType === "quick_individual") {
+      if (quickStopKeys.length === 0) {
+        return NextResponse.json(
+          { error: "Indica al menos un destino para viajes individuales rápidos" },
+          { status: 400 },
+        );
+      }
+      if (!quickStopKeys.every(isLocalColoniaKey)) {
+        return NextResponse.json(
+          { error: "Los viajes individuales rápidos solo usan colonias locales" },
+          { status: 400 },
+        );
+      }
+    } else if (dropoffColonia && !isValidRidePlaceKey(dropoffColonia)) {
+      return NextResponse.json({ error: "Destino inválido" }, { status: 400 });
     }
-    if (pickupColonia && dropoffColonia && pickupColonia === dropoffColonia) {
+
+    if (
+      tripType === "standard" &&
+      pickupColonia &&
+      dropoffColonia &&
+      pickupColonia === dropoffColonia
+    ) {
       return NextResponse.json({ error: "Origen y destino deben ser diferentes" }, { status: 400 });
     }
 
@@ -100,12 +137,22 @@ export async function POST(req: NextRequest) {
       body.pickup_lng,
       body.pickup_address
     );
-    const dropoff = resolveLocation(
-      dropoffColonia,
-      body.dropoff_lat,
-      body.dropoff_lng,
-      body.dropoff_address
-    );
+
+    let dropoff: RideLocation | null = null;
+    let stopLocations: RideLocation[] | undefined;
+    if (tripType === "quick_individual") {
+      stopLocations = quickStopKeys
+        .map((key) => locationFromRidePlaceKey(key))
+        .filter((loc): loc is RideLocation => loc !== null);
+      dropoff = stopLocations[stopLocations.length - 1] ?? null;
+    } else {
+      dropoff = resolveLocation(
+        dropoffColonia,
+        body.dropoff_lat,
+        body.dropoff_lng,
+        body.dropoff_address
+      );
+    }
 
     if (!pickup || !dropoff) {
       return NextResponse.json(
@@ -114,12 +161,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const dropoffAddress =
+      tripType === "quick_individual"
+        ? quickStopKeys.map((key) => ridePlaceLabel(key, "es")).join(" → ")
+        : body.dropoff_address;
+
     const result = await createRideRequest(supabase, {
       buyerId,
       pickup,
-      dropoff,
+      dropoff: {
+        ...dropoff,
+        address: dropoffAddress?.trim() || dropoff.address,
+      },
       pickupColoniaKey: pickupColonia ?? null,
       dropoffColoniaKey: dropoffColonia ?? null,
+      tripType,
+      destinationStopKeys: tripType === "quick_individual" ? quickStopKeys : undefined,
+      stopLocations,
       passengers: body.passengers,
       luggage: body.luggage ?? null,
       language: body.language ?? "es",

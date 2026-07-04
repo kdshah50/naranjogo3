@@ -5,8 +5,15 @@ import Link from "next/link";
 import { withLang } from "@/components/BuyerRetentionPanel";
 import { RidesStagingBanner } from "@/components/RidesStagingBanner";
 import { useAppLang } from "@/hooks/use-app-lang";
-import { COLONIA_KEYS, COLONIAS, coloniaLabel } from "@/lib/colonias";
+import { coloniaLabel, sortedColoniaKeys } from "@/lib/colonias";
 import { formatCurrencyMXN } from "@/lib/locale-format";
+import {
+  quickIndividualFarePerStopCents,
+  referencePlaceLabel,
+  RIDE_REFERENCE_PLACE_KEYS,
+  type RideTripType,
+} from "@/lib/rides/ride-destinations";
+import { ridePlaceLabel } from "@/lib/rides/ride-locations";
 import { useRideLiveStream } from "@/hooks/use-ride-live-stream";
 import {
   applyMonotonicRideRow,
@@ -26,6 +33,11 @@ type FareEstimate = {
   estimated_total_mxn_cents: number;
   hold_amount_mxn_cents: number;
   surge_multiplier: number;
+  calculated_total_mxn_cents?: number;
+  fixed_price_mxn_cents?: number | null;
+  used_fixed_price?: boolean;
+  quick_individual_stops?: number;
+  quick_individual_per_stop_mxn_cents?: number;
 };
 
 type RideRow = {
@@ -44,10 +56,9 @@ type RideRow = {
   updated_at?: string | null;
 };
 
-const COLONIAS_LIST = COLONIA_KEYS.map((key) => ({
-  value: key,
-  label: COLONIAS[key].label,
-}));
+function isSamePlaceTrip(pickupKey: string, dropoffKey: string): boolean {
+  return pickupKey === dropoffKey;
+}
 
 const VIAJE_PINNED_RIDE_KEY = "ng_viaje_pinned_ride_id";
 const VIAJE_ACTIVE_TICKET_KEY = "ng_viaje_active_ticket";
@@ -323,7 +334,9 @@ function ViajePageInner() {
   const userClearedUntilRef = useRef(readUserClearedUntil());
 
   const [pickupColonia, setPickupColonia] = useState("centro");
+  const [tripType, setTripType] = useState<RideTripType>("standard");
   const [dropoffColonia, setDropoffColonia] = useState("guadalupe");
+  const [quickDestinations, setQuickDestinations] = useState<string[]>(["guadalupe"]);
   const [pickupAddress, setPickupAddress] = useState("");
   const [dropoffAddress, setDropoffAddress] = useState("");
   const [passengers, setPassengers] = useState(1);
@@ -849,13 +862,76 @@ function ViajePageInner() {
     ride && isBuyerActiveStatus(ride.status),
   );
 
-  const canSubmit = useMemo(
-    () => pickupColonia !== dropoffColonia && !authError && !hasBlockingActiveTrip,
-    [pickupColonia, dropoffColonia, authError, hasBlockingActiveTrip],
+  const localColonias = useMemo(
+    () =>
+      sortedColoniaKeys(lang).map((key) => ({
+        value: key,
+        label: coloniaLabel(key, lang),
+      })),
+    [lang],
   );
 
+  const referencePlaces = useMemo(
+    () =>
+      RIDE_REFERENCE_PLACE_KEYS.map((key) => ({
+        value: key,
+        label: referencePlaceLabel(key, lang),
+      })),
+    [lang],
+  );
+
+  const pickupPlaceLabel = useCallback(
+    (key: string) => ridePlaceLabel(key, lang),
+    [lang],
+  );
+
+  const dropoffPlaceLabel = useCallback(
+    (key: string) => ridePlaceLabel(key, lang),
+    [lang],
+  );
+
+  const samePlaceTrip =
+    tripType === "standard" && isSamePlaceTrip(pickupColonia, dropoffColonia);
+  const quickTripReady =
+    tripType === "quick_individual" && quickDestinations.length > 0;
+
+  const canSubmit = useMemo(
+    () =>
+      (tripType === "quick_individual" ? quickTripReady : !samePlaceTrip) &&
+      !authError &&
+      !hasBlockingActiveTrip,
+    [tripType, quickTripReady, samePlaceTrip, authError, hasBlockingActiveTrip],
+  );
+
+  const estimatePayload = useCallback(() => {
+    if (tripType === "quick_individual") {
+      return {
+        trip_type: "quick_individual" as const,
+        pickup_colonia: pickupColonia,
+        pickup_address: pickupAddress.trim() || pickupPlaceLabel(pickupColonia),
+        destination_stops: quickDestinations,
+      };
+    }
+    return {
+      trip_type: "standard" as const,
+      pickup_colonia: pickupColonia,
+      dropoff_colonia: dropoffColonia,
+      pickup_address: pickupAddress.trim() || pickupPlaceLabel(pickupColonia),
+      dropoff_address: dropoffAddress.trim() || dropoffPlaceLabel(dropoffColonia),
+    };
+  }, [
+    tripType,
+    pickupColonia,
+    dropoffColonia,
+    quickDestinations,
+    pickupAddress,
+    dropoffAddress,
+    pickupPlaceLabel,
+    dropoffPlaceLabel,
+  ]);
+
   const runEstimate = useCallback(async () => {
-    if (pickupColonia === dropoffColonia) {
+    if (tripType === "standard" && samePlaceTrip) {
       setEstimateError(t.pickDifferentColonias);
       return;
     }
@@ -866,12 +942,7 @@ function ViajePageInner() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          pickup_colonia: pickupColonia,
-          dropoff_colonia: dropoffColonia,
-          pickup_address: pickupAddress.trim() || coloniaLabel(pickupColonia),
-          dropoff_address: dropoffAddress.trim() || coloniaLabel(dropoffColonia),
-        }),
+        body: JSON.stringify(estimatePayload()),
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) {
@@ -883,7 +954,13 @@ function ViajePageInner() {
     } finally {
       setEstimating(false);
     }
-  }, [pickupColonia, dropoffColonia, pickupAddress, dropoffAddress, t.pickDifferentColonias, t.estimateFailed]);
+  }, [
+    tripType,
+    estimatePayload,
+    samePlaceTrip,
+    t.pickDifferentColonias,
+    t.estimateFailed,
+  ]);
 
   const requestRide = async () => {
     if (!canSubmit) return;
@@ -902,10 +979,9 @@ function ViajePageInner() {
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          pickup_colonia: pickupColonia,
-          dropoff_colonia: dropoffColonia,
+          ...estimatePayload(),
           pickup_address: pickupAddress.trim() || undefined,
-          dropoff_address: dropoffAddress.trim() || undefined,
+          dropoff_address: tripType === "standard" ? dropoffAddress.trim() || undefined : undefined,
           passengers,
           auto_match: true,
         }),
@@ -1137,17 +1213,41 @@ function ViajePageInner() {
 
         <section className="rounded-2xl bg-white p-5 shadow-sm space-y-4">
           <div>
+            <label className="block text-sm font-medium mb-1">{t.tripType}</label>
+            <select
+              className="w-full rounded-lg border border-[#1B4332]/20 px-3 py-2"
+              value={tripType}
+              onChange={(e) => setTripType(e.target.value as RideTripType)}
+            >
+              <option value="standard">{t.tripTypeStandard}</option>
+              <option value="quick_individual">{t.tripTypeQuickIndividual}</option>
+            </select>
+            {tripType === "quick_individual" && (
+              <p className="mt-1 text-xs text-[#1B4332]/70">{t.quickIndividualHint}</p>
+            )}
+          </div>
+
+          <div>
             <label className="block text-sm font-medium mb-1">{t.pickupColonia}</label>
             <select
               className="w-full rounded-lg border border-[#1B4332]/20 px-3 py-2"
               value={pickupColonia}
               onChange={(e) => setPickupColonia(e.target.value)}
             >
-              {COLONIAS_LIST.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.label}
-                </option>
-              ))}
+              <optgroup label={t.pickupLocalGroup}>
+                {localColonias.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label={t.pickupReferenceGroup}>
+                {referencePlaces.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+              </optgroup>
             </select>
             <input
               className="mt-2 w-full rounded-lg border border-[#1B4332]/20 px-3 py-2 text-sm"
@@ -1157,26 +1257,87 @@ function ViajePageInner() {
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-1">{t.dropoffColonia}</label>
-            <select
-              className="w-full rounded-lg border border-[#1B4332]/20 px-3 py-2"
-              value={dropoffColonia}
-              onChange={(e) => setDropoffColonia(e.target.value)}
-            >
-              {COLONIAS_LIST.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.label}
-                </option>
+          {tripType === "standard" ? (
+            <div>
+              <label className="block text-sm font-medium mb-1">{t.dropoffColonia}</label>
+              <select
+                className="w-full rounded-lg border border-[#1B4332]/20 px-3 py-2"
+                value={dropoffColonia}
+                onChange={(e) => setDropoffColonia(e.target.value)}
+              >
+                <optgroup label={t.dropoffLocalGroup}>
+                  {localColonias.map((c) => (
+                    <option key={c.value} value={c.value}>
+                      {c.label}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label={t.dropoffReferenceGroup}>
+                  {referencePlaces.map((c) => (
+                    <option key={c.value} value={c.value}>
+                      {c.label}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+              <input
+                className="mt-2 w-full rounded-lg border border-[#1B4332]/20 px-3 py-2 text-sm"
+                placeholder={t.dropoffDetail}
+                value={dropoffAddress}
+                onChange={(e) => setDropoffAddress(e.target.value)}
+              />
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <label className="block text-sm font-medium">{t.quickDestinations}</label>
+                <button
+                  type="button"
+                  className="text-sm font-medium text-[#1B4332] underline disabled:opacity-50"
+                  disabled={quickDestinations.length >= 8}
+                  onClick={() => setQuickDestinations((prev) => [...prev, "guadalupe"])}
+                >
+                  {t.addDestination}
+                </button>
+              </div>
+              {quickDestinations.map((destKey, index) => (
+                <div key={`quick-dest-${index}`} className="flex gap-2 items-center">
+                  <select
+                    className="flex-1 rounded-lg border border-[#1B4332]/20 px-3 py-2"
+                    value={destKey}
+                    onChange={(e) =>
+                      setQuickDestinations((prev) =>
+                        prev.map((key, i) => (i === index ? e.target.value : key)),
+                      )
+                    }
+                  >
+                    {localColonias.map((c) => (
+                      <option key={c.value} value={c.value}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                  {quickDestinations.length > 1 && (
+                    <button
+                      type="button"
+                      className="rounded-lg border border-[#1B4332]/20 px-3 py-2 text-sm"
+                      onClick={() =>
+                        setQuickDestinations((prev) => prev.filter((_, i) => i !== index))
+                      }
+                    >
+                      {t.removeDestination}
+                    </button>
+                  )}
+                </div>
               ))}
-            </select>
-            <input
-              className="mt-2 w-full rounded-lg border border-[#1B4332]/20 px-3 py-2 text-sm"
-              placeholder={t.dropoffDetail}
-              value={dropoffAddress}
-              onChange={(e) => setDropoffAddress(e.target.value)}
-            />
-          </div>
+              <p className="text-xs text-[#1B4332]/70">
+                {t.quickIndividualFarePreview(
+                  quickDestinations.length,
+                  quickIndividualFarePerStopCents(),
+                )}
+              </p>
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium mb-1">{t.passengers}</label>
@@ -1194,7 +1355,7 @@ function ViajePageInner() {
             <button
               type="button"
               onClick={runEstimate}
-              disabled={estimating || pickupColonia === dropoffColonia}
+              disabled={estimating || (tripType === "standard" && samePlaceTrip)}
               className="rounded-full border border-[#1B4332] px-5 py-2 text-sm font-medium disabled:opacity-50"
             >
               {estimating ? t.estimating : t.seeFare}
@@ -1224,6 +1385,17 @@ function ViajePageInner() {
                 {t.estimatedFare}{" "}
                 <strong>{formatCurrencyMXN(estimate.estimated_total_mxn_cents, lang)}</strong>
               </p>
+              {estimate.quick_individual_stops && estimate.quick_individual_per_stop_mxn_cents ? (
+                <p className="text-[#1B4332]/80">
+                  {t.quickIndividualBreakdown(
+                    estimate.quick_individual_stops,
+                    estimate.quick_individual_per_stop_mxn_cents,
+                  )}
+                </p>
+              ) : null}
+              {estimate.used_fixed_price && !estimate.quick_individual_stops && (
+                <p className="text-[#1B4332]/80">{t.fixedPriceApplied}</p>
+              )}
               <p className="text-[#1B4332]/70">
                 {t.balanceHold} {formatCurrencyMXN(estimate.hold_amount_mxn_cents, lang)} · ~
                 {distanceKm} {t.km} · ~{durationMin} {t.min}

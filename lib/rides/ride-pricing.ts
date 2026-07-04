@@ -2,13 +2,19 @@
  * Deterministic ride fare math (no LLM). See docs/RIDES_AI_PLAN.md §6 agent table.
  */
 
-const BASE_FARE_MXN_CENTS = 3500;
+import {
+  fareOptionsForDropoffKey,
+  quickIndividualFarePerStopCents,
+  type RideTripType,
+} from "@/lib/rides/ride-destinations";
+
+const BASE_FARE_MXN_CENTS = 8000;
 const PER_KM_MXN_CENTS = 1200;
 const PER_MIN_MXN_CENTS = 150;
 /** Assumed average speed in SMA for ETA when Mapbox is not wired yet. */
 const AVG_SPEED_KMH = 25;
 const HOLD_MULTIPLIER = 1.5;
-const MIN_FARE_MXN_CENTS = 4500;
+const MIN_FARE_MXN_CENTS = 10000;
 
 export type RideLocation = {
   lat: number;
@@ -23,8 +29,23 @@ export type FareEstimate = {
   distance_mxn_cents: number;
   time_mxn_cents: number;
   surge_multiplier: number;
+  /** Distance-based total before optional fixed-price floor. */
+  calculated_total_mxn_cents: number;
+  /** Set when destination has a fixed menu price. */
+  fixed_price_mxn_cents: number | null;
+  /** True when fixed price exceeded the calculated fare. */
+  used_fixed_price: boolean;
   estimated_total_mxn_cents: number;
   hold_amount_mxn_cents: number;
+  /** Set for quick individual multi-stop trips. */
+  quick_individual_stops?: number;
+  quick_individual_per_stop_mxn_cents?: number;
+};
+
+export type EstimateFareOptions = {
+  fixed_price_mxn_cents?: number | null;
+  /** When true (airport destinations), reference fare is always the total. */
+  force_reference_fare?: boolean;
 };
 
 export function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -60,10 +81,46 @@ export function surgeMultiplierForWhen(when: Date = new Date()): number {
   return isWeekendEve ? 1.25 : 1;
 }
 
+export function estimateQuickIndividualFare(
+  destinationCount: number,
+  route?: { pickup: RideLocation; stops: RideLocation[] },
+): FareEstimate {
+  const stopCount = Math.max(1, Math.min(8, Math.round(destinationCount)));
+  const perStop = quickIndividualFarePerStopCents();
+  const estimated_total_mxn_cents = stopCount * perStop;
+
+  let distance_m = 0;
+  if (route?.stops.length) {
+    let prev = route.pickup;
+    for (const stop of route.stops) {
+      distance_m += haversineMeters(prev.lat, prev.lng, stop.lat, stop.lng);
+      prev = stop;
+    }
+  }
+  const duration_s = estimateDurationSeconds(distance_m || 1);
+
+  return {
+    distance_m,
+    duration_s,
+    base_mxn_cents: perStop,
+    distance_mxn_cents: 0,
+    time_mxn_cents: 0,
+    surge_multiplier: 1,
+    calculated_total_mxn_cents: estimated_total_mxn_cents,
+    fixed_price_mxn_cents: estimated_total_mxn_cents,
+    used_fixed_price: true,
+    estimated_total_mxn_cents,
+    hold_amount_mxn_cents: Math.ceil(estimated_total_mxn_cents * HOLD_MULTIPLIER),
+    quick_individual_stops: stopCount,
+    quick_individual_per_stop_mxn_cents: perStop,
+  };
+}
+
 export function estimateFare(
   pickup: RideLocation,
   dropoff: RideLocation,
-  when: Date = new Date()
+  when: Date = new Date(),
+  options?: EstimateFareOptions
 ): FareEstimate {
   const distance_m = haversineMeters(pickup.lat, pickup.lng, dropoff.lat, dropoff.lng);
   const duration_s = estimateDurationSeconds(distance_m);
@@ -77,7 +134,22 @@ export function estimateFare(
 
   let subtotal = base_mxn_cents + distance_mxn_cents + time_mxn_cents;
   subtotal = Math.max(subtotal, MIN_FARE_MXN_CENTS);
-  const estimated_total_mxn_cents = Math.round(subtotal * surge_multiplier);
+  const calculated_total_mxn_cents = Math.round(subtotal * surge_multiplier);
+
+  const fixedPrice =
+    typeof options?.fixed_price_mxn_cents === "number" &&
+    Number.isFinite(options.fixed_price_mxn_cents) &&
+    options.fixed_price_mxn_cents > 0
+      ? Math.round(options.fixed_price_mxn_cents)
+      : null;
+  const forceReferenceFare = options?.force_reference_fare === true;
+  const used_fixed_price =
+    fixedPrice !== null &&
+    (forceReferenceFare || fixedPrice > calculated_total_mxn_cents);
+  const estimated_total_mxn_cents =
+    used_fixed_price && fixedPrice !== null
+      ? fixedPrice
+      : calculated_total_mxn_cents;
   const hold_amount_mxn_cents = Math.ceil(estimated_total_mxn_cents * HOLD_MULTIPLIER);
 
   return {
@@ -87,9 +159,33 @@ export function estimateFare(
     distance_mxn_cents,
     time_mxn_cents,
     surge_multiplier,
+    calculated_total_mxn_cents,
+    fixed_price_mxn_cents: fixedPrice,
+    used_fixed_price,
     estimated_total_mxn_cents,
     hold_amount_mxn_cents,
   };
+}
+
+export function resolveRideFareEstimate(args: {
+  tripType?: RideTripType;
+  pickup: RideLocation;
+  dropoff: RideLocation;
+  dropoffKey?: string | null;
+  stopLocations?: RideLocation[];
+  when?: Date;
+}): FareEstimate {
+  const tripType = args.tripType ?? "standard";
+  const stops = args.stopLocations?.length ? args.stopLocations : [args.dropoff];
+  if (tripType === "quick_individual") {
+    return estimateQuickIndividualFare(stops.length, { pickup: args.pickup, stops });
+  }
+  return estimateFare(
+    args.pickup,
+    args.dropoff,
+    args.when,
+    fareOptionsForDropoffKey(args.dropoffKey),
+  );
 }
 
 export function formatMxnFromCents(cents: number): string {

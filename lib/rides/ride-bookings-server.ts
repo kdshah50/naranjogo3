@@ -6,8 +6,9 @@ import { pickBestDriver } from "@/lib/rides/dispatch";
 import { pickCanonicalDriverProfile } from "@/lib/rides/driver-account";
 import { encryptRideAddressForStorage, normalizeRideRowAddressesFromDb } from "@/lib/rides/ride-address-pii";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
-import { locationFromColoniaKey } from "@/lib/rides/ride-locations";
-import { estimateFare, type RideLocation } from "@/lib/rides/ride-pricing";
+import { locationFromColoniaKey, locationFromRidePlaceKey } from "@/lib/rides/ride-locations";
+import { encodeQuickIndividualStopsMeta, type RideTripType } from "@/lib/rides/ride-destinations";
+import { resolveRideFareEstimate, type RideLocation } from "@/lib/rides/ride-pricing";
 import { holdWalletForRide, hasHoldForRide, releaseWalletHoldForRide } from "@/lib/rides/wallet-hold";
 import { getWalletForUser } from "@/lib/rides/wallet-server";
 import { rideStatusRank } from "@/lib/rides/ride-status-merge";
@@ -172,6 +173,9 @@ export type CreateRideRequestArgs = {
   dropoff: RideLocation;
   pickupColoniaKey?: string | null;
   dropoffColoniaKey?: string | null;
+  tripType?: RideTripType;
+  destinationStopKeys?: string[];
+  stopLocations?: RideLocation[];
   passengers?: number;
   luggage?: string | null;
   language?: string | null;
@@ -180,7 +184,7 @@ export type CreateRideRequestArgs = {
 };
 
 export type CreateRideRequestResult =
-  | { ok: true; ride: RideBookingRow; estimate: ReturnType<typeof estimateFare>; matched: boolean }
+  | { ok: true; ride: RideBookingRow; estimate: ReturnType<typeof resolveRideFareEstimate>; matched: boolean }
   | { ok: false; error: string; code?: "insufficient_balance" | "no_drivers" | "active_ride_exists" };
 
 /**
@@ -194,7 +198,25 @@ export async function createRideRequest(
   if (!buyerId) return { ok: false, error: "buyerId required" };
 
   const passengers = Math.min(Math.max(args.passengers ?? 1, 1), 8);
-  const estimate = estimateFare(args.pickup, args.dropoff);
+  const tripType = args.tripType ?? "standard";
+  const stopLocations =
+    args.stopLocations?.length
+      ? args.stopLocations
+      : tripType === "quick_individual"
+        ? [args.dropoff]
+        : undefined;
+  const estimate = resolveRideFareEstimate({
+    tripType,
+    pickup: args.pickup,
+    dropoff: args.dropoff,
+    dropoffKey: args.dropoffColoniaKey,
+    stopLocations,
+  });
+
+  const luggageMeta =
+    tripType === "quick_individual" && args.destinationStopKeys?.length
+      ? encodeQuickIndividualStopsMeta(args.destinationStopKeys)
+      : args.luggage ?? null;
 
   const wallet = await getWalletForUser(supabase, buyerId, { ledgerLimit: 1 });
   if (wallet.balance_mxn_cents < estimate.hold_amount_mxn_cents) {
@@ -229,7 +251,7 @@ export async function createRideRequest(
       dropoff_address: encryptRideAddressForStorage(args.dropoff.address),
       dropoff_colonia: args.dropoffColoniaKey ?? null,
       passengers,
-      luggage: args.luggage ?? null,
+      luggage: luggageMeta,
       language: args.language ?? "es",
       estimated_total_mxn_cents: estimate.estimated_total_mxn_cents,
       hold_amount_mxn_cents: estimate.hold_amount_mxn_cents,
