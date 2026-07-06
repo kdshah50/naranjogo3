@@ -5,7 +5,7 @@ import {
   computeHousekeepingQuoteTotals,
   computeServiceMenuQuoteCents,
   housekeepingAgreedPriceCents,
-  HOUSEKEEPING_QUICK_QUOTE_GROUPS,
+  HOUSEKEEPING_BEDROOM_ADD_BASE_SKU,
   HOUSEKEEPING_VISIT_FREQUENCIES,
   sortedServiceMenuItems,
   serviceMenuItemLabel,
@@ -79,7 +79,7 @@ export default function ServiceMenuQuoteBuilder({
   onSubmitRequest?: (payload: QuoteBuilderPayload) => Promise<void> | void;
   lang?: "es" | "en";
   disabled?: boolean;
-  /** Housekeeping: show quick room-type qty picks above the full menu list. */
+  /** Housekeeping: visit frequency + monthly package totals in the quote builder. */
   quoteLayout?: "default" | "housekeeping";
   /** Buyer must fill contact form before submitting quote request. */
   requiresBuyerContact?: boolean;
@@ -186,11 +186,6 @@ export default function ServiceMenuQuoteBuilder({
     [menu, lang],
   );
 
-  const menuSkus = useMemo(
-    () => new Set((menu?.items ?? []).map((it) => it.sku)),
-    [menu],
-  );
-
   if (!menu || !Array.isArray(menu.items) || menu.items.length === 0) {
     return null;
   }
@@ -237,11 +232,6 @@ export default function ServiceMenuQuoteBuilder({
       return out;
     });
   };
-
-  const quickGroups =
-    quoteLayout === "housekeeping"
-      ? HOUSEKEEPING_QUICK_QUOTE_GROUPS.filter((g) => menuSkus.has(g.sku))
-      : [];
 
   const clearAll = () => {
     setQtyBySku({});
@@ -638,60 +628,6 @@ export default function ServiceMenuQuoteBuilder({
           {contactErr ? <p className="text-[10px] text-red-600">{contactErr}</p> : null}
         </div>
       )}
-      {quickGroups.length > 0 && (
-        <div className="rounded-lg border border-amber-100 bg-amber-50/80 p-2 space-y-1.5">
-          <p className="text-[10px] font-semibold text-[#92400E]">
-            {lang === "en" ? "Quick room counts" : "Cantidades rápidas por cuarto"}
-          </p>
-          {quickGroups.map((g) => {
-            const qty = qtyBySku[g.sku] ?? 0;
-            const label = lang === "en" ? g.label_en : g.label_es;
-            const item = menu!.items.find((it) => it.sku === g.sku);
-            return (
-              <div key={g.sku} className="flex items-center gap-2 py-0.5 text-[11px]">
-                <span className="min-w-0 flex-1 text-[#1C1917]">{label}</span>
-                {item ? (
-                  <span className="shrink-0 text-[#6B7280]">
-                    {formatter.format(item.price_mxn_cents / 100)}
-                  </span>
-                ) : null}
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => change(g.sku, -1, g.alsoSetSku)}
-                    disabled={qty === 0 || disabled}
-                    className="w-5 h-5 rounded border border-amber-300 text-[#78350F] disabled:opacity-30"
-                    aria-label="−"
-                  >
-                    −
-                  </button>
-                  <span className="w-5 text-center font-semibold text-[#78350F]">
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      value={qty === 0 ? "" : String(qty)}
-                      onChange={(e) => setQty(g.sku, e.target.value, g.alsoSetSku)}
-                      disabled={disabled}
-                      aria-label={lang === "en" ? "Quantity" : "Cantidad"}
-                      className="w-5 text-center font-semibold text-[#78350F] bg-transparent border-0 p-0 outline-none focus:ring-1 focus:ring-amber-400 rounded"
-                    />
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => change(g.sku, +1, g.alsoSetSku)}
-                    disabled={disabled}
-                    className="w-5 h-5 rounded border border-amber-300 text-[#78350F] disabled:opacity-30"
-                    aria-label="+"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
       {quoteLayout === "housekeeping" && (
         <div className="rounded-lg border border-amber-100 bg-amber-50/80 p-2 space-y-1.5">
           <label className="block text-[10px] font-semibold text-[#92400E]">
@@ -773,6 +709,7 @@ export default function ServiceMenuQuoteBuilder({
         {displayMenuItems.map((it) => {
           const qty = qtyBySku[it.sku] ?? 0;
           const label = serviceMenuItemLabel(it, lang);
+          const alsoSetSku = HOUSEKEEPING_BEDROOM_ADD_BASE_SKU[it.sku];
           return (
             <div key={it.sku} className="flex items-center gap-2 py-1.5 text-[11px]">
               <span className="min-w-0 flex-1 text-[#1C1917]">{label}</span>
@@ -782,7 +719,7 @@ export default function ServiceMenuQuoteBuilder({
               <div className="flex items-center gap-1 shrink-0">
                 <button
                   type="button"
-                  onClick={() => change(it.sku, -1)}
+                  onClick={() => change(it.sku, -1, alsoSetSku)}
                   disabled={qty === 0 || disabled}
                   className="w-5 h-5 rounded border border-amber-300 text-[#78350F] disabled:opacity-30"
                   aria-label="−"
@@ -795,7 +732,7 @@ export default function ServiceMenuQuoteBuilder({
                     inputMode="numeric"
                     pattern="[0-9]*"
                     value={qty === 0 ? "" : String(qty)}
-                    onChange={(e) => setQty(it.sku, e.target.value)}
+                    onChange={(e) => setQty(it.sku, e.target.value, alsoSetSku)}
                     disabled={disabled}
                     aria-label={lang === "en" ? "Quantity" : "Cantidad"}
                     className="w-5 text-center font-semibold text-[#78350F] bg-transparent border-0 p-0 outline-none focus:ring-1 focus:ring-amber-400 rounded"
@@ -803,7 +740,7 @@ export default function ServiceMenuQuoteBuilder({
                 </span>
                 <button
                   type="button"
-                  onClick={() => change(it.sku, +1)}
+                  onClick={() => change(it.sku, +1, alsoSetSku)}
                   disabled={disabled}
                   className="w-5 h-5 rounded border border-amber-300 text-[#78350F] disabled:opacity-30"
                   aria-label="+"

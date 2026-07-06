@@ -559,25 +559,11 @@ export function serviceMenuPayloadFromFormRows(
   return { items: cleaned, ...disclaimers };
 }
 
-/** Quick room-type qty controls for housekeeping quote builder (maps to menu SKUs). */
-export const HOUSEKEEPING_QUICK_QUOTE_GROUPS: {
-  sku: string;
-  label_es: string;
-  label_en: string;
-  /** When qty > 0, also set this SKU to 1 (e.g. base clean once per quote). */
-  alsoSetSku?: string;
-}[] = [
-  { sku: "std_bedroom_add", label_es: "Recámaras extra (estándar)", label_en: "Extra bedrooms (standard)", alsoSetSku: "std_base_1bed" },
-  { sku: "deep_bedroom_add", label_es: "Recámaras extra (profunda)", label_en: "Extra bedrooms (deep)", alsoSetSku: "deep_base_1bed" },
-  { sku: "std_bathroom", label_es: "Baños (estándar)", label_en: "Bathrooms (standard)" },
-  { sku: "deep_bathroom", label_es: "Baños (profunda)", label_en: "Bathrooms (deep)" },
-  { sku: "std_kitchen", label_es: "Cocina (estándar)", label_en: "Kitchen (standard)" },
-  { sku: "deep_kitchen", label_es: "Cocina (profunda)", label_en: "Kitchen (deep)" },
-  { sku: "std_living", label_es: "Sala / comedor (estándar)", label_en: "Living / dining (standard)" },
-  { sku: "deep_living", label_es: "Sala / comedor (profunda)", label_en: "Living / dining (deep)" },
-  { sku: "laundry_small", label_es: "Lavado ropa (carga pequeña)", label_en: "Laundry (small load)" },
-  { sku: "laundry_large", label_es: "Lavado ropa (carga grande)", label_en: "Laundry (large load)" },
-];
+/** When qty > 0 on an additional-bedroom line, auto-include the matching base clean once. */
+export const HOUSEKEEPING_BEDROOM_ADD_BASE_SKU: Record<string, string> = {
+  std_bedroom_add: "std_base_1bed",
+  deep_bedroom_add: "deep_base_1bed",
+};
 
 /** Visit frequency for recurring housekeeping quotes (menu prices = per visit). */
 export type HousekeepingVisitFrequency =
@@ -776,9 +762,9 @@ export function veterinaryStarterMenu(): ServiceMenu {
 export function housekeepingStarterMenu(): ServiceMenu {
   const items: ServiceMenuItem[] = [
     // Standard / deep — base & bedrooms
-    { sku: "std_base_1bed", name_es: "Limpieza estándar base (hasta 1 recámara)", name_en: "Standard clean base (up to 1 bedroom)", price_mxn_cents: 45000 },
+    { sku: "std_base_1bed", name_es: "Recámara estándar", name_en: "Standard bedroom", price_mxn_cents: 45000 },
     { sku: "std_bedroom_add", name_es: "Recámara adicional (estándar)", name_en: "Additional bedroom (standard)", price_mxn_cents: 12000 },
-    { sku: "deep_base_1bed", name_es: "Limpieza profunda base (hasta 1 recámara)", name_en: "Deep clean base (up to 1 bedroom)", price_mxn_cents: 95000 },
+    { sku: "deep_base_1bed", name_es: "Recámara profunda", name_en: "Deep bedroom", price_mxn_cents: 95000 },
     { sku: "deep_bedroom_add", name_es: "Recámara adicional (profunda)", name_en: "Additional bedroom (deep)", price_mxn_cents: 20000 },
     // Bathrooms
     { sku: "std_bathroom", name_es: "Baño (estándar)", name_en: "Bathroom (standard)", price_mxn_cents: 15000 },

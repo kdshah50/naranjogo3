@@ -102,7 +102,7 @@ export default function ListingChat({
   lang?: Lang;
   /** Optional service menu for the listing — drives the seller's quote builder. */
   serviceMenu?: ServiceMenu | null;
-  /** Housekeeping listings get quick room-type qty picks in the quote builder. */
+  /** Housekeeping listings: visit frequency + monthly package in the quote builder. */
   quoteLayout?: "default" | "housekeeping";
   providerSlug?: string | null;
   /** Gated quote accept before deposit checkout. */
