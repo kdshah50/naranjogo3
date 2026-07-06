@@ -59,6 +59,9 @@ export const DEFAULT_TAXI_RIDE_DISCLAIMER_ES =
 export const DEFAULT_TAXI_RIDE_DISCLAIMER_EN =
   "Reference fares are one way only (not round trip). Price may vary with traffic, time of day, extra stops, or additional wait time.";
 
+/** Retired taxi menu rows — hidden from display and omitted from new starter templates. */
+export const DEPRECATED_TAXI_MENU_SKUS = new Set(["go_return_wait_3hr"]);
+
 export type ServiceMenuItem = {
   sku: string;
   name_es: string;
@@ -238,9 +241,14 @@ export function localizeServiceMenuForProvider(
 ): ServiceMenu {
   const lookup = getStarterTemplateLookup();
   const disclaimers = menuDisclaimersForProviderSlug(providerSlug);
+  const slug = String(providerSlug ?? "").trim();
+  let items = menu.items.map((it) => enrichMenuItemLanguages(it, lookup));
+  if (slug === "transporte_app") {
+    items = items.filter((it) => !DEPRECATED_TAXI_MENU_SKUS.has(it.sku));
+  }
   return {
     ...menu,
-    items: menu.items.map((it) => enrichMenuItemLanguages(it, lookup)),
+    items,
     disclaimer_es: menu.disclaimer_es?.trim() || disclaimers.disclaimer_es,
     disclaimer_en: menu.disclaimer_en?.trim() || disclaimers.disclaimer_en,
   };
@@ -978,12 +986,6 @@ export function taxiRideShareStarterMenu(): ServiceMenu {
       price_mxn_cents: 25000,
     },
     {
-      sku: "go_return_wait_3hr",
-      name_es: "Ida y vuelta + 3 h de espera",
-      name_en: "Go and return + 3 hr wait",
-      price_mxn_cents: 90000,
-    },
-    {
       sku: "round_trip_wait_total",
       name_es: "Total — ida y vuelta + 3 h espera",
       name_en: "Total — round trip plus 3 hr wait",
@@ -1075,7 +1077,9 @@ export function taxiRideShareStarterMenu(): ServiceMenu {
 export function petCareLandingSampleMenu(): ServiceMenu {
   const walk = dogWalkingStarterMenu().items.slice(0, 4);
   const sit = petSittingStarterMenu().items.slice(0, 4);
-  const groom = dogGroomingStarterMenu().items.slice(0, 4);
+  const groom = dogGroomingStarterMenu()
+    .items.filter((it) => it.sku !== "bath_medium")
+    .slice(0, 4);
   return {
     version: 1,
     currency: "MXN",
