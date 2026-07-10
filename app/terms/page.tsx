@@ -3,8 +3,9 @@ import { Suspense } from "react";
 import TermsClient from "@/components/legal/TermsClient";
 
 export const metadata: Metadata = {
-  title: "Términos de uso | Tianguis",
-  description: "Condiciones generales de uso de la plataforma Tianguis.",
+  title: "Términos de uso | NaranjoGo",
+  description:
+    "Condiciones generales de uso de NaranjoGo, incluyendo el servicio de viajes (taxi / rides).",
   robots: { index: true, follow: true },
 };
 
