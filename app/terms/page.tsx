@@ -5,7 +5,7 @@ import TermsClient from "@/components/legal/TermsClient";
 export const metadata: Metadata = {
   title: "Términos de uso | NaranjoGo",
   description:
-    "Condiciones generales de uso de NaranjoGo, incluyendo el servicio de viajes (taxi / rides).",
+    "Condiciones generales de uso de NaranjoGo, incluyendo housekeeping, cuidado de mascotas, veterinaria, costurería y taxi / rides.",
   robots: { index: true, follow: true },
 };
 
