@@ -2,6 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { RideBookingRow } from "@/lib/rides/ride-bookings-server";
+import type { RideDriverPublic } from "@/lib/rides/driver-public";
 import { rideStatusToCode } from "@/lib/rides/ride-status-codes";
 
 /** Slim ride payload for /viaje and /conductor/viajes. */
@@ -16,6 +17,10 @@ export function toClientRideRow(row: RideBookingRow) {
     final_total_mxn_cents: row.final_total_mxn_cents ?? null,
     ticket_code: row.ticket_code,
     driver_id: row.driver_id,
+    pickup_lat: row.pickup_lat,
+    pickup_lng: row.pickup_lng,
+    dropoff_lat: row.dropoff_lat,
+    dropoff_lng: row.dropoff_lng,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -31,6 +36,8 @@ export type RideLifecycleSsePayload = {
 export type RideStreamSsePayload = {
   lifecycle?: RideLifecycleSsePayload;
   ride: ReturnType<typeof toClientRideRow>;
+  driver_public?: RideDriverPublic | null;
+  location_update?: boolean;
 };
 
 export function encodeSseEvent(payload: unknown): Uint8Array {
@@ -122,4 +129,37 @@ export function lifecyclePayloadFromEvent(
     to_status: toStatus,
     status_code: rideStatusToCode(toStatus),
   };
+}
+
+type DriverProfileLocationRow = {
+  user_id: string;
+  last_lat: number | null;
+  last_lng: number | null;
+  last_location_at: string | null;
+};
+
+type DriverLocationHandler = (row: DriverProfileLocationRow) => void;
+
+/** Push driver GPS updates to rider SSE when driver_profiles.last_lat changes. */
+export function subscribeDriverProfileLocation(
+  supabase: SupabaseClient,
+  args: { driverUserId: string; onChange: DriverLocationHandler },
+): ReturnType<SupabaseClient["channel"]> {
+  const channel = supabase
+    .channel(`driver-loc-${args.driverUserId}-${Date.now()}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "UPDATE",
+        schema: "public",
+        table: "driver_profiles",
+        filter: `user_id=eq.${args.driverUserId}`,
+      },
+      (payload) => {
+        const row = payload.new as DriverProfileLocationRow | null;
+        if (row?.user_id) args.onChange(row);
+      },
+    );
+  void channel.subscribe();
+  return channel;
 }

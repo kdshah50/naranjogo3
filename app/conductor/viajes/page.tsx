@@ -8,6 +8,7 @@ import { useAppLang } from "@/hooks/use-app-lang";
 import { formatCurrencyMXN } from "@/lib/locale-format";
 import { RidesStagingBanner } from "@/components/RidesStagingBanner";
 import { useRideLiveStream } from "@/hooks/use-ride-live-stream";
+import { useDriverGpsPing } from "@/hooks/use-driver-gps-ping";
 import {
   fetchActiveDriverTrips,
   fetchDriverPanel,
@@ -1041,12 +1042,11 @@ function ConductorViajesInner() {
 
       navigator.geolocation.getCurrentPosition(
         async (pos) => {
-          const gps = await fetch("/api/rides/drivers/me/online", {
+          const gps = await fetch("/api/rides/drivers/me/location", {
             method: "POST",
             credentials: "include",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              online: true,
               lat: pos.coords.latitude,
               lng: pos.coords.longitude,
             }),
@@ -1071,6 +1071,12 @@ function ConductorViajesInner() {
       setBusy(null);
     }
   };
+
+  const primaryTripForGps = trips.find(isDriverActiveTrip) ?? null;
+  useDriverGpsPing({
+    enabled: isOnline || Boolean(primaryTripForGps),
+    rideId: primaryTripForGps?.id ?? null,
+  });
 
   const action = async (rideId: string, path: string, body?: Record<string, unknown>) => {
     setBusy(rideId + path);

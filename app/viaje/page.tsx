@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { withLang } from "@/components/BuyerRetentionPanel";
 import { RidesStagingBanner } from "@/components/RidesStagingBanner";
@@ -27,6 +28,13 @@ import {
 import { mergeRideStatusRow, rideStatusRank } from "@/lib/rides/ride-status-merge";
 import { rideStatusToCode } from "@/lib/rides/ride-status-codes";
 import { rideStatusLabel, viajeCopy } from "@/lib/rides/ui-copy";
+
+const RideTrackingMap = dynamic(() => import("@/components/rides/RideTrackingMap"), {
+  ssr: false,
+  loading: () => (
+    <div className="mt-4 h-52 animate-pulse rounded-xl bg-[#E8E4DC]" aria-hidden />
+  ),
+});
 
 type FareEstimate = {
   distance_m: number;
@@ -55,6 +63,10 @@ type RideRow = {
   final_total_mxn_cents?: number | null;
   ticket_code: string | null;
   driver_id: string | null;
+  pickup_lat?: number;
+  pickup_lng?: number;
+  dropoff_lat?: number;
+  dropoff_lng?: number;
   passengers?: number | null;
   created_at?: string | null;
   updated_at?: string | null;
@@ -701,7 +713,12 @@ function ViajePageInner() {
         const body = payload as {
           lifecycle?: { to_status?: string; event_type?: string };
           ride?: RideRow;
+          driver_public?: RideDriverPublic | null;
+          location_update?: boolean;
         };
+        if (body.location_update && body.driver_public) {
+          setDriverPublic(body.driver_public);
+        }
         const lifecycleStatus = body.lifecycle?.to_status?.trim();
         if (lifecycleStatus && uiRideRef.current?.id) {
           const current = uiRideRef.current;
@@ -1513,6 +1530,22 @@ function ViajePageInner() {
                 )}
               </div>
             )}
+            {ride.driver_id &&
+              ride.pickup_lat != null &&
+              ride.pickup_lng != null &&
+              ride.dropoff_lat != null &&
+              ride.dropoff_lng != null && (
+                <RideTrackingMap
+                  rideId={ride.id}
+                  rideStatus={ride.status}
+                  pickupLat={ride.pickup_lat}
+                  pickupLng={ride.pickup_lng}
+                  dropoffLat={ride.dropoff_lat}
+                  dropoffLng={ride.dropoff_lng}
+                  driver={driverPublic}
+                  lang={lang}
+                />
+              )}
             {!ride.driver_id && ride.status === "requested" && (
               <p className="mt-2 text-sm text-amber-800">{t.findingDriver}</p>
             )}
