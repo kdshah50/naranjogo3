@@ -283,6 +283,8 @@ const SALDO = {
     topupFailed: "No se pudo iniciar la carga",
     networkError: "Error de red al iniciar la carga",
     recentActivity: "Últimos movimientos",
+    ledgerTitle: "Ledger de saldo",
+    ledgerEmpty: "Aún no hay movimientos en tu ledger.",
   },
   en: {
     title: "Naranjo Balance",
@@ -305,6 +307,8 @@ const SALDO = {
     topupFailed: "Could not start top-up",
     networkError: "Network error starting top-up",
     recentActivity: "Recent activity",
+    ledgerTitle: "Balance ledger",
+    ledgerEmpty: "No ledger movements yet.",
   },
 } as const;
 

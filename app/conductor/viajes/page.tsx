@@ -1364,9 +1364,14 @@ function ConductorViajesInner() {
             <h1 className="text-2xl font-bold">{t.title}</h1>
             <p className="mt-1 text-sm text-[#1B4332]/70">{t.subtitle}</p>
           </div>
-          <Link href={withLang("/conductor", lang)} className="text-sm font-medium underline">
-            {t.profile}
-          </Link>
+          <div className="flex flex-col items-end gap-1 text-sm font-medium">
+            <Link href={withLang("/saldo", lang)} className="underline">
+              {lang === "es" ? "Saldo / Ledger" : "Balance / Ledger"}
+            </Link>
+            <Link href={withLang("/conductor", lang)} className="underline">
+              {t.profile}
+            </Link>
+          </div>
         </div>
 
         {sessionLabel && (

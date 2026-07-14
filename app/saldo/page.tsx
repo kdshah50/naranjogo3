@@ -195,29 +195,52 @@ function SaldoPageInner() {
           )}
         </section>
 
-        {wallet && wallet.recent_ledger.length > 0 && (
+        {wallet && (
           <section className="rounded-2xl border border-[#E5E0D8] bg-white p-6 shadow-sm">
-            <h2 className="text-base font-semibold text-[#1B4332]">{t.recentActivity}</h2>
-            <ul className="mt-3 space-y-2 text-sm">
-              {wallet.recent_ledger.map((e) => (
-                <li
-                  key={e.id}
-                  className="flex items-center justify-between border-b border-[#F2EDE3] pb-2 last:border-b-0 last:pb-0"
-                >
-                  <span className="text-[#5C5345]">{ledgerKindLabel(e.kind, lang)}</span>
-                  <span
-                    className={
-                      e.amount_mxn_cents >= 0
-                        ? "font-medium text-emerald-700"
-                        : "font-medium text-red-600"
-                    }
-                  >
-                    {e.amount_mxn_cents >= 0 ? "+" : ""}
-                    {formatCurrencyMXN(e.amount_mxn_cents, lang)}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <h2 className="text-base font-semibold text-[#1B4332]">{t.ledgerTitle}</h2>
+            <p className="mt-1 text-xs text-[#8A8170]">{t.recentActivity}</p>
+            {wallet.recent_ledger.length === 0 ? (
+              <p className="mt-3 text-sm text-[#8A8170]">{t.ledgerEmpty}</p>
+            ) : (
+              <ul className="mt-3 space-y-3 text-sm">
+                {wallet.recent_ledger.map((e) => {
+                  const when = e.created_at
+                    ? new Date(e.created_at).toLocaleString(
+                        lang === "es" ? "es-MX" : "en-MX",
+                        {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        },
+                      )
+                    : "";
+                  return (
+                    <li
+                      key={e.id}
+                      className="flex items-start justify-between gap-3 border-b border-[#F2EDE3] pb-3 last:border-b-0 last:pb-0"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-[#1B4332] font-medium">
+                          {ledgerKindLabel(e.kind, lang)}
+                        </p>
+                        {when ? (
+                          <p className="mt-0.5 text-[11px] text-[#8A8170]">{when}</p>
+                        ) : null}
+                      </div>
+                      <span
+                        className={
+                          e.amount_mxn_cents >= 0
+                            ? "shrink-0 font-medium text-emerald-700"
+                            : "shrink-0 font-medium text-red-600"
+                        }
+                      >
+                        {e.amount_mxn_cents >= 0 ? "+" : ""}
+                        {formatCurrencyMXN(e.amount_mxn_cents, lang)}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </section>
         )}
       </div>
