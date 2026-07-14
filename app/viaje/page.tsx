@@ -197,11 +197,10 @@ function clearTerminalRideId() {
 function stripRideIdFromBrowserUrl() {
   if (typeof window === "undefined") return;
   const url = new URL(window.location.href);
-  const hadRide = url.searchParams.has("ride");
-  const hadTicket = url.searchParams.has("ticket");
-  if (!hadRide && !hadTicket) return;
-  if (hadRide) url.searchParams.delete("ride");
-  if (hadTicket) url.searchParams.delete("ticket");
+  // Keep ?ticket= so WhatsApp / laptop refreshes always re-resolve canonical status.
+  // Only strip opaque ?ride= ids (they often pin a stale duplicate row).
+  if (!url.searchParams.has("ride")) return;
+  url.searchParams.delete("ride");
   window.history.replaceState(null, "", url.toString());
 }
 
@@ -795,6 +794,9 @@ function ViajePageInner() {
       activeTicketRef.current = ticket;
       pinActiveTicket(ticket);
       setRecoverTicketInput(ticket);
+      // Ticket is authoritative — drop any stale ride-id pin from an older WhatsApp message.
+      clearPinnedRideId();
+      rideIdRef.current = null;
     }
     if (rideParam || ticketParam) {
       clearTerminalRideId();
@@ -802,11 +804,10 @@ function ViajePageInner() {
       userClearedUntilRef.current = 0;
       writeUserClearedUntil(0);
       completedTicketLatchRef.current = null;
-      // WhatsApp links open in a fresh context — replica lag can make the first
-      // sync return a stale status. Schedule a re-sync to catch up.
       hadUrlRideParamsRef.current = true;
     }
-    if (rideParam) {
+    // Only pin ride id when there is no ticket (legacy links).
+    if (rideParam && !ticketParam) {
       pinRideId(rideParam);
       rideIdRef.current = rideParam;
     }
@@ -816,11 +817,20 @@ function ViajePageInner() {
       urlTicketRef.current = storedTicket;
       activeTicketRef.current = storedTicket;
     }
-    if (!rideParam && storedRideId) {
+    if (!rideParam && !ticketParam && storedRideId) {
       rideIdRef.current = storedRideId;
     }
     stripRideIdFromBrowserUrl();
   }, []);
+
+  // WhatsApp / laptop: keep polling hard for ~45s after deep-link open so stages catch up.
+  useEffect(() => {
+    if (!hadUrlRideParamsRef.current) return;
+    const timers = [0, 300, 800, 1500, 2500, 4000, 7000, 12000, 20000, 30000, 45000].map((ms) =>
+      window.setTimeout(() => void refreshActiveRide(ms === 0 ? "mount" : "mount-retry"), ms),
+    );
+    return () => timers.forEach((id) => window.clearTimeout(id));
+  }, [refreshActiveRide]);
 
   useEffect(() => {
     const sessionTicket = readPinnedTicket();

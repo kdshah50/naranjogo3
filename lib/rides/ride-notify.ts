@@ -16,11 +16,13 @@ export function rideBuyerViajeUrl(
 ): string {
   const base = `${getPublicAppUrl()}/viaje`;
   const ticket = String(ticketCode ?? "").trim();
+  // Cache-buster so WhatsApp desktop / laptop doesn't reopen a stale bfcache snapshot.
+  const bust = `r=${Date.now()}`;
   if (ticket) {
-    return `${base}?ticket=${encodeURIComponent(ticket)}`;
+    return `${base}?ticket=${encodeURIComponent(ticket)}&${bust}`;
   }
   const id = String(rideId ?? "").trim();
-  if (id) return `${base}?ride=${encodeURIComponent(id)}`;
+  if (id) return `${base}?ride=${encodeURIComponent(id)}&${bust}`;
   return base;
 }
 
