@@ -8,6 +8,7 @@ import {
   applyEventTruthToRide,
   getRideById,
   getRideByIdFresh,
+  getRideLifecycleStatusFromEvents,
   type RideBookingRow,
   type RideBookingStatus,
 } from "@/lib/rides/ride-bookings-server";
@@ -1071,13 +1072,28 @@ export async function listBuyerRideHistory(
     }
   }
 
+  // Fast path for /my-bookings: avoid applyEventTruthToRide probe storms (Vercel timeouts → empty UI).
   const hydrated: RideBookingRow[] = [];
   for (const row of byId.values()) {
-    const fresh =
-      (await getRideByIdFresh(supabase, row.id, { attempts: 3, delayMs: 150 })) ??
-      normalizeRideRowAddressesFromDb(row);
-    const truth = await applyEventTruthToRide(supabase, fresh);
-    hydrated.push(await enrichRideColoniaFromEvents(supabase, truth));
+    try {
+      let next = normalizeRideRowAddressesFromDb(row);
+      const open =
+        next.status === "requested" ||
+        next.status === "matched" ||
+        next.status === "accepted" ||
+        next.status === "arrived" ||
+        next.status === "in_trip";
+      if (open) {
+        const fromLog = await getRideLifecycleStatusFromEvents(supabase, next.id);
+        if (fromLog && rideStatusRank(fromLog) > rideStatusRank(next.status)) {
+          next = { ...next, status: fromLog };
+        }
+      }
+      hydrated.push(await enrichRideColoniaFromEvents(supabase, next));
+    } catch (e) {
+      console.error("[ride-trip] listBuyerRideHistory row", row.id, e);
+      hydrated.push(normalizeRideRowAddressesFromDb(row));
+    }
   }
 
   return dedupeBuyerRidesByTicket(hydrated).slice(0, limit);
