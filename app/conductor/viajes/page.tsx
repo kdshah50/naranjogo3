@@ -786,13 +786,24 @@ function ConductorViajesInner() {
 
   const applyRecoveredTrip = useCallback(
     (row: RideRow, ticketHint?: string) => {
+      // Never put a completed/cancelled ride into the Accept/Matched action card.
+      if (!row?.id || !isDriverActiveTrip(row)) {
+        if (row?.id && isTerminalDriverTrip(row.status)) {
+          rememberDriverTerminalRideId(row.id, row.ticket_code);
+          setCompletedNotice(row);
+          applyServerTrips([], "recover-terminal", true);
+          clearDriverActiveRideId();
+          clearDriverActiveTicket();
+        }
+        return;
+      }
       rememberDriverActiveRideId(row.id);
       const ticket = normalizeTicketKey(row.ticket_code ?? ticketHint);
       if (ticket) rememberDriverActiveTicket(ticket);
       pinnedRideIdRef.current = row.id;
       syncGenRef.current += 1;
       recoverLatchUntilRef.current = Date.now() + 45_000;
-      applyServerTrips([row], "recover");
+      applyServerTrips([row], "recover", true);
       setCompletedNotice(null);
       setPanelError(null);
       setActionError(null);
@@ -859,6 +870,12 @@ function ConductorViajesInner() {
     const rideId = rideIdHint ?? null;
     if (rideId) {
       const direct = await fetchRideRowById<RideRow>(rideId);
+      if (direct?.id && isTerminalDriverTrip(direct.status)) {
+        applyRecoveredTrip(direct, ticket || direct.ticket_code || undefined);
+        loadRideHistory();
+        setBusy(null);
+        return;
+      }
       if (direct?.id && isDriverActiveTrip(direct)) {
         applyRecoveredTrip(direct, ticket || direct.ticket_code || undefined);
         setBusy(null);
@@ -870,9 +887,13 @@ function ConductorViajesInner() {
       const panelResult = await fetchDriverPanel(rideId ?? undefined, ticket);
       if (panelResult.ok) {
         const raw = (panelResult.payload.trips ?? []) as RideRow[];
-        const row = raw.find((r) => r?.id && isDriverActiveTrip(r)) ?? raw[0];
-        if (row?.id && isDriverActiveTrip(row)) {
+        const row =
+          raw.find((r) => r?.id && isDriverActiveTrip(r)) ??
+          raw.find((r) => r?.id && isTerminalDriverTrip(r.status)) ??
+          raw[0];
+        if (row?.id) {
           applyRecoveredTrip(row, ticket);
+          loadRideHistory();
           setBusy(null);
           return;
         }
@@ -1303,7 +1324,29 @@ function ConductorViajesInner() {
     }
   };
 
-  const primaryTrip = trips[0] ?? null;
+  const primaryTrip = trips.find(isDriverActiveTrip) ?? null;
+
+  // Safety: never leave a completed/cancelled row in the active action list.
+  useEffect(() => {
+    const ghosts = trips.filter((row) => row?.id && !isDriverActiveTrip(row));
+    if (ghosts.length === 0) return;
+    const terminal = ghosts.find((row) => isTerminalDriverTrip(row.status));
+    if (terminal) {
+      setCompletedNotice(terminal);
+      rememberDriverTerminalRideId(terminal.id, terminal.ticket_code);
+      if (terminal.ticket_code) {
+        completedTicketLatchRef.current = {
+          ticket: normalizeTicketKey(terminal.ticket_code),
+          until: Date.now() + 300_000,
+        };
+      }
+    }
+    applyServerTrips(
+      trips.filter(isDriverActiveTrip),
+      "scrub-non-active",
+      true,
+    );
+  }, [trips, applyServerTrips]);
 
   return (
     <main className="min-h-screen bg-[#F8F4ED] text-[#1B4332]">
@@ -1435,7 +1478,11 @@ function ConductorViajesInner() {
 
         {completedNotice ? (
           <div className="mb-6 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
-            <p className="font-medium">{t.tripCompletedBanner}</p>
+            <p className="font-medium">
+              {lang === "es"
+                ? "Este viaje ya está completado — no hay que aceptar de nuevo."
+                : "This ride is already completed — nothing to accept."}
+            </p>
             {completedNotice.ticket_code && (
               <p className="mt-1 font-mono font-bold">{completedNotice.ticket_code}</p>
             )}
@@ -1446,9 +1493,14 @@ function ConductorViajesInner() {
               {rideStatusLabel(completedNotice.status, lang)}
             </p>
           </div>
-        ) : trips.length === 0 ? (
+        ) : !primaryTrip ? (
           <div className="mb-6 space-y-2">
             <p className="text-sm text-[#1B4332]/70">{t.noActiveTrips}</p>
+            <p className="text-xs text-[#1B4332]/60 leading-relaxed">
+              {lang === "es"
+                ? "Solo usa el ticket abajo si WhatsApp te asignó un viaje activo. Los viajes viejos aparecen abajo como Completado."
+                : "Only enter a ticket below if WhatsApp assigned an active trip. Older rides appear below as Completed."}
+            </p>
             <input
               className="w-full rounded-lg border border-[#1B4332]/20 px-3 py-2 text-sm font-mono"
               placeholder={t.recoverTicketPlaceholder}
@@ -1463,18 +1515,12 @@ function ConductorViajesInner() {
             >
               {busy === "recover" ? t.loadingAssignedRide : t.loadAssignedRide}
             </button>
-            {canonicalUserId && (
-              <p className="text-xs text-[#1B4332]/50 leading-relaxed">
-                {t.staleTripHint}{" "}
-                {t.driverIdLabel}{" "}
-                <span className="font-mono">{canonicalUserId.slice(0, 8)}…</span>
-              </p>
-            )}
           </div>
-        ) : primaryTrip ? (
+        ) : primaryTrip && isDriverActiveTrip(primaryTrip) ? (
           <ul className="mb-6 space-y-4">
             {(() => {
               const trip = primaryTrip;
+              if (!isDriverActiveTrip(trip)) return null;
               const stepIdx = driverFlowStepIndex(trip.status);
               const currentStep =
                 stepIdx >= 0 ? driverFlowSteps(lang)[stepIdx] : null;
@@ -1645,8 +1691,8 @@ function ConductorViajesInner() {
           </div>
           <p className="text-[11px] text-[#6B7280] mb-3">
             {lang === "es"
-              ? "Los viajes de taxi no aparecen en Reservas de clientes (eso es solo servicios)."
-              : "Taxi rides do not appear under Client bookings (that page is services only)."}
+              ? "Historial solo lectura. Completado nunca muestra Aceptar / Matched."
+              : "Read-only history. Completed never shows Accept / Matched."}
           </p>
           {rideHistory.length === 0 ? (
             <p className="text-xs text-[#6B7280]">
@@ -1656,6 +1702,7 @@ function ConductorViajesInner() {
             <ul className="space-y-3">
               {rideHistory.map((r) => {
                 const ticket = (r.ticket_code ?? "").trim().toUpperCase();
+                const done = r.status === "completed" || r.status === "cancelled";
                 const highlight =
                   ticket &&
                   (ticket === normalizeTicketKey(recoverTicketInput) ||
@@ -1673,7 +1720,11 @@ function ConductorViajesInner() {
                         <p className="text-[10px] font-mono font-bold mt-1">{ticket || "—"}</p>
                       </div>
                       <div className="text-right shrink-0">
-                        <p className="text-[10px] font-semibold uppercase">
+                        <p
+                          className={`text-[10px] font-semibold uppercase ${
+                            done ? "text-emerald-800" : "text-amber-800"
+                          }`}
+                        >
                           {rideStatusLabel(r.status, lang)}
                         </p>
                         <p className="text-xs font-bold text-[#1B4332]">
@@ -1686,7 +1737,31 @@ function ConductorViajesInner() {
                         </p>
                       </div>
                     </div>
-                    {ticket ? (
+                    {ticket && done ? (
+                      <button
+                        type="button"
+                        className="mt-2 text-[11px] font-semibold underline text-[#1B4332]"
+                        onClick={() => {
+                          setRecoverTicketInput(ticket);
+                          setCompletedNotice({
+                            id: r.id,
+                            status: r.status,
+                            pickup_address: r.route_label,
+                            dropoff_address: "",
+                            ticket_code: ticket,
+                            estimated_total_mxn_cents: r.estimated_total_mxn_cents,
+                            final_total_mxn_cents: r.final_total_mxn_cents,
+                            updated_at: r.updated_at,
+                          } as RideRow);
+                          applyServerTrips([], "history-completed", true);
+                          clearDriverActiveRideId();
+                          clearDriverActiveTicket();
+                          rememberDriverTerminalRideId(r.id, ticket);
+                        }}
+                      >
+                        {lang === "es" ? "Ver completado →" : "View completed →"}
+                      </button>
+                    ) : ticket && !done ? (
                       <button
                         type="button"
                         className="mt-2 text-[11px] font-semibold underline text-[#1B4332]"
@@ -1696,7 +1771,7 @@ function ConductorViajesInner() {
                           void recoverAssignedRide();
                         }}
                       >
-                        {lang === "es" ? "Abrir ticket →" : "Open ticket →"}
+                        {lang === "es" ? "Abrir viaje activo →" : "Open active trip →"}
                       </button>
                     ) : null}
                   </li>
