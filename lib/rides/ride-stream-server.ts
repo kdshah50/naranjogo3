@@ -3,26 +3,39 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { RideBookingRow } from "@/lib/rides/ride-bookings-server";
 import type { RideDriverPublic } from "@/lib/rides/driver-public";
+import { normalizeRideRowAddressesFromDb } from "@/lib/rides/ride-address-pii";
+import { isEncryptedPiiValue } from "@/lib/pii-crypto";
 import { rideStatusToCode } from "@/lib/rides/ride-status-codes";
+import { rideRouteSummaryFromRow } from "@/lib/rides/ride-route-summary";
 
-/** Slim ride payload for /viaje and /conductor/viajes. */
-export function toClientRideRow(row: RideBookingRow) {
+/** Slim ride payload for /viaje and /conductor/viajes. Never send ciphertext to the browser. */
+export function toClientRideRow(row: RideBookingRow, lang: "es" | "en" = "es") {
+  const decrypted = normalizeRideRowAddressesFromDb(row);
+  let pickup = decrypted.pickup_address;
+  let dropoff = decrypted.dropoff_address;
+  if (isEncryptedPiiValue(pickup) || isEncryptedPiiValue(dropoff)) {
+    const summary = rideRouteSummaryFromRow(decrypted, lang);
+    if (isEncryptedPiiValue(pickup)) pickup = summary.pickup_zone;
+    if (isEncryptedPiiValue(dropoff)) dropoff = summary.dropoff_zone;
+  }
   return {
-    id: row.id,
-    status: row.status,
-    pickup_address: row.pickup_address,
-    dropoff_address: row.dropoff_address,
-    estimated_total_mxn_cents: row.estimated_total_mxn_cents,
-    hold_amount_mxn_cents: row.hold_amount_mxn_cents,
-    final_total_mxn_cents: row.final_total_mxn_cents ?? null,
-    ticket_code: row.ticket_code,
-    driver_id: row.driver_id,
-    pickup_lat: row.pickup_lat,
-    pickup_lng: row.pickup_lng,
-    dropoff_lat: row.dropoff_lat,
-    dropoff_lng: row.dropoff_lng,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
+    id: decrypted.id,
+    status: decrypted.status,
+    pickup_address: pickup,
+    dropoff_address: dropoff,
+    pickup_colonia: decrypted.pickup_colonia ?? null,
+    dropoff_colonia: decrypted.dropoff_colonia ?? null,
+    estimated_total_mxn_cents: decrypted.estimated_total_mxn_cents,
+    hold_amount_mxn_cents: decrypted.hold_amount_mxn_cents,
+    final_total_mxn_cents: decrypted.final_total_mxn_cents ?? null,
+    ticket_code: decrypted.ticket_code,
+    driver_id: decrypted.driver_id,
+    pickup_lat: decrypted.pickup_lat,
+    pickup_lng: decrypted.pickup_lng,
+    dropoff_lat: decrypted.dropoff_lat,
+    dropoff_lng: decrypted.dropoff_lng,
+    created_at: decrypted.created_at,
+    updated_at: decrypted.updated_at,
   };
 }
 

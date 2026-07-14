@@ -178,17 +178,27 @@ type RideRow = {
 };
 
 function mapsDestinationUrl(lat: number | null | undefined, lng: number | null | undefined, address: string) {
+  const safeAddress =
+    address.startsWith("enc:v1:") || !address.trim() ? "San Miguel de Allende" : address;
   if (typeof lat === "number" && typeof lng === "number" && Number.isFinite(lat) && Number.isFinite(lng)) {
     return {
       google: `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`,
       waze: `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`,
     };
   }
-  const q = encodeURIComponent(address.trim() || "San Miguel de Allende");
+  const q = encodeURIComponent(safeAddress.trim() || "San Miguel de Allende");
   return {
     google: `https://www.google.com/maps/dir/?api=1&destination=${q}`,
     waze: `https://waze.com/ul?q=${q}&navigate=yes`,
   };
+}
+
+function displayRideAddress(address: string, colonia: string | null | undefined, lang: "es" | "en") {
+  if (address && !address.startsWith("enc:v1:")) return address;
+  return rideRouteSummaryFromRow(
+    { pickup_colonia: colonia, dropoff_colonia: colonia },
+    lang,
+  ).pickup_zone;
 }
 
 type DriverOnline = {
@@ -388,7 +398,11 @@ function ConductorViajesInner() {
   const applyServerTrips = useCallback((raw: RideRow[], source: string, replaceWhenEmpty = false) => {
     const incoming = dedupeDriverTrips(activeTripsFromPanel(raw));
     setTrips((prev) => {
-      if (replaceWhenEmpty && incoming.length === 0) return [];
+      // Server confirmed zero active trips — drop local Matched/Accepted ghosts.
+      if (replaceWhenEmpty && incoming.length === 0) {
+        tripsRef.current = [];
+        return [];
+      }
       const floors = statusFloorByRideRef.current;
       const merged: RideRow[] = [];
       for (const row of incoming) {
@@ -514,29 +528,32 @@ function ConductorViajesInner() {
       }
 
       const bestFiltered = sortDriverTrips(filtered)[0] ?? null;
-      const bestCandidate =
-        sortDriverTrips(candidates.filter((row) => row?.id && isDriverActiveTrip(row)))[0] ?? null;
       if (bestFiltered) {
-        applyServerTrips([bestFiltered], source, false);
-      } else if (bestCandidate) {
-        applyServerTrips([bestCandidate], source, false);
-      } else if (tripsRef.current.some(isDriverActiveTrip)) {
-        return;
+        applyServerTrips([bestFiltered], source, true);
+        if (!latchedTicket) {
+          rememberDriverActiveRideId(bestFiltered.id);
+          pinnedRideIdRef.current = bestFiltered.id;
+          setCompletedNotice(null);
+          clearDriverTerminalRideId();
+          clearDriverCompletedTicketLatch();
+          setActionSuccess(null);
+        }
       } else {
+        // Never keep a stale Matched card when verify says the trip is completed/gone.
         applyServerTrips([], source, true);
-      }
-      if (filtered.length === 0 && terminalPin) {
-        setCompletedNotice(terminalPin);
-        rememberDriverTerminalRideId(terminalPin.id, terminalPin.ticket_code);
-      } else if (bestFiltered && !latchedTicket) {
-        rememberDriverActiveRideId(bestFiltered.id);
-        pinnedRideIdRef.current = bestFiltered.id;
-        setCompletedNotice(null);
-        clearDriverTerminalRideId();
-        clearDriverCompletedTicketLatch();
-        setActionSuccess(null);
-      } else if (filtered.length === 0 && latchedTicket) {
-        setTrips([]);
+        clearDriverActiveRideId();
+        clearDriverActiveTicket();
+        pinnedRideIdRef.current = null;
+        if (terminalPin) {
+          setCompletedNotice(terminalPin);
+          rememberDriverTerminalRideId(terminalPin.id, terminalPin.ticket_code);
+          if (terminalPin.ticket_code) {
+            completedTicketLatchRef.current = {
+              ticket: normalizeTicketKey(terminalPin.ticket_code),
+              until: Date.now() + 300_000,
+            };
+          }
+        }
       }
     },
     [applyServerTrips],
@@ -674,23 +691,23 @@ function ConductorViajesInner() {
       if (activeFallback.length > 0) candidates = activeFallback;
     }
 
-    const isBackgroundPoll =
-      source === "poll" ||
-      source === "poll-backup" ||
-      source === "SSE" ||
-      source === "focus" ||
-      source === "visibility";
-    if (candidates.length === 0 && tripsRef.current.length > 0) {
+    // Always re-verify pinned/local rows so completed tickets clear Matched ghosts.
+    if (candidates.length === 0) {
       if (panel.driver) {
         rememberApprovedDriver(panel.driver as DriverOnline);
         setOnline(mergeDriverOnline(panel.driver as DriverOnline));
       }
       setCanonicalUserId(panel.canonical_user_id ?? panel.driver?.user_id ?? null);
       setSessionUserId(panel.session_user_id ?? null);
-      if (isBackgroundPoll || Date.now() < recoverLatchUntilRef.current) {
-        setPanelError(null);
-        return;
-      }
+      setPanelError(null);
+      const local = filterDriverPanelTrips(
+        tripsRef.current,
+        hideTickets,
+        completedTicketLatchRef.current,
+      );
+      await verifyAndSetTrips(local, `${source}+empty-panel`, gen);
+      loadRideHistory();
+      return;
     }
 
     if (candidates.length > 0) {
@@ -706,10 +723,28 @@ function ConductorViajesInner() {
         top.id ?? rideIdHint,
       );
       if (gen !== syncGenRef.current) return;
-      if (truthResult.ok && truthResult.trips.length > 0) {
-        applyServerTrips([truthResult.trips[0] as RideRow], `${source}+events`);
+      if (truthResult.ok && truthResult.ride?.id && isTerminalDriverTrip(truthResult.ride.status)) {
+        const terminal = truthResult.ride as RideRow;
+        applyServerTrips([], `${source}+events-terminal`, true);
+        setCompletedNotice(terminal);
+        rememberDriverTerminalRideId(terminal.id, terminal.ticket_code);
+        clearDriverActiveRideId();
+        clearDriverActiveTicket();
+        loadRideHistory();
+      } else if (truthResult.ok && truthResult.trips.length > 0) {
+        const truthTop = truthResult.trips[0] as RideRow;
+        if (isTerminalDriverTrip(truthTop.status)) {
+          applyServerTrips([], `${source}+events-terminal`, true);
+          setCompletedNotice(truthTop);
+          rememberDriverTerminalRideId(truthTop.id, truthTop.ticket_code);
+          clearDriverActiveRideId();
+          clearDriverActiveTicket();
+          loadRideHistory();
+        } else {
+          await verifyAndSetTrips([truthTop], `${source}+events`, gen);
+        }
       } else {
-        applyServerTrips(candidates, source);
+        await verifyAndSetTrips(candidates, source, gen);
       }
     }
 
@@ -741,6 +776,8 @@ function ConductorViajesInner() {
     applyServerTrips,
     mergeDriverOnline,
     rememberApprovedDriver,
+    verifyAndSetTrips,
+    loadRideHistory,
     t.panelLoadFailed,
     t.inactiveDriverShort,
     t.noDriverProfile,
@@ -1452,7 +1489,8 @@ function ConductorViajesInner() {
                     {rideStatusLabel(trip.status, lang)}
                   </p>
                   <p className="font-medium">
-                    {trip.pickup_address} → {trip.dropoff_address}
+                    {displayRideAddress(trip.pickup_address, trip.pickup_colonia, lang)} →{" "}
+                    {displayRideAddress(trip.dropoff_address, trip.dropoff_colonia, lang)}
                   </p>
                   <p className="text-sm text-[#1B4332]/70">
                     {t.estFare} {formatCurrencyMXN(trip.estimated_total_mxn_cents, lang)}

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { loadDriverPanel } from "@/lib/rides/driver-panel-server";
+import { toClientRideRow } from "@/lib/rides/ride-stream-server";
 import { ridesRouteGuard } from "@/lib/rides/ride-route-guard";
 
 export const dynamic = "force-dynamic";
@@ -23,9 +24,15 @@ export async function GET(req: NextRequest) {
       explicitTicketCode: ticketCode,
     });
 
-    return NextResponse.json(panel, {
-      headers: { "Cache-Control": "no-store, max-age=0" },
-    });
+    return NextResponse.json(
+      {
+        ...panel,
+        trips: panel.trips.map((row) => toClientRideRow(row)),
+      },
+      {
+        headers: { "Cache-Control": "no-store, max-age=0" },
+      },
+    );
   } catch (e) {
     console.error("[rides/drivers/me/panel] GET", e);
     return NextResponse.json(
