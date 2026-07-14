@@ -543,12 +543,26 @@ function ViajePageInner() {
             normalizeTicketKey(prev.ticket_code) === normalizeTicketKey(incoming.ticket_code);
           if (sameTicket) return prev;
         }
+        const prevRank = rideStatusRank(prev?.status ?? "");
+        const incomingRank = rideStatusRank(incoming.status);
         const prevCode = prev?.status_code ?? rideStatusToCode(prev?.status);
         const incomingCode = incoming.status_code ?? rideStatusToCode(incoming.status);
-        if (prev && incomingCode < prevCode) {
+        // Never downgrade lifecycle from a stale poll/SSE row (common with WhatsApp-pinned ids).
+        if (prev && (incomingRank < prevRank || incomingCode < prevCode)) {
           return prev;
         }
-        const next = prev ? { ...prev, ...incoming, status: incoming.status } : incoming;
+        const next = prev
+          ? {
+              ...prev,
+              ...incoming,
+              status: incoming.status,
+              status_code: Math.max(prevCode, incomingCode),
+              id: incomingRank >= prevRank ? incoming.id : prev.id,
+            }
+          : {
+              ...incoming,
+              status_code: incoming.status_code ?? rideStatusToCode(incoming.status),
+            };
         statusFloorByRideRef.current.set(next.id, rideStatusRank(next.status));
         uiRideRef.current = next;
         return next;
@@ -577,14 +591,18 @@ function ViajePageInner() {
       readPinnedTicket() ||
       normalizeTicketKey(uiRideRef.current?.ticket_code) ||
       undefined;
-    const rideRef = pinnedId ?? uiRideRef.current?.id ?? undefined;
+    // Prefer ticket-only truth: WhatsApp/?ride= pins can point at a ghost duplicate row.
+    // Passing ride_id with ticket biased older rows and froze Accept→Arrived→Start UI.
+    const rideRef = ticketHint
+      ? undefined
+      : pinnedId ?? uiRideRef.current?.id ?? undefined;
 
     let truthApplied = false;
     if (ticketHint || rideRef) {
       let { ride: truthRow, driver_public: truthDriver, httpStatus } =
         await fetchBuyerRideTruth(ticketHint, rideRef);
-      if (!truthRow?.id && rideRef) {
-        const byId = await fetchBuyerRideTruth(undefined, rideRef);
+      if (!truthRow?.id && pinnedId) {
+        const byId = await fetchBuyerRideTruth(ticketHint || undefined, pinnedId);
         if (byId.ride?.id) {
           truthRow = byId.ride;
           truthDriver = byId.driver_public;
@@ -674,7 +692,7 @@ function ViajePageInner() {
       pinActiveTicket(ticket);
       const { ride: fastRow, driver_public: fastDriver } = await fetchBuyerRideTruth(
         ticket,
-        ride?.id,
+        undefined,
       );
       if (fastRow?.id) {
         applyTruthRide(fastRow, fastDriver, "recover");
@@ -708,7 +726,6 @@ function ViajePageInner() {
     streamUrl: liveRideId ? `/api/rides/${liveRideId}/stream` : null,
     enabled: liveStreamEnabled,
     onEvent: (payload) => {
-      const seqAtEvent = refreshSeqRef.current;
       void (async () => {
         const body = payload as {
           lifecycle?: { to_status?: string; event_type?: string };
@@ -720,12 +737,16 @@ function ViajePageInner() {
           setDriverPublic(body.driver_public);
         }
         const lifecycleStatus = body.lifecycle?.to_status?.trim();
-        if (lifecycleStatus && uiRideRef.current?.id) {
-          const current = uiRideRef.current;
-          if (rideStatusRank(lifecycleStatus) > rideStatusRank(current.status)) {
+        const base = uiRideRef.current ?? body.ride ?? null;
+        if (lifecycleStatus && base?.id) {
+          if (rideStatusRank(lifecycleStatus) > rideStatusRank(base.status)) {
             applyTruthRide(
-              { ...current, status: lifecycleStatus },
-              null,
+              {
+                ...base,
+                status: lifecycleStatus,
+                status_code: rideStatusToCode(lifecycleStatus),
+              },
+              body.driver_public ?? null,
               "SSE-lifecycle",
               body.lifecycle?.event_type,
             );
@@ -734,16 +755,28 @@ function ViajePageInner() {
 
         let row = body.ride;
         if (!row?.id) return;
+        const ticket =
+          normalizeTicketKey(row.ticket_code) ||
+          activeTicketRef.current ||
+          readPinnedTicket() ||
+          undefined;
+        // Ticket-only when possible so we don't re-anchor on a stale SSE ride id.
         const { ride: truth, driver_public: truthDriver } = await fetchBuyerRideTruth(
-          row.ticket_code,
-          row.id,
+          ticket,
+          ticket ? undefined : row.id,
         );
-        if (seqAtEvent !== refreshSeqRef.current) return;
         if (truth?.id) {
-          applyTruthRide(truth, truthDriver, "SSE");
+          const uiRank = rideStatusRank(uiRideRef.current?.status ?? "");
+          const truthRank = rideStatusRank(truth.status);
+          // Always apply upgrades even if a concurrent poll bumped refreshSeq.
+          if (truthRank >= uiRank) {
+            applyTruthRide(truth, truthDriver, "SSE");
+          }
         } else {
           row = await resolveRowByTicketCanonical(row);
-          applyTruthRide(row, null, "SSE+canonical");
+          if (rideStatusRank(row.status) >= rideStatusRank(uiRideRef.current?.status ?? "")) {
+            applyTruthRide(row, body.driver_public ?? null, "SSE+canonical");
+          }
         }
       })();
     },
