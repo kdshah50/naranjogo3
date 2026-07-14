@@ -282,6 +282,42 @@ function ConductorViajesInner() {
   const [recoverTicketInput, setRecoverTicketInput] = useState(() =>
     normalizeTicketKey(String(searchParams.get("ticket") ?? "").trim()),
   );
+  const [rideHistory, setRideHistory] = useState<
+    {
+      id: string;
+      status: string;
+      ticket_code: string | null;
+      route_label: string;
+      estimated_total_mxn_cents: number;
+      final_total_mxn_cents?: number | null;
+      updated_at?: string | null;
+    }[]
+  >([]);
+
+  const loadRideHistory = useCallback(() => {
+    const qp = new URLSearchParams({ lang, _: String(Date.now()) });
+    const ticket =
+      normalizeTicketKey(recoverTicketInput) ||
+      urlTicketRef.current ||
+      readDriverActiveTicket() ||
+      "";
+    if (ticket) qp.set("ticket", ticket);
+    void fetch(`/api/rides/drivers/me/history?${qp}`, {
+      credentials: "include",
+      cache: "no-store",
+    })
+      .then(async (r) => (r.ok ? ((await r.json()) as { rides?: typeof rideHistory }) : { rides: [] }))
+      .then((d) => setRideHistory(Array.isArray(d.rides) ? d.rides : []))
+      .catch(() => setRideHistory([]));
+  }, [lang, recoverTicketInput]);
+
+  useEffect(() => {
+    loadRideHistory();
+    const id = window.setInterval(() => {
+      if (document.visibilityState === "visible") loadRideHistory();
+    }, 8_000);
+    return () => clearInterval(id);
+  }, [loadRideHistory]);
 
   /** After Conectar succeeds, ignore stale panel polls that still say offline. */
   const onlineLatchUntilRef = useRef(0);
@@ -752,10 +788,29 @@ function ConductorViajesInner() {
 
     if (ticket || rideIdHint) {
       const fast = await fetchDriverRecoverByTicket(ticket, rideIdHint);
-      if (fast.ok && fast.trips.length > 0) {
-        applyRecoveredTrip(fast.trips[0] as RideRow, ticket);
-        setBusy(null);
-        return;
+      if (fast.ok && (fast.ride?.id || fast.trips.length > 0)) {
+        const row = (fast.ride ?? fast.trips[0]) as RideRow;
+        if (row?.id && isTerminalDriverTrip(row.status)) {
+          rememberDriverTerminalRideId(row.id, row.ticket_code);
+          if (row.ticket_code) {
+            completedTicketLatchRef.current = {
+              ticket: normalizeTicketKey(row.ticket_code),
+              until: Date.now() + 300_000,
+            };
+          }
+          setCompletedNotice(row);
+          setTrips([]);
+          clearDriverActiveRideId();
+          loadRideHistory();
+          setBusy(null);
+          return;
+        }
+        if (row?.id && isDriverActiveTrip(row)) {
+          applyRecoveredTrip(row, ticket);
+          loadRideHistory();
+          setBusy(null);
+          return;
+        }
       }
       if (!fast.ok && fast.status === 401) {
         setPanelError(t.panelLoadFailed);
@@ -795,6 +850,7 @@ function ConductorViajesInner() {
     searchParams,
     t.panelLoadFailed,
     t.recoverFailed,
+    loadRideHistory,
   ]);
 
   useEffect(() => {
@@ -1172,6 +1228,7 @@ function ConductorViajesInner() {
         if (completedRow?.id) rememberDriverTerminalRideId(completedRow.id, completedRow.ticket_code);
         setCompletedNotice(completedRow);
         setActionSuccess(t.completeSuccess);
+        loadRideHistory();
         return;
       }
 
@@ -1347,6 +1404,9 @@ function ConductorViajesInner() {
             )}
             <p className="mt-1 text-xs opacity-80">
               {rideRouteSummaryFromRow(completedNotice, lang).route_label}
+            </p>
+            <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-emerald-800">
+              {rideStatusLabel(completedNotice.status, lang)}
             </p>
           </div>
         ) : trips.length === 0 ? (
@@ -1531,6 +1591,82 @@ function ConductorViajesInner() {
             })()}
           </ul>
         ) : null}
+
+        <section className="mb-6 rounded-2xl bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <h2 className="text-sm font-bold text-[#1B4332]">
+              {lang === "es" ? "Mis viajes recientes (taxi)" : "My recent rides (taxi)"}
+            </h2>
+            <button
+              type="button"
+              className="text-xs font-semibold underline text-[#1B4332]"
+              onClick={() => loadRideHistory()}
+            >
+              {lang === "es" ? "Actualizar" : "Refresh"}
+            </button>
+          </div>
+          <p className="text-[11px] text-[#6B7280] mb-3">
+            {lang === "es"
+              ? "Los viajes de taxi no aparecen en Reservas de clientes (eso es solo servicios)."
+              : "Taxi rides do not appear under Client bookings (that page is services only)."}
+          </p>
+          {rideHistory.length === 0 ? (
+            <p className="text-xs text-[#6B7280]">
+              {lang === "es" ? "Aún no hay viajes en este historial." : "No rides in this history yet."}
+            </p>
+          ) : (
+            <ul className="space-y-3">
+              {rideHistory.map((r) => {
+                const ticket = (r.ticket_code ?? "").trim().toUpperCase();
+                const highlight =
+                  ticket &&
+                  (ticket === normalizeTicketKey(recoverTicketInput) ||
+                    ticket === normalizeTicketKey(completedNotice?.ticket_code));
+                return (
+                  <li
+                    key={r.id}
+                    className={`rounded-xl border px-3 py-2 ${
+                      highlight ? "border-emerald-400 bg-emerald-50" : "border-[#1B4332]/10"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{r.route_label}</p>
+                        <p className="text-[10px] font-mono font-bold mt-1">{ticket || "—"}</p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-[10px] font-semibold uppercase">
+                          {rideStatusLabel(r.status, lang)}
+                        </p>
+                        <p className="text-xs font-bold text-[#1B4332]">
+                          {formatCurrencyMXN(
+                            r.final_total_mxn_cents && r.final_total_mxn_cents > 0
+                              ? r.final_total_mxn_cents
+                              : r.estimated_total_mxn_cents,
+                            lang,
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                    {ticket ? (
+                      <button
+                        type="button"
+                        className="mt-2 text-[11px] font-semibold underline text-[#1B4332]"
+                        onClick={() => {
+                          setRecoverTicketInput(ticket);
+                          urlTicketRef.current = ticket;
+                          void recoverAssignedRide();
+                        }}
+                      >
+                        {lang === "es" ? "Abrir ticket →" : "Open ticket →"}
+                      </button>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
 
         <section className="mb-6 rounded-2xl bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between gap-4">

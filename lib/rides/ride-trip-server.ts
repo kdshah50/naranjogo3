@@ -12,7 +12,7 @@ import {
   type RideBookingRow,
   type RideBookingStatus,
 } from "@/lib/rides/ride-bookings-server";
-import { resolveCanonicalRideByTicketForBuyer } from "@/lib/rides/resolve-ride-by-ticket";
+import { resolveCanonicalRideByTicketForBuyer, resolveCanonicalRideByTicketForDriver } from "@/lib/rides/resolve-ride-by-ticket";
 import { commitRidePhaseTransition } from "@/lib/rides/ride-transition-pipeline";
 import {
   canTransitionRideStatus,
@@ -1092,6 +1092,82 @@ export async function listBuyerRideHistory(
       hydrated.push(await enrichRideColoniaFromEvents(supabase, next));
     } catch (e) {
       console.error("[ride-trip] listBuyerRideHistory row", row.id, e);
+      hydrated.push(normalizeRideRowAddressesFromDb(row));
+    }
+  }
+
+  return dedupeBuyerRidesByTicket(hydrated).slice(0, limit);
+}
+
+function tripMatchesDriverPoolForHistory(ride: RideBookingRow, pool: string[]): boolean {
+  if (!ride.driver_id) return false;
+  return pool.some((id) => isSameUserId(id, ride.driver_id));
+}
+
+/** Recent completed/active taxi rows for /conductor/viajes history. */
+export async function listDriverRideHistory(
+  supabase: SupabaseClient,
+  driverUserId: string,
+  options?: RideAccountOptions & { limit?: number; ticketHint?: string | null },
+): Promise<RideBookingRow[]> {
+  const accountOpts = { authPhone: options?.authPhone ?? null };
+  const pool = await expandUserAccountIdPool(supabase, driverUserId, accountOpts);
+  if (pool.length === 0) return [];
+
+  const driverPool = [...new Set(pool.flatMap((id) => idMatchVariantsForIn(id)))];
+  const limit = Math.min(Math.max(options?.limit ?? 12, 1), 30);
+  const ticketHint = normalizeNgTicketQuery(options?.ticketHint ?? "");
+
+  const byId = new Map<string, RideBookingRow>();
+
+  if (ticketHint) {
+    const pinned = await resolveCanonicalRideByTicketForDriver(
+      supabase,
+      driverUserId,
+      ticketHint,
+      accountOpts,
+    );
+    if (pinned?.id) byId.set(pinned.id, pinned);
+  }
+
+  const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from("ride_bookings")
+    .select("*")
+    .in("driver_id", driverPool)
+    .in("status", [...BUYER_HISTORY_STATUSES])
+    .gte("created_at", since)
+    .order("updated_at", { ascending: false })
+    .limit(40);
+
+  if (error) {
+    console.error("[ride-trip] listDriverRideHistory", error);
+  } else {
+    for (const row of (data ?? []) as RideBookingRow[]) {
+      const normalized = normalizeRideRowAddressesFromDb(row);
+      if (tripMatchesDriverPoolForHistory(normalized, pool)) byId.set(normalized.id, normalized);
+    }
+  }
+
+  const hydrated: RideBookingRow[] = [];
+  for (const row of byId.values()) {
+    try {
+      let next = normalizeRideRowAddressesFromDb(row);
+      const open =
+        next.status === "requested" ||
+        next.status === "matched" ||
+        next.status === "accepted" ||
+        next.status === "arrived" ||
+        next.status === "in_trip";
+      if (open) {
+        const fromLog = await getRideLifecycleStatusFromEvents(supabase, next.id);
+        if (fromLog && rideStatusRank(fromLog) > rideStatusRank(next.status)) {
+          next = { ...next, status: fromLog };
+        }
+      }
+      hydrated.push(await enrichRideColoniaFromEvents(supabase, next));
+    } catch (e) {
+      console.error("[ride-trip] listDriverRideHistory row", row.id, e);
       hydrated.push(normalizeRideRowAddressesFromDb(row));
     }
   }
