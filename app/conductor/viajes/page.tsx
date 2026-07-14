@@ -167,11 +167,29 @@ type RideRow = {
   dropoff_address: string;
   pickup_colonia?: string | null;
   dropoff_colonia?: string | null;
+  pickup_lat?: number | null;
+  pickup_lng?: number | null;
+  dropoff_lat?: number | null;
+  dropoff_lng?: number | null;
   ticket_code: string | null;
   estimated_total_mxn_cents: number;
   created_at?: string;
   updated_at?: string;
 };
+
+function mapsDestinationUrl(lat: number | null | undefined, lng: number | null | undefined, address: string) {
+  if (typeof lat === "number" && typeof lng === "number" && Number.isFinite(lat) && Number.isFinite(lng)) {
+    return {
+      google: `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`,
+      waze: `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`,
+    };
+  }
+  const q = encodeURIComponent(address.trim() || "San Miguel de Allende");
+  return {
+    google: `https://www.google.com/maps/dir/?api=1&destination=${q}`,
+    waze: `https://waze.com/ul?q=${q}&navigate=yes`,
+  };
+}
 
 type DriverOnline = {
   user_id?: string;
@@ -1388,6 +1406,71 @@ function ConductorViajesInner() {
                   <p className="text-xs text-[#1B4332]/50">
                     {driverTripActionHint(trip.status, lang)}
                   </p>
+
+                  {["matched", "accepted", "arrived"].includes(trip.status) && (
+                    <div className="rounded-xl border border-[#1B4332]/15 bg-[#F8F4ED] px-3 py-2 space-y-1.5">
+                      <p className="text-xs font-semibold text-[#1B4332]">{t.navigatePickup}</p>
+                      {(() => {
+                        const urls = mapsDestinationUrl(
+                          trip.pickup_lat,
+                          trip.pickup_lng,
+                          trip.pickup_address,
+                        );
+                        return (
+                          <div className="flex flex-wrap gap-2">
+                            <a
+                              href={urls.google}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="rounded-full bg-[#1B4332] px-3 py-1.5 text-xs font-medium text-white"
+                            >
+                              {t.openInGoogleMaps}
+                            </a>
+                            <a
+                              href={urls.waze}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="rounded-full border border-[#1B4332]/30 px-3 py-1.5 text-xs font-medium text-[#1B4332]"
+                            >
+                              {t.openInWaze}
+                            </a>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+                  {trip.status === "in_trip" && (
+                    <div className="rounded-xl border border-[#1B4332]/15 bg-[#F8F4ED] px-3 py-2 space-y-1.5">
+                      <p className="text-xs font-semibold text-[#1B4332]">{t.navigateDropoff}</p>
+                      {(() => {
+                        const urls = mapsDestinationUrl(
+                          trip.dropoff_lat,
+                          trip.dropoff_lng,
+                          trip.dropoff_address,
+                        );
+                        return (
+                          <div className="flex flex-wrap gap-2">
+                            <a
+                              href={urls.google}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="rounded-full bg-[#1B4332] px-3 py-1.5 text-xs font-medium text-white"
+                            >
+                              {t.openInGoogleMaps}
+                            </a>
+                            <a
+                              href={urls.waze}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="rounded-full border border-[#1B4332]/30 px-3 py-1.5 text-xs font-medium text-[#1B4332]"
+                            >
+                              {t.openInWaze}
+                            </a>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
 
                   {trip.status === "matched" && (
                     <button
