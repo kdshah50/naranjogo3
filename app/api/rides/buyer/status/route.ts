@@ -40,21 +40,27 @@ export async function GET(req: NextRequest) {
     });
 
     if (!state?.ride?.id) {
-      return NextResponse.json({
-        ride: null,
-        driver_public: null,
-        status_source: "ride_events",
-        reason: "not_found",
-      });
+      return NextResponse.json(
+        {
+          ride: null,
+          driver_public: null,
+          status_source: "ride_events",
+          reason: "not_found",
+        },
+        { headers: { "Cache-Control": "no-store, max-age=0" } },
+      );
     }
 
     if (!BUYER_VISIBLE.has(state.ride.status)) {
-      return NextResponse.json({
-        ride: null,
-        driver_public: null,
-        status_source: "ride_events",
-        reason: `status_${state.ride.status}`,
-      });
+      return NextResponse.json(
+        {
+          ride: null,
+          driver_public: null,
+          status_source: "ride_events",
+          reason: `status_${state.ride.status}`,
+        },
+        { headers: { "Cache-Control": "no-store, max-age=0" } },
+      );
     }
 
     return NextResponse.json(state, {

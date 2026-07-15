@@ -231,10 +231,17 @@ function MyBookingsPageInner() {
     }
     const qp = new URLSearchParams();
     qp.set("lang", lang);
+    qp.set("_", String(Date.now()));
     const urlTicket = normalizeNgTicketQuery(ticketHint);
     if (urlTicket) qp.set("ticket", urlTicket);
     void fetch(`/api/rides/buyer/history?${qp}`, { credentials: "same-origin", cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : { rides: [] }))
+      .then(async (r) => {
+        if (!r.ok) {
+          console.warn("[my-bookings] ride history", r.status);
+          return { rides: [] as BuyerRideHistoryRow[] };
+        }
+        return (await r.json()) as { rides?: BuyerRideHistoryRow[] };
+      })
       .then((d) => {
         setRideHistory(Array.isArray(d.rides) ? d.rides : []);
       })

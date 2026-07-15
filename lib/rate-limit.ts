@@ -167,3 +167,51 @@ export async function rateLimitListingCreateByUser(userId: string): Promise<List
 
   return { ok: true };
 }
+
+const DRIVER_LOCATION_LIMIT = 15;
+const DRIVER_LOCATION_WINDOW_MS = 60 * 1000;
+
+let driverLocationDistributed: Ratelimit | null | undefined;
+
+function getDriverLocationLimiter(): Ratelimit | null {
+  if (driverLocationDistributed !== undefined) return driverLocationDistributed;
+  const url = process.env.UPSTASH_REDIS_REST_URL?.trim();
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
+  if (!url || !token) {
+    driverLocationDistributed = null;
+    return null;
+  }
+  try {
+    const redis = new Redis({ url, token });
+    driverLocationDistributed = new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(DRIVER_LOCATION_LIMIT, "1 m"),
+      prefix: "ratelimit/ng/driver-location",
+    });
+    return driverLocationDistributed;
+  } catch {
+    driverLocationDistributed = null;
+    return null;
+  }
+}
+
+/** ~10s GPS ping with headroom — per driver session + IP. */
+export async function rateLimitDriverLocation(
+  key: string,
+): Promise<{ ok: boolean; retryAfterMs?: number }> {
+  const rl = getDriverLocationLimiter();
+  if (rl) {
+    const { success, reset } = await rl.limit(key);
+    if (!success) {
+      const retryAfterMs =
+        typeof reset === "number" ? Math.max(0, reset - Date.now()) : DRIVER_LOCATION_WINDOW_MS;
+      return { ok: false, retryAfterMs };
+    }
+    return { ok: true };
+  }
+  return rateLimitMemory(
+    `driver-location:${key}`,
+    DRIVER_LOCATION_LIMIT,
+    DRIVER_LOCATION_WINDOW_MS,
+  );
+}

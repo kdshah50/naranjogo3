@@ -22,7 +22,7 @@ function panelPayload(panel: Awaited<ReturnType<typeof loadDriverPanel>>) {
     driver: panel.driver,
     trips: panel.trips
       .filter((t) => DRIVER_ACTIVE.has(t.status))
-      .map(toClientRideRow),
+      .map((t) => toClientRideRow(t)),
     canonical_user_id: panel.canonical_user_id,
     session_user_id: panel.session_user_id,
     auth_phone_set: panel.auth_phone_set,

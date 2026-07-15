@@ -15,6 +15,7 @@ import {
 } from "@/lib/rides/resolve-ride-by-ticket";
 import { withStatusCode } from "@/lib/rides/ride-transition-pipeline";
 import type { RideDriverPublic } from "@/lib/rides/ride-sync-server";
+import { toClientRideRow } from "@/lib/rides/ride-stream-server";
 import { rideStatusRank } from "@/lib/rides/ride-status-merge";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 
@@ -142,7 +143,7 @@ async function loadDriverPublic(
 }
 
 export type BuyerRideTruthState = {
-  ride: RideBookingRow & { status_code: number };
+  ride: ReturnType<typeof toClientRideRow> & { status_code: number };
   driver_public: RideDriverPublic | null;
   status_source: "ride_events";
 };
@@ -175,8 +176,10 @@ export async function getBuyerRideTruthState(
 
   if (!fresh?.id) return null;
 
-  const ride = withStatusCode(fresh) as RideBookingRow & {
-    status_code: number;
+  const coded = withStatusCode(fresh);
+  const ride = {
+    ...toClientRideRow(fresh),
+    status_code: coded.status_code,
   };
 
   let driverPublic: RideDriverPublic | null = null;

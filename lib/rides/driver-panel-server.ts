@@ -8,6 +8,7 @@ import {
 } from "@/lib/rides/driver-account";
 import { resolveDriverProfileForSession } from "@/lib/rides/resolve-driver-session";
 import { getRideById, getRideByIdFresh, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
+import { normalizeRideRowAddressesFromDb } from "@/lib/rides/ride-address-pii";
 import { userIdsForAuthPhone } from "@/lib/resolve-login-user";
 import {
   dropActiveRowsWithCompletedTicket,
@@ -365,7 +366,7 @@ export async function loadDriverPanel(
 
   return {
     driver,
-    trips,
+    trips: trips.map((row) => normalizeRideRowAddressesFromDb(row)),
     canonical_user_id: driver?.user_id ?? null,
     session_user_id: args.sessionUserId,
     auth_phone_set: Boolean(args.authPhone),

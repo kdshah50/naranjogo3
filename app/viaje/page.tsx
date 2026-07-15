@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { withLang } from "@/components/BuyerRetentionPanel";
 import { RidesStagingBanner } from "@/components/RidesStagingBanner";
@@ -27,6 +28,13 @@ import {
 import { mergeRideStatusRow, rideStatusRank } from "@/lib/rides/ride-status-merge";
 import { rideStatusToCode } from "@/lib/rides/ride-status-codes";
 import { rideStatusLabel, viajeCopy } from "@/lib/rides/ui-copy";
+
+const RideTrackingMap = dynamic(() => import("@/components/rides/RideTrackingMap"), {
+  ssr: false,
+  loading: () => (
+    <div className="mt-4 h-52 animate-pulse rounded-xl bg-[#E8E4DC]" aria-hidden />
+  ),
+});
 
 type FareEstimate = {
   distance_m: number;
@@ -55,6 +63,10 @@ type RideRow = {
   final_total_mxn_cents?: number | null;
   ticket_code: string | null;
   driver_id: string | null;
+  pickup_lat?: number;
+  pickup_lng?: number;
+  dropoff_lat?: number;
+  dropoff_lng?: number;
   passengers?: number | null;
   created_at?: string | null;
   updated_at?: string | null;
@@ -185,11 +197,10 @@ function clearTerminalRideId() {
 function stripRideIdFromBrowserUrl() {
   if (typeof window === "undefined") return;
   const url = new URL(window.location.href);
-  const hadRide = url.searchParams.has("ride");
-  const hadTicket = url.searchParams.has("ticket");
-  if (!hadRide && !hadTicket) return;
-  if (hadRide) url.searchParams.delete("ride");
-  if (hadTicket) url.searchParams.delete("ticket");
+  // Keep ?ticket= so WhatsApp / laptop refreshes always re-resolve canonical status.
+  // Only strip opaque ?ride= ids (they often pin a stale duplicate row).
+  if (!url.searchParams.has("ride")) return;
+  url.searchParams.delete("ride");
   window.history.replaceState(null, "", url.toString());
 }
 
@@ -531,12 +542,27 @@ function ViajePageInner() {
             normalizeTicketKey(prev.ticket_code) === normalizeTicketKey(incoming.ticket_code);
           if (sameTicket) return prev;
         }
+        const prevRank = rideStatusRank(prev?.status ?? "");
+        const incomingRank = rideStatusRank(incoming.status);
         const prevCode = prev?.status_code ?? rideStatusToCode(prev?.status);
         const incomingCode = incoming.status_code ?? rideStatusToCode(incoming.status);
-        if (prev && incomingCode < prevCode) {
+        // Never downgrade lifecycle from a stale poll/SSE row (common with WhatsApp-pinned ids).
+        // Rank wins; do not let a stale status_code alone block an upgrade (Matched stuck bug).
+        if (prev && incomingRank < prevRank) {
           return prev;
         }
-        const next = prev ? { ...prev, ...incoming, status: incoming.status } : incoming;
+        const next = prev
+          ? {
+              ...prev,
+              ...incoming,
+              status: incoming.status,
+              status_code: Math.max(prevCode, incomingCode),
+              id: incomingRank >= prevRank ? incoming.id : prev.id,
+            }
+          : {
+              ...incoming,
+              status_code: incoming.status_code ?? rideStatusToCode(incoming.status),
+            };
         statusFloorByRideRef.current.set(next.id, rideStatusRank(next.status));
         uiRideRef.current = next;
         return next;
@@ -559,24 +585,37 @@ function ViajePageInner() {
     const isStale = () => seq !== refreshSeqRef.current;
 
     const pinnedId = rideIdRef.current ?? readPinnedRideId();
+    const uiId = uiRideRef.current?.id ?? undefined;
     const ticketHint =
       urlTicketRef.current ||
       activeTicketRef.current ||
       readPinnedTicket() ||
       normalizeTicketKey(uiRideRef.current?.ticket_code) ||
       undefined;
-    const rideRef = pinnedId ?? uiRideRef.current?.id ?? undefined;
+    // Always include known ride id with ticket. Server pickBestBuyerRideRow chooses
+    // the highest lifecycle across siblings — ticket-only used to drop the id and
+    // could leave the rider UI frozen on Matched when ticket resolve flakes.
+    const knownRideId = pinnedId || uiId || undefined;
 
     let truthApplied = false;
-    if (ticketHint || rideRef) {
+    if (ticketHint || knownRideId) {
       let { ride: truthRow, driver_public: truthDriver, httpStatus } =
-        await fetchBuyerRideTruth(ticketHint, rideRef);
-      if (!truthRow?.id && rideRef) {
-        const byId = await fetchBuyerRideTruth(undefined, rideRef);
+        await fetchBuyerRideTruth(ticketHint, knownRideId);
+      if (!truthRow?.id && knownRideId) {
+        const byId = await fetchBuyerRideTruth(ticketHint || undefined, knownRideId);
         if (byId.ride?.id) {
           truthRow = byId.ride;
           truthDriver = byId.driver_public;
           httpStatus = byId.httpStatus;
+        }
+      }
+      if (!truthRow?.id && ticketHint && knownRideId) {
+        // Last resort: id-only (same ride the UI already shows as Matched).
+        const idOnly = await fetchBuyerRideTruth(undefined, knownRideId);
+        if (idOnly.ride?.id) {
+          truthRow = idOnly.ride;
+          truthDriver = idOnly.driver_public;
+          httpStatus = idOnly.httpStatus;
         }
       }
       if (httpStatus === 401 && !isStale()) {
@@ -587,6 +626,10 @@ function ViajePageInner() {
         setRequestError(t.ridesDisabled);
       }
       if (truthRow?.id && !isStale()) {
+        // Manual / focus refresh must overwrite a stuck Matched card.
+        if (source === "manual" || source === "focus" || source === "visibility") {
+          statusFloorByRideRef.current.delete(truthRow.id);
+        }
         truthApplied = applyTruthRide(truthRow, truthDriver, `${source}+events`);
         if (isTerminalRideStatus(truthRow.status)) return;
       }
@@ -597,7 +640,7 @@ function ViajePageInner() {
     }
 
     // Ticket / ride pin from WhatsApp — never fall back to /sync (replica lag).
-    if (ticketHint || rideRef) {
+    if (ticketHint || knownRideId) {
       return;
     }
 
@@ -662,7 +705,7 @@ function ViajePageInner() {
       pinActiveTicket(ticket);
       const { ride: fastRow, driver_public: fastDriver } = await fetchBuyerRideTruth(
         ticket,
-        ride?.id,
+        undefined,
       );
       if (fastRow?.id) {
         applyTruthRide(fastRow, fastDriver, "recover");
@@ -696,19 +739,27 @@ function ViajePageInner() {
     streamUrl: liveRideId ? `/api/rides/${liveRideId}/stream` : null,
     enabled: liveStreamEnabled,
     onEvent: (payload) => {
-      const seqAtEvent = refreshSeqRef.current;
       void (async () => {
         const body = payload as {
           lifecycle?: { to_status?: string; event_type?: string };
           ride?: RideRow;
+          driver_public?: RideDriverPublic | null;
+          location_update?: boolean;
         };
+        if (body.location_update && body.driver_public) {
+          setDriverPublic(body.driver_public);
+        }
         const lifecycleStatus = body.lifecycle?.to_status?.trim();
-        if (lifecycleStatus && uiRideRef.current?.id) {
-          const current = uiRideRef.current;
-          if (rideStatusRank(lifecycleStatus) > rideStatusRank(current.status)) {
+        const base = uiRideRef.current ?? body.ride ?? null;
+        if (lifecycleStatus && base?.id) {
+          if (rideStatusRank(lifecycleStatus) > rideStatusRank(base.status)) {
             applyTruthRide(
-              { ...current, status: lifecycleStatus },
-              null,
+              {
+                ...base,
+                status: lifecycleStatus,
+                status_code: rideStatusToCode(lifecycleStatus),
+              },
+              body.driver_public ?? null,
               "SSE-lifecycle",
               body.lifecycle?.event_type,
             );
@@ -717,16 +768,28 @@ function ViajePageInner() {
 
         let row = body.ride;
         if (!row?.id) return;
+        const ticket =
+          normalizeTicketKey(row.ticket_code) ||
+          activeTicketRef.current ||
+          readPinnedTicket() ||
+          undefined;
+        // Ticket-only when possible so we don't re-anchor on a stale SSE ride id.
         const { ride: truth, driver_public: truthDriver } = await fetchBuyerRideTruth(
-          row.ticket_code,
-          row.id,
+          ticket,
+          ticket ? undefined : row.id,
         );
-        if (seqAtEvent !== refreshSeqRef.current) return;
         if (truth?.id) {
-          applyTruthRide(truth, truthDriver, "SSE");
+          const uiRank = rideStatusRank(uiRideRef.current?.status ?? "");
+          const truthRank = rideStatusRank(truth.status);
+          // Always apply upgrades even if a concurrent poll bumped refreshSeq.
+          if (truthRank >= uiRank) {
+            applyTruthRide(truth, truthDriver, "SSE");
+          }
         } else {
           row = await resolveRowByTicketCanonical(row);
-          applyTruthRide(row, null, "SSE+canonical");
+          if (rideStatusRank(row.status) >= rideStatusRank(uiRideRef.current?.status ?? "")) {
+            applyTruthRide(row, body.driver_public ?? null, "SSE+canonical");
+          }
         }
       })();
     },
@@ -745,6 +808,9 @@ function ViajePageInner() {
       activeTicketRef.current = ticket;
       pinActiveTicket(ticket);
       setRecoverTicketInput(ticket);
+      // Ticket is authoritative — drop any stale ride-id pin from an older WhatsApp message.
+      clearPinnedRideId();
+      rideIdRef.current = null;
     }
     if (rideParam || ticketParam) {
       clearTerminalRideId();
@@ -752,11 +818,10 @@ function ViajePageInner() {
       userClearedUntilRef.current = 0;
       writeUserClearedUntil(0);
       completedTicketLatchRef.current = null;
-      // WhatsApp links open in a fresh context — replica lag can make the first
-      // sync return a stale status. Schedule a re-sync to catch up.
       hadUrlRideParamsRef.current = true;
     }
-    if (rideParam) {
+    // Only pin ride id when there is no ticket (legacy links).
+    if (rideParam && !ticketParam) {
       pinRideId(rideParam);
       rideIdRef.current = rideParam;
     }
@@ -766,11 +831,20 @@ function ViajePageInner() {
       urlTicketRef.current = storedTicket;
       activeTicketRef.current = storedTicket;
     }
-    if (!rideParam && storedRideId) {
+    if (!rideParam && !ticketParam && storedRideId) {
       rideIdRef.current = storedRideId;
     }
     stripRideIdFromBrowserUrl();
   }, []);
+
+  // WhatsApp / laptop: keep polling hard for ~45s after deep-link open so stages catch up.
+  useEffect(() => {
+    if (!hadUrlRideParamsRef.current) return;
+    const timers = [0, 300, 800, 1500, 2500, 4000, 7000, 12000, 20000, 30000, 45000].map((ms) =>
+      window.setTimeout(() => void refreshActiveRide(ms === 0 ? "mount" : "mount-retry"), ms),
+    );
+    return () => timers.forEach((id) => window.clearTimeout(id));
+  }, [refreshActiveRide]);
 
   useEffect(() => {
     const sessionTicket = readPinnedTicket();
@@ -1513,6 +1587,22 @@ function ViajePageInner() {
                 )}
               </div>
             )}
+            {ride.driver_id &&
+              ride.pickup_lat != null &&
+              ride.pickup_lng != null &&
+              ride.dropoff_lat != null &&
+              ride.dropoff_lng != null && (
+                <RideTrackingMap
+                  rideId={ride.id}
+                  rideStatus={ride.status}
+                  pickupLat={ride.pickup_lat}
+                  pickupLng={ride.pickup_lng}
+                  dropoffLat={ride.dropoff_lat}
+                  dropoffLng={ride.dropoff_lng}
+                  driver={driverPublic}
+                  lang={lang}
+                />
+              )}
             {!ride.driver_id && ride.status === "requested" && (
               <p className="mt-2 text-sm text-amber-800">{t.findingDriver}</p>
             )}

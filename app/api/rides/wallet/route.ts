@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     }
 
     const supabase = createAdminSupabase();
-    const wallet = await getWalletForUser(supabase, userId, { ledgerLimit: 20 });
+    const wallet = await getWalletForUser(supabase, userId, { ledgerLimit: 50 });
 
     const oxxoEnabled =
       String(process.env.WALLET_TOPUP_OXXO_ENABLED ?? "").trim().toLowerCase() === "true";

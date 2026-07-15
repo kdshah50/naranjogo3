@@ -241,34 +241,64 @@ export async function createRideRequest(
   }
 
   const now = new Date().toISOString();
-  const { data: inserted, error: insErr } = await supabase
+  const baseInsert = {
+    buyer_id: buyerId,
+    status: "requested" as const,
+    pickup_lat: args.pickup.lat,
+    pickup_lng: args.pickup.lng,
+    pickup_address: encryptRideAddressForStorage(args.pickup.address),
+    dropoff_lat: args.dropoff.lat,
+    dropoff_lng: args.dropoff.lng,
+    dropoff_address: encryptRideAddressForStorage(args.dropoff.address),
+    passengers,
+    luggage: luggageMeta,
+    language: args.language ?? "es",
+    estimated_total_mxn_cents: estimate.estimated_total_mxn_cents,
+    hold_amount_mxn_cents: estimate.hold_amount_mxn_cents,
+    distance_m: estimate.distance_m,
+    duration_s: estimate.duration_s,
+    updated_at: now,
+  };
+
+  // Prefer colonia keys when migration is applied; fall back if columns missing on older DBs.
+  let { data: inserted, error: insErr } = await supabase
     .from("ride_bookings")
     .insert({
-      buyer_id: buyerId,
-      status: "requested",
-      pickup_lat: args.pickup.lat,
-      pickup_lng: args.pickup.lng,
-      pickup_address: encryptRideAddressForStorage(args.pickup.address),
+      ...baseInsert,
       pickup_colonia: args.pickupColoniaKey ?? null,
-      dropoff_lat: args.dropoff.lat,
-      dropoff_lng: args.dropoff.lng,
-      dropoff_address: encryptRideAddressForStorage(args.dropoff.address),
       dropoff_colonia: args.dropoffColoniaKey ?? null,
-      passengers,
-      luggage: luggageMeta,
-      language: args.language ?? "es",
-      estimated_total_mxn_cents: estimate.estimated_total_mxn_cents,
-      hold_amount_mxn_cents: estimate.hold_amount_mxn_cents,
-      distance_m: estimate.distance_m,
-      duration_s: estimate.duration_s,
-      updated_at: now,
     })
     .select("*")
     .single();
 
+  const missingColoniaCols =
+    Boolean(insErr) &&
+    /pickup_colonia|dropoff_colonia|PGRST204|42703/i.test(
+      `${insErr?.code ?? ""} ${insErr?.message ?? ""} ${insErr?.details ?? ""}`,
+    );
+
+  if (missingColoniaCols) {
+    console.warn(
+      "[ride-bookings] pickup_colonia/dropoff_colonia missing — retrying insert without them. Apply migration 20260703120000_ride_bookings_colonia_pii.sql",
+    );
+    ({ data: inserted, error: insErr } = await supabase
+      .from("ride_bookings")
+      .insert(baseInsert)
+      .select("*")
+      .single());
+  }
+
   if (insErr || !inserted) {
     console.error("[ride-bookings] insert", insErr);
-    return { ok: false, error: "No se pudo crear el viaje" };
+    const detail = [insErr?.code, insErr?.message, insErr?.details, insErr?.hint]
+      .filter(Boolean)
+      .join(" — ");
+    return {
+      ok: false,
+      error: detail
+        ? `No se pudo crear el viaje (${detail})`
+        : "No se pudo crear el viaje",
+    };
   }
 
   const ride = normalizeRideRowAddressesFromDb(inserted as RideBookingRow);

@@ -12,11 +12,13 @@ import {
   encodeSseKeepalive,
   lifecyclePayloadFromEvent,
   sseResponse,
+  subscribeDriverProfileLocation,
   subscribeRideBookingChanges,
   subscribeRideEventInserts,
   toClientRideRow,
   type RideStreamSsePayload,
 } from "@/lib/rides/ride-stream-server";
+import { loadDriverPublic } from "@/lib/rides/driver-public";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 
 export const dynamic = "force-dynamic";
@@ -60,6 +62,7 @@ export async function GET(
     start(controller) {
       let bookingChannel: ReturnType<typeof subscribeRideBookingChanges> | null = null;
       let eventChannel: ReturnType<typeof subscribeRideEventInserts> | null = null;
+      let driverLocChannel: ReturnType<typeof subscribeDriverProfileLocation> | null = null;
 
       const pushPayload = async (payload: RideStreamSsePayload) => {
         try {
@@ -69,11 +72,22 @@ export async function GET(
         }
       };
 
-      const pushFromRow = async (row: typeof ride, lifecycle?: RideStreamSsePayload["lifecycle"]) => {
+      const pushFromRow = async (
+        row: typeof ride,
+        lifecycle?: RideStreamSsePayload["lifecycle"],
+        driverPublic?: RideStreamSsePayload["driver_public"],
+        locationUpdate?: boolean,
+      ) => {
         const truth = await applyEventTruthToRide(guard.supabase, row);
+        let driver = driverPublic;
+        if (driver === undefined && truth.driver_id) {
+          driver = await loadDriverPublic(guard.supabase, truth.driver_id);
+        }
         await pushPayload({
           lifecycle,
           ride: toClientRideRow(truth),
+          driver_public: driver ?? null,
+          location_update: locationUpdate,
         });
       };
 
@@ -98,10 +112,29 @@ export async function GET(
             await pushPayload({
               lifecycle: lifecyclePayloadFromEvent(evt.event_type, truth.status),
               ride: toClientRideRow(truth),
+              driver_public: truth.driver_id
+                ? await loadDriverPublic(guard.supabase, truth.driver_id)
+                : null,
             });
           })();
         },
       });
+
+      if (ride.driver_id) {
+        driverLocChannel = subscribeDriverProfileLocation(guard.supabase, {
+          driverUserId: ride.driver_id,
+          onChange: () => {
+            void (async () => {
+              const base = (await getRideById(guard.supabase, trimmed)) ?? ride;
+              const truth = await applyEventTruthToRide(guard.supabase, base);
+              const driverPublic = truth.driver_id
+                ? await loadDriverPublic(guard.supabase, truth.driver_id)
+                : null;
+              await pushFromRow(truth, undefined, driverPublic, true);
+            })();
+          },
+        });
+      }
 
       const keepalive = setInterval(() => {
         try {
@@ -115,6 +148,7 @@ export async function GET(
         clearInterval(keepalive);
         if (bookingChannel) void guard.supabase.removeChannel(bookingChannel);
         if (eventChannel) void guard.supabase.removeChannel(eventChannel);
+        if (driverLocChannel) void guard.supabase.removeChannel(driverLocChannel);
         try {
           controller.close();
         } catch {

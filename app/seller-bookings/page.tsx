@@ -550,7 +550,26 @@ function SellerBookingsInner() {
             )}
           </div>
         </div>
-        <p className="text-sm text-[#6B7280] mb-6">{t.lead}</p>
+        <p className="text-sm text-[#6B7280] mb-2">{t.lead}</p>
+        <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-6 leading-relaxed">
+          {lang === "es" ? (
+            <>
+              Los viajes de taxi no están en esta página. Usa{" "}
+              <Link href="/conductor/viajes" className="font-semibold underline">
+                Viajes asignados (conductor)
+              </Link>
+              .
+            </>
+          ) : (
+            <>
+              Taxi rides are not listed here. Use{" "}
+              <Link href="/conductor/viajes" className="font-semibold underline">
+                Assigned trips (driver)
+              </Link>
+              .
+            </>
+          )}
+        </p>
 
         {normalizedTicket && (
           <div className="mb-4 rounded-xl border border-[#1B4332]/20 bg-white px-3 py-2.5">

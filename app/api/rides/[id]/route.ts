@@ -3,6 +3,8 @@ import { createAdminSupabase, isSameUserId } from "@/lib/auth-server";
 import { isRidesEnabled } from "@/lib/rides/flags";
 import { verifyInternalSecret } from "@/lib/rides/internal-auth";
 import { getRideById, getRideByIdFresh } from "@/lib/rides/ride-bookings-server";
+import { normalizeRideRowAddressesFromDb } from "@/lib/rides/ride-address-pii";
+import { toClientRideRow } from "@/lib/rides/ride-stream-server";
 import { ridesRouteGuard } from "@/lib/rides/ride-route-guard";
 import { expandUserAccountIdPool } from "@/lib/user-account-pool";
 
@@ -40,7 +42,7 @@ export async function GET(
       if (!ride) {
         return NextResponse.json({ error: "Viaje no encontrado" }, { status: 404 });
       }
-      return NextResponse.json({ ride });
+      return NextResponse.json({ ride: toClientRideRow(normalizeRideRowAddressesFromDb(ride)) });
     }
 
     const guard = await ridesRouteGuard(req);
@@ -62,7 +64,10 @@ export async function GET(
       return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
 
-    return NextResponse.json({ ride });
+    return NextResponse.json(
+      { ride: toClientRideRow(normalizeRideRowAddressesFromDb(ride)) },
+      { headers: { "Cache-Control": "no-store, max-age=0" } },
+    );
   } catch (e) {
     console.error("[rides/[id]] GET", e);
     return NextResponse.json({ error: "Error interno" }, { status: 500 });
