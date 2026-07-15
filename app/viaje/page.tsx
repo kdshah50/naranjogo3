@@ -524,6 +524,15 @@ function ViajePageInner() {
       note?: string,
     ): boolean => {
       if (!incoming?.id) return false;
+
+      // Completed/cancelled must go through applyServerRide so the Completed banner
+      // + latch stick — applyTruthRide used to clear terminal state and leave Matched.
+      if (isTerminalRideStatus(incoming.status)) {
+        if (driverPub) setDriverPublic(driverPub);
+        applyServerRide(incoming, source, note ?? `${incoming.status} · events`);
+        return true;
+      }
+
       if (isTicketLatched(incoming.ticket_code, completedTicketLatchRef.current)) {
         return false;
       }
@@ -546,8 +555,7 @@ function ViajePageInner() {
         const incomingRank = rideStatusRank(incoming.status);
         const prevCode = prev?.status_code ?? rideStatusToCode(prev?.status);
         const incomingCode = incoming.status_code ?? rideStatusToCode(incoming.status);
-        // Never downgrade lifecycle from a stale poll/SSE row (common with WhatsApp-pinned ids).
-        // Rank wins; do not let a stale status_code alone block an upgrade (Matched stuck bug).
+        // Never downgrade lifecycle from a stale poll/SSE row.
         if (prev && incomingRank < prevRank) {
           return prev;
         }
@@ -577,7 +585,7 @@ function ViajePageInner() {
       );
       return true;
     },
-    [],
+    [applyServerRide],
   );
 
   const refreshActiveRide = useCallback(async (source = "poll") => {
@@ -705,9 +713,10 @@ function ViajePageInner() {
       pinActiveTicket(ticket);
       const { ride: fastRow, driver_public: fastDriver } = await fetchBuyerRideTruth(
         ticket,
-        undefined,
+        ride?.id ?? readPinnedRideId() ?? undefined,
       );
       if (fastRow?.id) {
+        statusFloorByRideRef.current.delete(fastRow.id);
         applyTruthRide(fastRow, fastDriver, "recover");
         setRecoverBusy(false);
         return;
@@ -773,21 +782,23 @@ function ViajePageInner() {
           activeTicketRef.current ||
           readPinnedTicket() ||
           undefined;
-        // Ticket-only when possible so we don't re-anchor on a stale SSE ride id.
+        // Always pass ride id + ticket so completed event-truth wins over stale SSE matched.
         const { ride: truth, driver_public: truthDriver } = await fetchBuyerRideTruth(
           ticket,
-          ticket ? undefined : row.id,
+          row.id,
         );
         if (truth?.id) {
           const uiRank = rideStatusRank(uiRideRef.current?.status ?? "");
           const truthRank = rideStatusRank(truth.status);
-          // Always apply upgrades even if a concurrent poll bumped refreshSeq.
-          if (truthRank >= uiRank) {
+          if (truthRank >= uiRank || isTerminalRideStatus(truth.status)) {
             applyTruthRide(truth, truthDriver, "SSE");
           }
         } else {
           row = await resolveRowByTicketCanonical(row);
-          if (rideStatusRank(row.status) >= rideStatusRank(uiRideRef.current?.status ?? "")) {
+          if (
+            isTerminalRideStatus(row.status) ||
+            rideStatusRank(row.status) >= rideStatusRank(uiRideRef.current?.status ?? "")
+          ) {
             applyTruthRide(row, body.driver_public ?? null, "SSE+canonical");
           }
         }
