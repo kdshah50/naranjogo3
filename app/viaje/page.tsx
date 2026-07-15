@@ -547,7 +547,8 @@ function ViajePageInner() {
         const prevCode = prev?.status_code ?? rideStatusToCode(prev?.status);
         const incomingCode = incoming.status_code ?? rideStatusToCode(incoming.status);
         // Never downgrade lifecycle from a stale poll/SSE row (common with WhatsApp-pinned ids).
-        if (prev && (incomingRank < prevRank || incomingCode < prevCode)) {
+        // Rank wins; do not let a stale status_code alone block an upgrade (Matched stuck bug).
+        if (prev && incomingRank < prevRank) {
           return prev;
         }
         const next = prev
@@ -584,28 +585,37 @@ function ViajePageInner() {
     const isStale = () => seq !== refreshSeqRef.current;
 
     const pinnedId = rideIdRef.current ?? readPinnedRideId();
+    const uiId = uiRideRef.current?.id ?? undefined;
     const ticketHint =
       urlTicketRef.current ||
       activeTicketRef.current ||
       readPinnedTicket() ||
       normalizeTicketKey(uiRideRef.current?.ticket_code) ||
       undefined;
-    // Prefer ticket-only truth: WhatsApp/?ride= pins can point at a ghost duplicate row.
-    // Passing ride_id with ticket biased older rows and froze Accept→Arrived→Start UI.
-    const rideRef = ticketHint
-      ? undefined
-      : pinnedId ?? uiRideRef.current?.id ?? undefined;
+    // Always include known ride id with ticket. Server pickBestBuyerRideRow chooses
+    // the highest lifecycle across siblings — ticket-only used to drop the id and
+    // could leave the rider UI frozen on Matched when ticket resolve flakes.
+    const knownRideId = pinnedId || uiId || undefined;
 
     let truthApplied = false;
-    if (ticketHint || rideRef) {
+    if (ticketHint || knownRideId) {
       let { ride: truthRow, driver_public: truthDriver, httpStatus } =
-        await fetchBuyerRideTruth(ticketHint, rideRef);
-      if (!truthRow?.id && pinnedId) {
-        const byId = await fetchBuyerRideTruth(ticketHint || undefined, pinnedId);
+        await fetchBuyerRideTruth(ticketHint, knownRideId);
+      if (!truthRow?.id && knownRideId) {
+        const byId = await fetchBuyerRideTruth(ticketHint || undefined, knownRideId);
         if (byId.ride?.id) {
           truthRow = byId.ride;
           truthDriver = byId.driver_public;
           httpStatus = byId.httpStatus;
+        }
+      }
+      if (!truthRow?.id && ticketHint && knownRideId) {
+        // Last resort: id-only (same ride the UI already shows as Matched).
+        const idOnly = await fetchBuyerRideTruth(undefined, knownRideId);
+        if (idOnly.ride?.id) {
+          truthRow = idOnly.ride;
+          truthDriver = idOnly.driver_public;
+          httpStatus = idOnly.httpStatus;
         }
       }
       if (httpStatus === 401 && !isStale()) {
@@ -616,6 +626,10 @@ function ViajePageInner() {
         setRequestError(t.ridesDisabled);
       }
       if (truthRow?.id && !isStale()) {
+        // Manual / focus refresh must overwrite a stuck Matched card.
+        if (source === "manual" || source === "focus" || source === "visibility") {
+          statusFloorByRideRef.current.delete(truthRow.id);
+        }
         truthApplied = applyTruthRide(truthRow, truthDriver, `${source}+events`);
         if (isTerminalRideStatus(truthRow.status)) return;
       }
@@ -626,7 +640,7 @@ function ViajePageInner() {
     }
 
     // Ticket / ride pin from WhatsApp — never fall back to /sync (replica lag).
-    if (ticketHint || rideRef) {
+    if (ticketHint || knownRideId) {
       return;
     }
 
