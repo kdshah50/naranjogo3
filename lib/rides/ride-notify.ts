@@ -5,10 +5,23 @@ import { formatMxnFromCents } from "@/lib/rides/ride-pricing";
 import { applyEventTruthToRide, getRideById, type RideBookingRow } from "@/lib/rides/ride-bookings-server";
 import { rideStatusRank } from "@/lib/rides/ride-status-merge";
 import { getPublicAppUrl } from "@/lib/app-url";
-import { sendWhatsAppToE164Digits, isTwilioWhatsAppConfigured } from "@/lib/twilio";
+import { isTwilioWhatsAppConfigured } from "@/lib/twilio";
 import { e164DigitsForWhatsAppRecipient } from "@/lib/phone";
 import { expandUserAccountIdPool, phoneLookupVariants } from "@/lib/user-account-pool";
 import { idMatchVariantsForIn, sortRowsWithPreferredUserId } from "@/lib/user-id-variants";
+import { rideRouteSummaryFromRow } from "@/lib/rides/ride-route-summary";
+import { sendRideWhatsAppWithAudit } from "@/lib/rides/ride-whatsapp-audit";
+
+/** WhatsApp copy uses colonia zones only — never street addresses (PII). */
+function rideZoneRoute(ride: RideBookingRow): string {
+  return rideRouteSummaryFromRow(ride, "es").route_label;
+}
+function ridePickupZone(ride: RideBookingRow): string {
+  return rideRouteSummaryFromRow(ride, "es").pickup_zone;
+}
+function rideDropoffZone(ride: RideBookingRow): string {
+  return rideRouteSummaryFromRow(ride, "es").dropoff_zone;
+}
 
 export function rideBuyerViajeUrl(
   rideId?: string | null,
@@ -91,10 +104,10 @@ export async function notifyBuyerRideCreated(
   const fare = formatMxnFromCents(args.ride.estimated_total_mxn_cents);
   const hold = formatMxnFromCents(args.ride.hold_amount_mxn_cents);
   const viajeUrl = rideBuyerViajeUrl(args.ride.id, args.ride.ticket_code);
+  const route = rideZoneRoute(args.ride);
   let msg =
     `🚕 *Solicitud de viaje recibida*\n` +
-    `Origen: ${args.ride.pickup_address}\n` +
-    `Destino: ${args.ride.dropoff_address}\n` +
+    `Ruta: ${route}\n` +
     `Tarifa estimada: *${fare}* (reserva ${hold})\n`;
 
   if (args.matched && args.ride.ticket_code) {
@@ -108,7 +121,15 @@ export async function notifyBuyerRideCreated(
     msg += `\n\n${viajeUrl}`;
   }
 
-  await sendWhatsAppToE164Digits(phone, msg);
+  await sendRideWhatsAppWithAudit(supabase, {
+    rideId: args.ride.id,
+    ticketCode: args.ride.ticket_code,
+    phase: args.matched ? "created_matched" : "created",
+    recipientRole: "buyer",
+    recipientUserId: args.ride.buyer_id,
+    recipientPhoneDigits: phone,
+    body: msg,
+  });
 }
 
 export async function notifyBuyerTripStarted(
@@ -125,11 +146,19 @@ export async function notifyBuyerTripStarted(
   const msg =
     `🚕 *Viaje en curso*\n` +
     `Tu viaje comenzó hacia el destino.\n` +
-    `Destino: ${args.ride.dropoff_address}\n` +
+    `Destino: ${rideDropoffZone(args.ride)}\n` +
     `Ticket: *${args.ride.ticket_code ?? "—"}*\n\n` +
     `Sigue el estado:\n${viajeUrl}`;
 
-  await sendWhatsAppToE164Digits(phone, msg);
+  await sendRideWhatsAppWithAudit(supabase, {
+    rideId: args.ride.id,
+    ticketCode: args.ride.ticket_code,
+    phase: "in_trip",
+    recipientRole: "buyer",
+    recipientUserId: args.ride.buyer_id,
+    recipientPhoneDigits: phone,
+    body: msg,
+  });
 }
 
 export async function notifyBuyerRideArrived(
@@ -146,11 +175,19 @@ export async function notifyBuyerRideArrived(
   const msg =
     `🚕 *Conductor en el origen*\n` +
     `Ya está en tu punto de recogida.\n` +
-    `Origen: ${args.ride.pickup_address}\n` +
+    `Origen: ${ridePickupZone(args.ride)}\n` +
     `Ticket: *${args.ride.ticket_code ?? "—"}*\n\n` +
     `Muéstrale el código al subir.\n${viajeUrl}`;
 
-  await sendWhatsAppToE164Digits(phone, msg);
+  await sendRideWhatsAppWithAudit(supabase, {
+    rideId: args.ride.id,
+    ticketCode: args.ride.ticket_code,
+    phase: "arrived",
+    recipientRole: "buyer",
+    recipientUserId: args.ride.buyer_id,
+    recipientPhoneDigits: phone,
+    body: msg,
+  });
 }
 
 export async function notifyDriverRideMatched(
@@ -164,15 +201,23 @@ export async function notifyDriverRideMatched(
 
   const fare = formatMxnFromCents(args.ride.estimated_total_mxn_cents);
   const panelUrl = rideDriverPanelUrl(args.ride.id, args.ride.ticket_code);
+  const route = rideZoneRoute(args.ride);
   const msg =
     `🚕 *Nuevo viaje asignado*\n` +
-    `Recoger: ${args.ride.pickup_address}\n` +
-    `Destino: ${args.ride.dropoff_address}\n` +
+    `Ruta: ${route}\n` +
     `Tarifa est.: *${fare}*\n` +
     `Ticket pasajero: *${args.ride.ticket_code ?? "—"}*\n\n` +
     `Acepta el viaje en la app (Conectar si estás fuera de línea):\n${panelUrl}`;
 
-  await sendWhatsAppToE164Digits(phone, msg);
+  await sendRideWhatsAppWithAudit(supabase, {
+    rideId: args.ride.id,
+    ticketCode: args.ride.ticket_code,
+    phase: "matched",
+    recipientRole: "driver",
+    recipientUserId: args.driverUserId,
+    recipientPhoneDigits: phone,
+    body: msg,
+  });
 }
 
 export async function notifyBuyerRideCompleted(
@@ -191,10 +236,18 @@ export async function notifyBuyerRideCompleted(
     `🚕 *Viaje completado*\n` +
     `Gracias por viajar con NaranjoGo.\n` +
     `Cargo en tu saldo: *${fare}*\n` +
-    `Ruta: ${args.ride.pickup_address} → ${args.ride.dropoff_address}\n\n` +
+    `Ruta: ${rideZoneRoute(args.ride)}\n\n` +
     `Detalle y propina:\n${viajeUrl}`;
 
-  await sendWhatsAppToE164Digits(phone, msg);
+  await sendRideWhatsAppWithAudit(supabase, {
+    rideId: args.ride.id,
+    ticketCode: args.ride.ticket_code,
+    phase: "completed",
+    recipientRole: "buyer",
+    recipientUserId: args.ride.buyer_id,
+    recipientPhoneDigits: phone,
+    body: msg,
+  });
 }
 
 export async function notifyDriverRideCompleted(
@@ -213,10 +266,18 @@ export async function notifyDriverRideCompleted(
     `🚕 *Viaje completado*\n` +
     `Pasajero: ticket *${args.ride.ticket_code ?? "—"}*\n` +
     `Tarifa: *${fare}* · Tu pago: *${payout}*\n` +
-    `${args.ride.pickup_address} → ${args.ride.dropoff_address}\n\n` +
+    `${rideZoneRoute(args.ride)}\n\n` +
     `Panel:\n${panelUrl}`;
 
-  await sendWhatsAppToE164Digits(phone, msg);
+  await sendRideWhatsAppWithAudit(supabase, {
+    rideId: args.ride.id,
+    ticketCode: args.ride.ticket_code,
+    phase: "completed",
+    recipientRole: "driver",
+    recipientUserId: args.driverUserId,
+    recipientPhoneDigits: phone,
+    body: msg,
+  });
 }
 
 export async function notifyBuyerRideAccepted(
@@ -233,11 +294,19 @@ export async function notifyBuyerRideAccepted(
   const msg =
     `🚕 *Conductor en camino*\n` +
     `Tu viaje fue aceptado.\n` +
-    `Origen: ${args.ride.pickup_address}\n` +
+    `Origen: ${ridePickupZone(args.ride)}\n` +
     `Ticket: *${args.ride.ticket_code ?? "—"}*\n\n` +
     `Sigue el estado en la app:\n${viajeUrl}`;
 
-  await sendWhatsAppToE164Digits(phone, msg);
+  await sendRideWhatsAppWithAudit(supabase, {
+    rideId: args.ride.id,
+    ticketCode: args.ride.ticket_code,
+    phase: "accepted",
+    recipientRole: "buyer",
+    recipientUserId: args.ride.buyer_id,
+    recipientPhoneDigits: phone,
+    body: msg,
+  });
 }
 
 export async function notifyDriverRideAccepted(
@@ -253,10 +322,18 @@ export async function notifyDriverRideAccepted(
   const msg =
     `🚕 *Viaje aceptado*\n` +
     `Ticket *${args.ride.ticket_code ?? "—"}* — ve al origen.\n` +
-    `${args.ride.pickup_address}\n\n` +
+    `${ridePickupZone(args.ride)}\n\n` +
     `Siguiente paso: «Llegué al origen»\n${panelUrl}`;
 
-  await sendWhatsAppToE164Digits(phone, msg);
+  await sendRideWhatsAppWithAudit(supabase, {
+    rideId: args.ride.id,
+    ticketCode: args.ride.ticket_code,
+    phase: "accepted",
+    recipientRole: "driver",
+    recipientUserId: args.driverUserId,
+    recipientPhoneDigits: phone,
+    body: msg,
+  });
 }
 
 export async function notifyDriverRideArrived(
@@ -274,7 +351,15 @@ export async function notifyDriverRideArrived(
     `Ticket *${args.ride.ticket_code ?? "—"}* — pide el código al pasajero.\n\n` +
     `Siguiente paso: «Iniciar viaje»\n${panelUrl}`;
 
-  await sendWhatsAppToE164Digits(phone, msg);
+  await sendRideWhatsAppWithAudit(supabase, {
+    rideId: args.ride.id,
+    ticketCode: args.ride.ticket_code,
+    phase: "arrived",
+    recipientRole: "driver",
+    recipientUserId: args.driverUserId,
+    recipientPhoneDigits: phone,
+    body: msg,
+  });
 }
 
 export async function notifyDriverTripStarted(
@@ -289,11 +374,19 @@ export async function notifyDriverTripStarted(
   const panelUrl = rideDriverPanelUrl(args.ride.id, args.ride.ticket_code);
   const msg =
     `🚕 *Viaje en curso*\n` +
-    `Destino: ${args.ride.dropoff_address}\n` +
+    `Destino: ${rideDropoffZone(args.ride)}\n` +
     `Ticket *${args.ride.ticket_code ?? "—"}*\n\n` +
     `Al llegar: «Completar viaje»\n${panelUrl}`;
 
-  await sendWhatsAppToE164Digits(phone, msg);
+  await sendRideWhatsAppWithAudit(supabase, {
+    rideId: args.ride.id,
+    ticketCode: args.ride.ticket_code,
+    phase: "in_trip",
+    recipientRole: "driver",
+    recipientUserId: args.driverUserId,
+    recipientPhoneDigits: phone,
+    body: msg,
+  });
 }
 
 export type RideNotifyPhase = "accepted" | "arrived" | "in_trip" | "completed";
@@ -340,7 +433,7 @@ async function sendRidePhaseWhatsAppPair(
   const { ride, phase, driverUserId } = args;
   const copy = PHASE_WHATSAPP_COPY[phase];
   const ticket = ride.ticket_code ?? "—";
-  const route = `${ride.pickup_address} → ${ride.dropoff_address}`;
+  const route = rideZoneRoute(ride);
   const header = `🚕 *${copy.title}*\nTicket *${ticket}*\n${route}`;
 
   let riderBody = header;
@@ -364,20 +457,30 @@ async function sendRidePhaseWhatsAppPair(
     const buyerPhone = await findUserPhoneById(supabase, ride.buyer_id);
     if (buyerPhone) {
       const viajeUrl = rideBuyerViajeUrl(ride.id, ride.ticket_code);
-      await sendWhatsAppToE164Digits(
-        buyerPhone,
-        `${riderBody}\n\n${copy.riderNext}:\n${viajeUrl}`,
-      );
+      await sendRideWhatsAppWithAudit(supabase, {
+        rideId: ride.id,
+        ticketCode: ride.ticket_code,
+        phase,
+        recipientRole: "buyer",
+        recipientUserId: ride.buyer_id,
+        recipientPhoneDigits: buyerPhone,
+        body: `${riderBody}\n\n${copy.riderNext}:\n${viajeUrl}`,
+      });
     }
   }
 
   const driverPhone = await findUserPhoneById(supabase, driverUserId);
   if (driverPhone) {
     const panelUrl = rideDriverPanelUrl(ride.id, ride.ticket_code);
-    await sendWhatsAppToE164Digits(
-      driverPhone,
-      `${driverBody}\n\n${copy.driverNext}:\n${panelUrl}`,
-    );
+    await sendRideWhatsAppWithAudit(supabase, {
+      rideId: ride.id,
+      ticketCode: ride.ticket_code,
+      phase,
+      recipientRole: "driver",
+      recipientUserId: driverUserId,
+      recipientPhoneDigits: driverPhone,
+      body: `${driverBody}\n\n${copy.driverNext}:\n${panelUrl}`,
+    });
   }
 }
 
