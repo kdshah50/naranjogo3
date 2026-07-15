@@ -41,10 +41,26 @@ async function hydrateRowFromEvents(
     (await getRideByIdFresh(supabase, row.id, { attempts: 4, delayMs: 150 })) ?? row;
   const fromEvents = await applyEventTruthToRide(supabase, fresh);
   const logStatus = await getRideLifecycleStatusFromEvents(supabase, row.id);
-  if (logStatus && rideStatusRank(logStatus) > rideStatusRank(fromEvents.status)) {
-    return { ...fromEvents, status: logStatus as RideBookingRow["status"] };
+  let best = fromEvents;
+  if (logStatus && rideStatusRank(logStatus) > rideStatusRank(best.status)) {
+    best = { ...best, status: logStatus as RideBookingRow["status"] };
   }
-  return fromEvents;
+  // Hard guarantee: trip_completed / ride_cancelled in the log always win over a
+  // lagging ride_bookings.status (Matched stuck after Complete).
+  const { data: doneEvt } = await supabase
+    .from("ride_events")
+    .select("event_type")
+    .eq("ride_id", row.id)
+    .in("event_type", ["trip_completed", "ride_cancelled"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (doneEvt?.event_type === "trip_completed" && best.status !== "completed") {
+    best = { ...best, status: "completed" };
+  } else if (doneEvt?.event_type === "ride_cancelled" && best.status !== "cancelled") {
+    best = { ...best, status: "cancelled" };
+  }
+  return best;
 }
 
 /**
@@ -85,7 +101,16 @@ async function pickBestBuyerRideRow(
       args.ticket,
       args.pool,
     )) {
-      if (sibling?.id) byId.set(sibling.id, sibling);
+      if (!sibling?.id) continue;
+      const existing = byId.get(sibling.id);
+      // Never replace an already-hydrated higher lifecycle row with a raw sibling.
+      if (
+        existing &&
+        rideStatusRank(existing.status) >= rideStatusRank(sibling.status)
+      ) {
+        continue;
+      }
+      byId.set(sibling.id, sibling);
     }
   }
 
