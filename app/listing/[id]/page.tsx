@@ -35,6 +35,11 @@ import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-
 import { providerServiceRequiresQuoteAccept } from "@/lib/provider-services";
 import { quoteLayoutForSlug } from "@/lib/service-quote-vertical";
 import { transportListingUsesViajeFlow } from "@/lib/rides/transport-viaje-flow";
+import {
+  isPropertyManagementService,
+  parsePropertyManagementProfile,
+} from "@/lib/property-management";
+import PropertyManagementListingPanel from "@/components/PropertyManagementListingPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -124,6 +129,12 @@ export default async function ListingPage({
   const price = new Intl.NumberFormat(priceLocale, { style: "currency", currency: "MXN", maximumFractionDigits: 0 }).format(listing.price_mxn / 100);
   const isServiceListing = isServicesListing(listing);
   const providerSlug = inferProviderSlugFromListingTitle(listing.title_es);
+  const isPmListing = isPropertyManagementService(providerSlug);
+  const pmProfile = isPmListing
+    ? parsePropertyManagementProfile(
+        (listing as { property_management?: unknown }).property_management,
+      )
+    : null;
   const menuQuoteLayout = quoteLayoutForSlug(providerSlug);
   const requiresQuoteAccept = providerServiceRequiresQuoteAccept(providerSlug);
   const viajeOnlyFlow = transportListingUsesViajeFlow(providerSlug);
@@ -191,10 +202,26 @@ export default async function ListingPage({
         <div className="flex items-start justify-between mb-3">
           <span className="text-3xl font-bold text-[#1B4332]">
             {price}
-            <span className="text-base font-semibold text-[#6B7280] ml-2">MXN</span>
+            <span className="text-base font-semibold text-[#6B7280] ml-2">
+              MXN{isPmListing ? (listingLang === "en" ? "/mo" : "/mes") : ""}
+            </span>
           </span>
-          {listing.negotiable && <span className="text-sm text-[#6B7280] italic">{lp.negotiable}</span>}
+          {isPmListing ? (
+            <span className="text-sm font-semibold text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full">
+              {listingLang === "en" ? "Consultation required" : "Consulta requerida"}
+            </span>
+          ) : (
+            listing.negotiable && <span className="text-sm text-[#6B7280] italic">{lp.negotiable}</span>
+          )}
         </div>
+        {isPmListing && (
+          <PropertyManagementListingPanel
+            profile={pmProfile}
+            priceMxnCents={Number(listing.price_mxn) || 0}
+            businessName={pmProfile?.business_legal_name || null}
+            lang={listingLang}
+          />
+        )}
         <div className="flex items-start justify-between gap-3 mb-4">
           <h1 className="text-xl font-semibold text-[#1C1917] flex-1 min-w-0">{listingTitle}</h1>
           <FavoriteButton listingId={params.id} lang={listingLang} />
@@ -359,7 +386,7 @@ export default async function ListingPage({
             rideDispatchOnly={viajeOnlyFlow}
           />
           <div id="booking-section" className="scroll-mt-28">
-            {viajeOnlyFlow ? null : (
+            {viajeOnlyFlow || isPmListing ? null : (
               <ServiceBookingBlock
                 listingId={params.id}
                 isService={isServiceListing}

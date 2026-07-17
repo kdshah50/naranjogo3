@@ -85,6 +85,11 @@ export const PROVIDER_SERVICES = [
   { value: "tramites", es: "Trámites para expatriados", en: "Expat Paperwork Help" },
   { value: "compras", es: "Compras a domicilio", en: "Grocery Delivery" },
   { value: "house_sitting", es: "Cuidado de casa", en: "House Sitting" },
+  {
+    value: "administracion_propiedades",
+    es: "Administración de propiedades",
+    en: "Property Management",
+  },
   { value: "yoga", es: "Yoga / Bienestar", en: "Yoga / Wellness" },
   { value: "diseno", es: "Diseño de interiores", en: "Interior Design" },
   { value: "espanol", es: "Clases de español", en: "Spanish Lessons" },

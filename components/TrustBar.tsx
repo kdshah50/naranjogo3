@@ -44,6 +44,12 @@ export default function TrustBar() {
         >
           ¿Mandados bilingüe? Conoce el programa → Bilingual errands program
         </a>
+        <a
+          href="/administracion-de-propiedades"
+          className="text-xs text-white/70 hover:text-white underline underline-offset-2"
+        >
+          ¿Administración de propiedades? Conoce el programa → Property management
+        </a>
       </div>
     </div>
   );

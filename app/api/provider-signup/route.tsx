@@ -17,6 +17,12 @@ import {
   COACHING_TRAINING_SERVICE,
 } from "@/lib/provider-services";
 import { hasServiceMenu, parseServiceMenu } from "@/lib/listing-service-menu";
+import {
+  PROPERTY_MANAGEMENT_SERVICE,
+  buildPropertyManagementProfile,
+  propertyManagementMetaFooters,
+  pmStartingMonthlyMxn,
+} from "@/lib/property-management";
 import { rateLimitListingCreateByUser } from "@/lib/rate-limit";
 import { createAdminSupabase } from "@/lib/auth-server";
 import { embedListingInBackground } from "@/lib/listing-embedding";
@@ -127,6 +133,36 @@ export async function POST(req: NextRequest) {
         );
       }
     }
+
+    let propertyManagementProfile = null as ReturnType<typeof buildPropertyManagementProfile>;
+    if (serviceStr === PROPERTY_MANAGEMENT_SERVICE) {
+      if (!(body as { accepted_pm_keys?: boolean }).accepted_pm_keys) {
+        return NextResponse.json(
+          { error: "Property management key-holding terms must be accepted" },
+          { status: 400 },
+        );
+      }
+      propertyManagementProfile = buildPropertyManagementProfile(
+        (body as { property_management?: unknown }).property_management ?? body,
+      );
+      if (
+        !propertyManagementProfile ||
+        propertyManagementProfile.sub_services.length === 0 ||
+        propertyManagementProfile.packages.length === 0 ||
+        !propertyManagementProfile.business_legal_name ||
+        propertyManagementProfile.references.length < 2 ||
+        !propertyManagementProfile.insurance_declared
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Administración de propiedades requiere razón social, seguro declarado, 2 referencias, sub-servicios y paquetes mensuales.",
+          },
+          { status: 400 },
+        );
+      }
+    }
+
     const langOk =
       provider_languages === "bilingual" ||
       provider_languages === "spanish_only" ||
@@ -144,10 +180,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Terms not accepted" }, { status: 400 });
     }
 
-    // Parse price
-    const price_mxn = Math.round(
+    // Parse price (PM: prefer starting monthly from packages)
+    let price_mxn = Math.round(
       parseFloat((price ?? "0").toString().replace(/[^0-9.]/g, "")) * 100
     );
+    if (propertyManagementProfile) {
+      const start = pmStartingMonthlyMxn(propertyManagementProfile);
+      if (start != null && start > 0) {
+        price_mxn = start * 100;
+      }
+    }
 
     const phone = storageAuthPhone(String(whatsapp ?? ""));
 
@@ -234,13 +276,16 @@ export async function POST(req: NextRequest) {
       coaching_focus_slugs: serviceStr === COACHING_TRAINING_SERVICE ? coaching_focus : undefined,
       coaching_delivery_slugs: serviceStr === COACHING_TRAINING_SERVICE ? coaching_delivery : undefined,
     });
+    const pmMeta = propertyManagementProfile
+      ? propertyManagementMetaFooters(propertyManagementProfile)
+      : { es: "", en: "" };
 
     const listing = {
       seller_id:          sellerId,
       title_es:           `${titleLabelEs} — ${coloniaLabelEs}, SMA`,
       title_en:           `${titleLabelEn} — ${coloniaLabelEn}, SMA`,
-      description_es:     descWithAddressEs + meta.es,
-      description_en:      descWithAddressEn + meta.en,
+      description_es:     descWithAddressEs + meta.es + pmMeta.es,
+      description_en:      descWithAddressEn + meta.en + pmMeta.en,
       price_mxn:          price_mxn > 0 ? price_mxn : 50000,
       category_id:        "services",
       condition:          "new",
@@ -260,9 +305,12 @@ export async function POST(req: NextRequest) {
       expires_at:         new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
       ...(availability_summary ? { availability_summary } : {}),
       ...(serviceMenuToStore ? { service_menu: serviceMenuToStore } : {}),
+      ...(propertyManagementProfile
+        ? { property_management: propertyManagementProfile }
+        : {}),
     };
 
-    const listingRes = await fetch(`${SUPA_URL}/rest/v1/listings`, {
+    let listingRes = await fetch(`${SUPA_URL}/rest/v1/listings`, {
       method: "POST",
       headers: {
         ...h,
@@ -270,6 +318,21 @@ export async function POST(req: NextRequest) {
       },
       body: JSON.stringify(listing),
     });
+
+    // If migration not applied yet, retry without property_management column.
+    if (!listingRes.ok && propertyManagementProfile) {
+      const { property_management: _pm, ...listingWithoutPm } = listing as typeof listing & {
+        property_management?: unknown;
+      };
+      listingRes = await fetch(`${SUPA_URL}/rest/v1/listings`, {
+        method: "POST",
+        headers: {
+          ...h,
+          Prefer: "return=representation",
+        },
+        body: JSON.stringify(listingWithoutPm),
+      });
+    }
 
     if (!listingRes.ok) {
       let details: unknown;

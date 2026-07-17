@@ -36,6 +36,7 @@ const T = {
     transportChip: "Taxi / transporte",
     tailoringChip: "Arreglos de ropa",
     errandsChip: "Mandados bilingüe",
+    pmChip: "Administración de propiedades",
   },
   en: {
     badge: "ZIP 37700 • SERVICES",
@@ -56,10 +57,12 @@ const T = {
     transportChip: "Taxi / rides",
     tailoringChip: "Tailoring",
     errandsChip: "Bilingual errands",
+    pmChip: "Property management",
   },
 };
 
 const HERO_SERVICE_CHIPS = [
+  { href: "/administracion-de-propiedades", icon: "🏠", labelKey: "pmChip" as const, featured: false },
   { href: "/arreglos-de-ropa", icon: "🪡", labelKey: "tailoringChip" as const, featured: false },
   { href: "/cuidado-mascotas", icon: "🐕", labelKey: "petChip" as const, featured: false },
   { href: "/limpieza-del-hogar", icon: "🧹", labelKey: "cleaningChip" as const, featured: true },

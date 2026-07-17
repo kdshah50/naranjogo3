@@ -9,6 +9,8 @@ import { WhatsAppBadgeLocked } from "@/components/WhatsAppCTA";
 import { SellerVerificationBadges } from "@/components/SellerVerificationBadges";
 import type { Lang } from "@/lib/i18n-lang";
 import { isServicesListing } from "@/lib/listing-category";
+import { inferProviderSlugFromListingTitle } from "@/lib/infer-listing-provider-slug";
+import { isPropertyManagementService } from "@/lib/property-management";
 
 function fmtMXN(centavos: number) {
   return new Intl.NumberFormat("es-MX", {
@@ -44,10 +46,16 @@ export default function ListingGrid({ listings, initialLang = "es" }: Props) {
   }
 
   const negotiableHint = lang === "en" ? "· negotiable" : "· negociable";
+  const monthHint = lang === "en" ? "/mo" : "/mes";
+  const consultHint = lang === "en" ? "Consultation required" : "Consulta requerida";
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-      {listings.map((listing) => (
+      {listings.map((listing) => {
+        const isPm = isPropertyManagementService(
+          inferProviderSlugFromListingTitle(listing.title),
+        );
+        return (
         <Link
           key={listing.id}
           href={lang === "en" ? `/listing/${listing.id}?lang=en` : `/listing/${listing.id}`}
@@ -65,7 +73,7 @@ export default function ListingGrid({ listings, initialLang = "es" }: Props) {
                 />
               ) : (
                 <div className="absolute inset-0 flex items-center justify-center text-4xl text-[#E5E0D8]">
-                  📦
+                  {isPm ? "🏠" : "📦"}
                 </div>
               )}
               {(listing.colonia_label || listing.location_city) && (
@@ -73,11 +81,15 @@ export default function ListingGrid({ listings, initialLang = "es" }: Props) {
                   📍 {listing.colonia_label ?? listing.location_city}
                 </span>
               )}
-              {isServicesListing({ category_id: listing.category_id }) && (
+              {isPm ? (
+                <span className="absolute bottom-2 left-2 text-[10px] font-bold px-2 py-1 rounded-full bg-amber-700/95 text-white backdrop-blur-sm">
+                  {consultHint}
+                </span>
+              ) : isServicesListing({ category_id: listing.category_id }) ? (
                 <span className="absolute bottom-2 left-2 text-[10px] font-bold px-2 py-1 rounded-full bg-[#1B4332]/92 text-white backdrop-blur-sm">
                   {lang === "en" ? "Paid via app" : "Pago en app"}
                 </span>
-              )}
+              ) : null}
               {typeof listing.dist_km === "number" && Number.isFinite(listing.dist_km) && (
                 <span className="absolute top-2 right-2 text-[10px] font-semibold px-2 py-1 rounded-full bg-[#1B4332]/90 text-white backdrop-blur-sm">
                   ~
@@ -95,10 +107,24 @@ export default function ListingGrid({ listings, initialLang = "es" }: Props) {
 
             <div className="p-4">
               <p className="text-lg font-bold text-[#1B4332] mb-1">
-                {fmtMXN(listing.price_mxn)}
-                <span className="text-xs font-semibold text-[#6B7280] ml-1">MXN</span>
-                {listing.negotiable && (
-                  <span className="text-xs font-normal text-[#6B7280] ml-1">{negotiableHint}</span>
+                {isPm ? (
+                  <>
+                    <span className="text-xs font-semibold text-[#6B7280] mr-1">
+                      {lang === "en" ? "From" : "Desde"}
+                    </span>
+                    {fmtMXN(listing.price_mxn)}
+                    <span className="text-xs font-semibold text-[#6B7280] ml-1">
+                      MXN{monthHint}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    {fmtMXN(listing.price_mxn)}
+                    <span className="text-xs font-semibold text-[#6B7280] ml-1">MXN</span>
+                    {listing.negotiable && (
+                      <span className="text-xs font-normal text-[#6B7280] ml-1">{negotiableHint}</span>
+                    )}
+                  </>
                 )}
               </p>
               <p className="text-sm text-[#374151] line-clamp-2 leading-snug mb-3">{listing.title}</p>
@@ -127,7 +153,8 @@ export default function ListingGrid({ listings, initialLang = "es" }: Props) {
             </div>
           </div>
         </Link>
-      ))}
+        );
+      })}
     </div>
   );
 }

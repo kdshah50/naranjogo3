@@ -92,6 +92,16 @@ const TRADE_HINTS: { re: RegExp; terms: string[] }[] = [
       "chofer",
     ],
   },
+  {
+    re: /\b(property\s+manag|administraci[oó]n\s+de\s+propiedad|administrador(a)?\s+de\s+(propiedad|condomin)|hoa\b|condo\s+manag|rental\s+manag|gesti[oó]n\s+de\s+renta|key\s+holding|custodia\s+de\s+llaves|absentee\s+owner|casa\s+vac[ií]a|retainer)\b/i,
+    terms: [
+      "administración de propiedades",
+      "administrador de propiedades",
+      "gestión de rentas",
+      "custodia de llaves",
+      "property management",
+    ],
+  },
 ];
 
 const TAXI_INTENT_RE =

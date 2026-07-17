@@ -40,8 +40,9 @@ The home page category bar is controlled by **`browseEnabled`** in `lib/marketpl
 | Taxi / rides | `/transporte` | `transporte_app` | Yes — **`RIDES_ENABLED=false` on prod** |
 | Tailoring | `/arreglos-de-ropa` | `arreglos_de_ropa` | Yes |
 | Bilingual errands | `/mandados-bilingue` | `mandados` | No (chat + agreed price) |
+| Property management | `/administracion-de-propiedades` | `administracion_propiedades` | No (monthly retainer packages + consultation) |
 
-Constants: `lib/provider-services.ts` (`BILINGUAL_ERRANDS_SERVICE`, `TAILORING_SERVICE`, etc.).
+Constants: `lib/provider-services.ts` (`BILINGUAL_ERRANDS_SERVICE`, `TAILORING_SERVICE`, etc.). Property management helpers: `lib/property-management.ts`.
 
 ## Hero layout (landing page)
 
@@ -55,6 +56,7 @@ Six verticals in `HERO_SERVICE_CHIPS`. Display order is **A→Z by translated la
 
 | Chip (ES label order) | Route | Notes |
 |-----------------------|-------|--------|
+| Administración de propiedades | `/administracion-de-propiedades` | Monthly retainer + consultation |
 | Arreglos de ropa | `/arreglos-de-ropa` | |
 | Cuidado de mascotas | `/cuidado-mascotas` | |
 | Limpieza del hogar | `/limpieza-del-hogar` | Gold chip; primary vertical |

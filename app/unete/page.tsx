@@ -25,11 +25,17 @@ import {
   coachingFocusLabels,
   coachingDeliveryLabels,
 } from "@/lib/provider-services";
+import { PROPERTY_MANAGEMENT_SERVICE } from "@/lib/property-management";
 import {
   serviceMenuPayloadFromFormRows,
   type ServiceMenuFormRow,
 } from "@/lib/listing-service-menu";
 import ServiceMenuEditor from "@/components/ServiceMenuEditor";
+import PropertyManagementSignupFields, {
+  defaultPmSignupSlice,
+  pmSignupValidationError,
+  type PmSignupFormSlice,
+} from "@/components/PropertyManagementSignupFields";
 import { useAppLang, useAppLangActions } from "@/hooks/use-app-lang";
 
 const COLONIAS_LIST = ALL_COLONIA_KEYS.map(key => ({
@@ -126,6 +132,10 @@ const T = {
     menuDisclaimerVet:      "El precio puede ajustarse después del examen físico y según el peso, edad o condición del paciente.",
     menuDisclaimerHousekeeping: "El precio puede variar según el estado del hogar, el tamaño real y el acceso. Se confirma en visita o por mensaje.",
     menuEmpty:              "Sin servicios — toca «Cargar plantilla» o «+ Agregar servicio» para empezar.",
+    pmTermTitle:            "Custodia de llaves y cancelación",
+    pmTermBody:
+      "Si ofreces administración de propiedades, aceptas responsabilidad razonable por el acceso y las llaves que te confíen, y dar aviso de cancelación según lo acordado con el cliente (mínimo recomendado: 30 días). Naranjogo no es el administrador de la propiedad.",
+    pmAcceptKeys:           "Acepto la cláusula de custodia de llaves / cancelación para administración de propiedades.",
   },
   en: {
     title:        "List your service on Naranjogo",
@@ -211,6 +221,10 @@ const T = {
     menuDisclaimerVet:      "Price may change after physical exam and depending on the patient's weight, age, or condition.",
     menuDisclaimerHousekeeping: "Price may vary based on home condition, actual size, and access. Confirmed on visit or by message.",
     menuEmpty:              "No services yet — tap 'Load template' or '+ Add service' to begin.",
+    pmTermTitle:            "Key holding & cancellation",
+    pmTermBody:
+      "If you offer property management, you accept reasonable responsibility for access and keys entrusted to you, and will give cancellation notice as agreed with the client (recommended minimum: 30 days). Naranjogo is not the property manager.",
+    pmAcceptKeys:           "I accept the key-holding / cancellation clause for property management.",
   },
 };
 
@@ -265,10 +279,15 @@ function UnetePageInner() {
     /** Service menu rows for slugs in PROVIDER_SERVICES_WITH_MENU (e.g. tailoring).
      *  Empty when the chosen service has no menu — submitted as null. */
     service_menu_rows: [] as ServiceMenuFormRow[],
+    acceptPmKeys: false,
+    ...defaultPmSignupSlice(),
   });
 
+  const isPm = form.service === PROPERTY_MANAGEMENT_SERVICE;
   const t = T[lang];
   const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }));
+  const patchPm = (patch: Partial<PmSignupFormSlice>) =>
+    setForm((f) => ({ ...f, ...patch }));
 
   const patchWeeklyDay = (key: WeekdayKey, patch: Partial<DayAvailability>) => {
     setForm((f) => ({
@@ -293,6 +312,22 @@ function UnetePageInner() {
       setTermsError(true);
       return;
     }
+    if (form.service === PROPERTY_MANAGEMENT_SERVICE) {
+      if (!form.acceptPmKeys) {
+        setTermsError(true);
+        setError(
+          lang === "es"
+            ? "Debes aceptar la cláusula de custodia de llaves."
+            : "You must accept the key-holding clause.",
+        );
+        return;
+      }
+      const pmErr = pmSignupValidationError(form, lang);
+      if (pmErr) {
+        setError(pmErr);
+        return;
+      }
+    }
     setLoading(true);
     setError("");
     try {
@@ -302,6 +337,20 @@ function UnetePageInner() {
         availability_mode: _am,
         availability_notes: _an,
         service_menu_rows: rawMenuRows,
+        acceptPmKeys: _apk,
+        business_legal_name,
+        years_in_sma,
+        insurance_company,
+        insurance_policy_ref,
+        insurance_declared,
+        reference1_name,
+        reference1_phone,
+        reference2_name,
+        reference2_phone,
+        pm_sub_services,
+        pm_packages,
+        pm_property_types,
+        max_properties,
         ...signupFields
       } = form;
 
@@ -311,11 +360,38 @@ function UnetePageInner() {
         ? serviceMenuPayloadFromFormRows(rawMenuRows, form.service)
         : null;
 
+      const isPmSubmit = form.service === PROPERTY_MANAGEMENT_SERVICE;
+      const pmPayload = isPmSubmit
+        ? {
+            sub_services: pm_sub_services,
+            packages: pm_packages,
+            property_types_served: pm_property_types,
+            max_properties: max_properties.trim() ? Number(max_properties) : null,
+            business_legal_name,
+            years_in_sma: years_in_sma.trim() ? Number(years_in_sma) : null,
+            insurance_company,
+            insurance_policy_ref,
+            insurance_declared,
+            references: [
+              { name: reference1_name, phone: reference1_phone },
+              { name: reference2_name, phone: reference2_phone },
+            ],
+          }
+        : null;
+
+      const startingMonthly =
+        isPmSubmit && pm_packages.length
+          ? Math.min(...pm_packages.map((p) => p.from_mxn).filter((n) => n > 0))
+          : null;
+
       const res = await fetch("/api/provider-signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...signupFields,
+          ...(startingMonthly != null && startingMonthly > 0
+            ? { price: String(startingMonthly) }
+            : {}),
           availability_summary: availabilityComposite.trim(),
           service_label: selectedService?.[lang] ?? form.service,
           lang,
@@ -323,6 +399,7 @@ function UnetePageInner() {
           accepted_pricing: true,
           accepted_at: new Date().toISOString(),
           ...(service_menu ? { service_menu } : {}),
+          ...(pmPayload ? { property_management: pmPayload, accepted_pm_keys: true } : {}),
         }),
       });
       if (!res.ok) {
@@ -466,11 +543,47 @@ function UnetePageInner() {
                   📋 {t.rfcHelp}
                 </p>
               </div>
-              <button onClick={() => setStep(2)}
+              {isPm && (
+                <PropertyManagementSignupFields
+                  lang={lang}
+                  section="info"
+                  value={form}
+                  onChange={patchPm}
+                />
+              )}
+              <button
+                onClick={() => {
+                  if (isPm) {
+                    const err = pmSignupValidationError(form, lang);
+                    // Step 1 only needs info fields; package validation runs on step 2.
+                    if (
+                      !form.business_legal_name.trim() ||
+                      !form.years_in_sma.trim() ||
+                      !form.insurance_declared ||
+                      !form.reference1_name.trim() ||
+                      !form.reference1_phone.trim() ||
+                      !form.reference2_name.trim() ||
+                      !form.reference2_phone.trim()
+                    ) {
+                      setError(
+                        err ||
+                          (lang === "es"
+                            ? "Completa la verificación de administración de propiedades."
+                            : "Complete property management verification fields."),
+                      );
+                      return;
+                    }
+                    setError("");
+                  }
+                  setStep(2);
+                }}
                 disabled={!form.name || !form.whatsapp || !form.colonia}
                 className="w-full bg-[#1B4332] text-white font-semibold py-3 rounded-xl text-sm disabled:opacity-40 hover:bg-[#2D6A4F] transition-colors">
                 {t.next}
               </button>
+              {error && step === 1 && (
+                <p className="text-xs text-red-600 text-center">{error}</p>
+              )}
             </div>
           )}
 
@@ -600,6 +713,23 @@ function UnetePageInner() {
                     </div>
                   </div>
                 </>
+              )}
+
+              {isPm && !form.business_legal_name.trim() && (
+                <PropertyManagementSignupFields
+                  lang={lang}
+                  section="info"
+                  value={form}
+                  onChange={patchPm}
+                />
+              )}
+              {isPm && (
+                <PropertyManagementSignupFields
+                  lang={lang}
+                  section="service"
+                  value={form}
+                  onChange={patchPm}
+                />
               )}
 
               <div>
@@ -750,12 +880,20 @@ function UnetePageInner() {
                   rows={4} placeholder={t.descPh}
                   className="w-full border border-[#E5E0D8] rounded-xl px-4 py-3 text-sm outline-none focus:border-[#1B4332] transition-colors resize-none" />
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-[#6B7280] mb-2">{t.price}</label>
-                <input value={form.price} onChange={e => set("price", e.target.value)}
-                  className="w-full border border-[#E5E0D8] rounded-xl px-4 py-3 text-sm outline-none focus:border-[#1B4332] transition-colors"
-                  placeholder={t.pricePh} />
-              </div>
+              {!isPm ? (
+                <div>
+                  <label className="block text-xs font-semibold text-[#6B7280] mb-2">{t.price}</label>
+                  <input value={form.price} onChange={e => set("price", e.target.value)}
+                    className="w-full border border-[#E5E0D8] rounded-xl px-4 py-3 text-sm outline-none focus:border-[#1B4332] transition-colors"
+                    placeholder={t.pricePh} />
+                </div>
+              ) : (
+                <p className="text-xs text-[#065F46] bg-[#ECFDF5] border border-[#A7F3D0] rounded-xl px-3 py-2 leading-relaxed">
+                  {lang === "es"
+                    ? "El precio del anuncio será el inicio de tu paquete mensual más bajo (MXN/mes). No es un precio por visita."
+                    : "Listing price will be the start of your lowest monthly package (MXN/mo). Not a per-visit price."}
+                </p>
+              )}
               <div>
                 <label className="block text-xs font-semibold text-[#6B7280] mb-2">{t.payment}</label>
                 <div className="flex flex-col gap-2">
@@ -794,12 +932,24 @@ function UnetePageInner() {
                   className="flex-none border border-[#E5E0D8] text-[#6B7280] font-medium py-3 px-5 rounded-xl text-sm hover:border-[#1B4332] transition-colors">
                   {t.back}
                 </button>
-                <button onClick={() => setStep(3)}
+                <button onClick={() => {
+                  if (isPm) {
+                    const err = pmSignupValidationError(form, lang);
+                    if (err) {
+                      setError(err);
+                      return;
+                    }
+                    setError("");
+                  }
+                  setStep(3);
+                }}
                   disabled={
-                    !form.service || !form.description || !form.price
+                    !form.service || !form.description
+                    || (!isPm && !form.price)
                     || !form.provider_languages || !form.service_location
                     || (form.service === COACHING_TRAINING_SERVICE
                       && (form.coaching_focus.length === 0 || form.coaching_delivery.length === 0))
+                    || (isPm && (form.pm_sub_services.length === 0 || form.pm_packages.length === 0))
                   }
                   className="flex-1 bg-[#1B4332] text-white font-semibold py-3 rounded-xl text-sm disabled:opacity-40 hover:bg-[#2D6A4F] transition-colors">
                   {t.next}
@@ -821,6 +971,7 @@ function UnetePageInner() {
                   [t.term3Title, t.term3],
                   [t.term4Title, t.term4],
                   [t.term5Title, t.term5],
+                  ...(isPm ? ([[t.pmTermTitle, t.pmTermBody]] as [string, string][]) : []),
                 ].map(([title, body]) => (
                   <div key={title} className="bg-[#F4F0EB] rounded-xl p-4">
                     <p className="text-xs font-bold text-[#1B4332] mb-1">{title}</p>
@@ -843,6 +994,14 @@ function UnetePageInner() {
                     className="mt-0.5 accent-[#D4A017] w-4 h-4 flex-shrink-0" />
                   <span className="text-xs text-[#374151] leading-relaxed">{t.acceptPricing}</span>
                 </label>
+                {isPm && (
+                  <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${form.acceptPmKeys ? "border-amber-600 bg-amber-50" : "border-[#E5E0D8]"}`}>
+                    <input type="checkbox" checked={form.acceptPmKeys}
+                      onChange={e => { set("acceptPmKeys", e.target.checked); setTermsError(false); }}
+                      className="mt-0.5 accent-amber-700 w-4 h-4 flex-shrink-0" />
+                    <span className="text-xs text-[#374151] leading-relaxed">{t.pmAcceptKeys}</span>
+                  </label>
+                )}
               </div>
 
               {termsError && (
@@ -856,7 +1015,10 @@ function UnetePageInner() {
                 </button>
                 <button
                   onClick={() => {
-                    if (!form.acceptTerms || !form.acceptPricing) { setTermsError(true); return; }
+                    if (!form.acceptTerms || !form.acceptPricing || (isPm && !form.acceptPmKeys)) {
+                      setTermsError(true);
+                      return;
+                    }
                     setTermsError(false);
                     setStep(4);
                   }}
